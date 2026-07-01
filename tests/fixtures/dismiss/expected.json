@@ -1,0 +1,10 @@
+{
+  "_provenance": "FROZEN ORACLE — DO NOT EDIT. Hand-authored fixture, active-sig set computed by brain_map.py's OWN active_dismissed_sigs() (the reference engine IS the spec), per the oracle-pre-freeze discipline (afk-agent-system#654 / repo issue #12). connect-dismissed.json (at vault/.claude/data/) records three weaklink dismissals: alpha|beta with correct current hashes (ACTIVE), alpha|gamma with a stale gamma hash (STALE — gamma's content changed), and alpha|delta whose delta.md does not exist (STALE — note missing). A sig is active iff BOTH notes exist and their current content_hash matches the recorded hash. If you believe a value is wrong, flag it — do not edit it to match your code.",
+  "dismissed_path": "vault/.claude/data/connect-dismissed.json",
+  "active_sigs": ["weaklink|alpha.md|beta.md"],
+  "all_sigs": [
+    "weaklink|alpha.md|beta.md",
+    "weaklink|alpha.md|delta.md",
+    "weaklink|alpha.md|gamma.md"
+  ]
+}
