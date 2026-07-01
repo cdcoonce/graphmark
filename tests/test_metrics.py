@@ -1,4 +1,4 @@
-"""Tests for metrics.py: stats/orphans/hubs/clusters/bridges/neighborhood.
+"""Tests for metrics.py: stats/orphans/hubs/clusters/bridges/neighborhood/siloed_notes.
 
 All assertions are derived from tests/fixtures/simple/expected.json (frozen oracle).
 """
@@ -8,14 +8,17 @@ from pathlib import Path
 
 import pytest
 
-from graphmark.config import VaultConfig
+from graphmark.config import VaultConfig, load_config
 from graphmark.graph import NormalizeResolver, VaultGraph
-from graphmark.metrics import bridges, clusters, hubs, neighborhood, orphans, stats
+from graphmark.metrics import bridges, clusters, hubs, neighborhood, orphans, siloed_notes, stats
 from graphmark.parse import WikilinkExtractor
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "simple"
 FIXTURE_VAULT = FIXTURE_DIR / "vault"
 EXPECTED = json.loads((FIXTURE_DIR / "expected.json").read_text())
+
+ALT_DIR = Path(__file__).parent / "fixtures" / "alt"
+ALT_EXPECTED = json.loads((ALT_DIR / "expected.json").read_text())
 
 
 @pytest.fixture(scope="module")
@@ -30,6 +33,12 @@ def graph() -> VaultGraph:
 @pytest.fixture(scope="module")
 def config() -> VaultConfig:
     return VaultConfig(root=FIXTURE_VAULT)
+
+
+@pytest.fixture(scope="module")
+def alt_graph() -> VaultGraph:
+    cfg = load_config(ALT_DIR / "config.toml")
+    return VaultGraph.build(cfg, WikilinkExtractor(), NormalizeResolver())
 
 
 class TestStats:
@@ -169,3 +178,21 @@ class TestNeighborhood:
         result = neighborhood(graph, "personal/beta.md", depth=1)
         assert result["out"] == sorted(result["out"])
         assert result["back"] == sorted(result["back"])
+
+
+class TestSiloedNotes:
+    def test_simple_no_bridges_returns_empty(self, graph):
+        result = siloed_notes(graph)
+        assert result == []
+
+    def test_alt_matches_oracle(self, alt_graph):
+        result = siloed_notes(alt_graph)
+        assert result == ALT_EXPECTED["siloed"]
+
+    def test_returns_sorted_list(self, alt_graph):
+        result = siloed_notes(alt_graph)
+        assert result == sorted(result)
+
+    def test_no_duplicates(self, alt_graph):
+        result = siloed_notes(alt_graph)
+        assert len(result) == len(set(result))

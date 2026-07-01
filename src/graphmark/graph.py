@@ -75,9 +75,12 @@ class VaultGraph:
         excluded = set(config.excluded_dirs)
         rules = set(config.rules_files)
 
+        scoped = set(config.scoped_folders)
         md_files: list[Path] = []
         for path in sorted(root.rglob("*.md")):
             rel_parts = path.relative_to(root).parts
+            if scoped and rel_parts[0] not in scoped:
+                continue
             if any(p in excluded for p in rel_parts[:-1]):
                 continue
             if path.name in rules:
