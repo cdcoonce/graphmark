@@ -1,5 +1,5 @@
 {
-  "_provenance": "FROZEN ORACLE — DO NOT EDIT. Hand-authored by the human conductor and committed BEFORE afk dispatch, so the executor asserts against a frozen file it cannot write (the same trust model as the brain_map-generated simple/expected.json). brain_map.py is hardcoded to my-brain and cannot generate an oracle for a foreign vault, so this second fixture is verified by hand: it uses different folder names (docs/refs/misc/daily) and a distinct topology (2 clusters of sizes 4 and 3, an articulation point, a transient daily note) to prove graphmark generalizes and is not hardcoded. Structural keys only; pagerank is deferred until afk #4 implements it, where networkx is the independent oracle runnable on any vault. If you believe a value is wrong, flag it — do not edit it to match your code.",
+  "_provenance": "FROZEN ORACLE — DO NOT EDIT. Hand-authored by the human conductor and committed BEFORE afk dispatch, so the executor asserts against a frozen file it cannot write (the same trust model as the brain_map-generated simple/expected.json). brain_map.py is hardcoded to my-brain and cannot generate an oracle for a foreign vault, so this second fixture is verified by hand: it uses different folder names (docs/refs/misc/daily) and a distinct topology (2 clusters of sizes 4 and 3, an articulation point, a transient daily note) to prove graphmark generalizes and is not hardcoded. pagerank was frozen for afk #4 via networkx's pure-python reference (_pagerank_python, alpha=0.85), cross-checked to reproduce simple/expected.json's pagerank exactly — so a correct pure-python impl must match BOTH fixtures, closing the single-fixture overfitting gap. If you believe a value is wrong, flag it — do not edit it to match your code.",
   "stats": { "notes": 10, "edges": 7, "orphans": 3, "clusters": 2, "density": 0.7 },
   "orphans": ["misc/orphan.md", "misc/stub.md"],
   "hubs": [
@@ -42,5 +42,22 @@
         "two_hop": ["misc/foxtrot.md"]
       }
     }
-  ]
+  ],
+  "pagerank": {
+    "_alpha": 0.85,
+    "_tolerance": 0.0001,
+    "_dangling": "dangling nodes (gamma, foxtrot, orphan, stub, daily) redistribute mass uniformly — networkx default; graphmark must match. Generated via networkx _pagerank_python(alpha=0.85), cross-checked to reproduce simple/expected.json's pagerank exactly.",
+    "ranking": [
+      ["refs/gamma.md", 0.2015],
+      ["misc/foxtrot.md", 0.157],
+      ["refs/beta.md", 0.1449],
+      ["misc/echo.md", 0.1129],
+      ["docs/alpha.md", 0.0783],
+      ["daily/2026-07-01.md", 0.061],
+      ["docs/center.md", 0.061],
+      ["misc/orphan.md", 0.061],
+      ["misc/stub.md", 0.061],
+      ["refs/delta.md", 0.061]
+    ]
+  }
 }
