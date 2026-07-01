@@ -1,0 +1,9 @@
+# Simple fixture config — drives the engine through load_config() over the SAME vault the
+# original frozen oracle (expected.json) was generated from. The generalization test asserts the
+# config-driven path reproduces that oracle exactly: config path == hardcoded path, same result.
+root = "vault"
+excluded_dirs = [".git"]
+rules_files = ["CLAUDE.md", "CLAUDE.local.md"]
+transient_prefixes = []
+orphan_min_chars = 300
+wikilink_pattern = '\[\[(.+?)\]\]'

@@ -1,0 +1,9 @@
+# Alt fixture config — a DIFFERENT vault shape (docs/refs/misc/daily, not brain/personal/reference)
+# to prove graphmark generalizes and is not hardcoded to my-brain's folder names. The transient
+# `daily/` prefix exercises the config-driven orphan exclusion.
+root = "vault"
+excluded_dirs = [".git"]
+rules_files = ["CLAUDE.md", "CLAUDE.local.md"]
+transient_prefixes = ["daily/"]
+orphan_min_chars = 300
+wikilink_pattern = '\[\[(.+?)\]\]'

@@ -1,0 +1,46 @@
+{
+  "_provenance": "FROZEN ORACLE — DO NOT EDIT. Hand-authored by the human conductor and committed BEFORE afk dispatch, so the executor asserts against a frozen file it cannot write (the same trust model as the brain_map-generated simple/expected.json). brain_map.py is hardcoded to my-brain and cannot generate an oracle for a foreign vault, so this second fixture is verified by hand: it uses different folder names (docs/refs/misc/daily) and a distinct topology (2 clusters of sizes 4 and 3, an articulation point, a transient daily note) to prove graphmark generalizes and is not hardcoded. Structural keys only; pagerank is deferred until afk #4 implements it, where networkx is the independent oracle runnable on any vault. If you believe a value is wrong, flag it — do not edit it to match your code.",
+  "stats": { "notes": 10, "edges": 7, "orphans": 3, "clusters": 2, "density": 0.7 },
+  "orphans": ["misc/orphan.md", "misc/stub.md"],
+  "hubs": [
+    ["docs/center.md", 3],
+    ["refs/beta.md", 3],
+    ["docs/alpha.md", 2],
+    ["misc/echo.md", 2],
+    ["refs/gamma.md", 2],
+    ["misc/foxtrot.md", 1],
+    ["refs/delta.md", 1]
+  ],
+  "clusters": [
+    ["docs/alpha.md", "docs/center.md", "refs/beta.md", "refs/gamma.md"],
+    ["misc/echo.md", "misc/foxtrot.md", "refs/delta.md"]
+  ],
+  "bridges": ["misc/echo.md"],
+  "neighborhood": [
+    {
+      "args": { "note": "docs/center.md", "depth": 1 },
+      "expected": {
+        "note": "docs/center.md",
+        "out": ["docs/alpha.md", "refs/beta.md", "refs/gamma.md"],
+        "back": []
+      }
+    },
+    {
+      "args": { "note": "refs/beta.md", "depth": 1 },
+      "expected": {
+        "note": "refs/beta.md",
+        "out": ["refs/gamma.md"],
+        "back": ["docs/alpha.md", "docs/center.md"]
+      }
+    },
+    {
+      "args": { "note": "refs/delta.md", "depth": 2 },
+      "expected": {
+        "note": "refs/delta.md",
+        "out": ["misc/echo.md"],
+        "back": [],
+        "two_hop": ["misc/foxtrot.md"]
+      }
+    }
+  ]
+}
