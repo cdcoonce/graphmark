@@ -1,0 +1,4 @@
+root = "vault"
+excluded_dirs = [".git"]
+rules_files = ["CLAUDE.md", "CLAUDE.local.md"]
+transient_prefixes = []

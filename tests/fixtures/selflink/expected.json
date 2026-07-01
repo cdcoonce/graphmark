@@ -1,0 +1,8 @@
+{
+  "_provenance": "FROZEN ORACLE — DO NOT EDIT. a.md links to itself ([[a]]) and to b. brain_map drops self-links (a note linking to itself forms no edge — verified empirically: a live-vault diff found graphmark's ONLY divergence from brain_map was a self-loop on Key Decisions.md). So the graph has exactly ONE edge, a->b; NO a->a self-loop. Hand-frozen by the human conductor before dispatch (afk-agent-system#654). If you believe a value is wrong, flag it — do not edit it to match your code.",
+  "stats": { "notes": 2, "edges": 1, "orphans": 0, "clusters": 1, "density": 0.5 },
+  "orphans": [],
+  "hubs": [["a.md", 1], ["b.md", 1]],
+  "clusters": [["a.md", "b.md"]],
+  "bridges": []
+}
