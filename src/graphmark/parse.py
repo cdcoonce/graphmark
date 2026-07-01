@@ -52,10 +52,13 @@ def _parse_frontmatter(raw: str) -> dict:
 class WikilinkExtractor:
     """Extracts raw wikilink displays from note text, excluding code spans."""
 
+    def __init__(self, pattern: str = r"\[\[(.+?)\]\]") -> None:
+        self._wikilink_re = re.compile(pattern)
+
     def extract(self, text: str) -> list[str]:
         text = _strip_fenced_blocks(text)
         text = _INLINE_CODE_RE.sub("", text)
-        return _WIKILINK_RE.findall(text)
+        return self._wikilink_re.findall(text)
 
 
 def parse_document(path: Path, root: Path) -> Document:

@@ -1,0 +1,7 @@
+root = "vault"
+scoped_folders = ["docs", "refs", "misc"]
+excluded_dirs = [".git"]
+rules_files = []
+wikilink_pattern = '\[\[(.+?)\]\]'
+orphan_min_chars = 0
+transient_prefixes = []

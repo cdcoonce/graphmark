@@ -1,0 +1,9 @@
+{
+  "_provenance": "FROZEN ORACLE — DO NOT EDIT. Hand-authored for alt fixture; proves no my-brain folder hardcoding. docs/center->alpha+beta, docs/alpha->beta; misc/orphan isolated.",
+  "orphans": ["misc/orphan.md"],
+  "hubs": [
+    ["docs/alpha.md", 2],
+    ["docs/center.md", 2],
+    ["refs/beta.md", 2]
+  ]
+}
