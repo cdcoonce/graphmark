@@ -1,5 +1,5 @@
 {
-  "_provenance": "FROZEN ORACLE — DO NOT EDIT. Hand-authored by the human conductor and committed BEFORE afk dispatch, so the executor asserts against a frozen file it cannot write (the same trust model as the brain_map-generated simple/expected.json). brain_map.py is hardcoded to my-brain and cannot generate an oracle for a foreign vault, so this second fixture is verified by hand: it uses different folder names (docs/refs/misc/daily) and a distinct topology (2 clusters of sizes 4 and 3, an articulation point, a transient daily note) to prove graphmark generalizes and is not hardcoded. pagerank was frozen for afk #4 via networkx's pure-python reference (_pagerank_python, alpha=0.85), cross-checked to reproduce simple/expected.json's pagerank exactly — so a correct pure-python impl must match BOTH fixtures, closing the single-fixture overfitting gap. If you believe a value is wrong, flag it — do not edit it to match your code.",
+  "_provenance": "FROZEN ORACLE — DO NOT EDIT. Hand-authored by the human conductor and committed BEFORE afk dispatch, so the executor asserts against a frozen file it cannot write (the same trust model as the brain_map-generated simple/expected.json). brain_map.py is hardcoded to my-brain and cannot generate an oracle for a foreign vault, so this second fixture is verified by hand: it uses different folder names (docs/refs/misc/daily) and a distinct topology (2 clusters of sizes 4 and 3, an articulation point, a transient daily note) to prove graphmark generalizes and is not hardcoded. pagerank was frozen for afk #4 via networkx's pure-python reference (_pagerank_python, alpha=0.85), cross-checked to reproduce simple/expected.json's pagerank exactly — so a correct pure-python impl must match BOTH fixtures, closing the single-fixture overfitting gap. `siloed` (afk #6 / issue #11) was computed by running brain_map.py's OWN siloed_notes() on this graph — note it deliberately includes the pre-existing orphans (daily/orphan/stub) as well as the nodes cut off behind the articulation point echo (delta/foxtrot); graphmark must reproduce brain_map's output verbatim (parity), quirk included. If you believe a value is wrong, flag it — do not edit it to match your code.",
   "stats": { "notes": 10, "edges": 7, "orphans": 3, "clusters": 2, "density": 0.7 },
   "orphans": ["misc/orphan.md", "misc/stub.md"],
   "hubs": [
@@ -16,6 +16,7 @@
     ["misc/echo.md", "misc/foxtrot.md", "refs/delta.md"]
   ],
   "bridges": ["misc/echo.md"],
+  "siloed": ["daily/2026-07-01.md", "misc/foxtrot.md", "misc/orphan.md", "misc/stub.md", "refs/delta.md"],
   "neighborhood": [
     {
       "args": { "note": "docs/center.md", "depth": 1 },
