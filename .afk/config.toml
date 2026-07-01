@@ -1,0 +1,5 @@
+# afk gate for graphmark.
+# The binary test gate: a change is only publishable if this command exits 0.
+# Structural core stays dependency-light — networkx only, NO fastembed/embeddings
+# (semantic gaps are deferred), so the gate is fast and hermetic.
+test_command = "uv run --extra dev ruff check . && uv run --extra dev ruff format --check . && uv run --extra dev pytest -q"

@@ -1,0 +1,12 @@
+# graphmark config for the my-brain vault — the reference config instance.
+# Mirrors brain_map.py's hardcoded assumptions, now expressed as data.
+
+scoped_folders = ["brain", "work", "personal", "org", "perf", "reference", "thinking"]
+excluded_dirs = [".brain", "templates", ".claude", "session-logs"]
+rules_files = ["CLAUDE.md", "CLAUDE.local.md"]
+
+# Literal string (single quotes) so the regex needs no escaping.
+wikilink_pattern = '\[\[(.+?)\]\]'
+
+orphan_min_chars = 300
+transient_prefixes = ["personal/tasks/", "work/tasks/"]

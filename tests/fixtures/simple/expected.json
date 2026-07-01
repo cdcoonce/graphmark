@@ -1,0 +1,55 @@
+{
+  "_provenance": "FROZEN ORACLE — DO NOT EDIT. Structural metrics are the verbatim output of the reference engine `brain_map.py --vault-root vault/`. `pagerank` is from networkx.pagerank(alpha=0.85). graphmark MUST reproduce these; if you believe a value is wrong, flag it — do not edit it to match your code. Regeneration steps: tests/fixtures/README.md.",
+  "stats": { "notes": 6, "edges": 5, "orphans": 2, "clusters": 1, "density": 0.83 },
+  "orphans": ["reference/island.md", "reference/stub.md"],
+  "hubs": [
+    ["brain/hub.md", 3],
+    ["personal/beta.md", 3],
+    ["brain/alpha.md", 2],
+    ["personal/gamma.md", 2]
+  ],
+  "clusters": [
+    ["brain/alpha.md", "brain/hub.md", "personal/beta.md", "personal/gamma.md"]
+  ],
+  "bridges": [],
+  "neighborhood": [
+    {
+      "args": { "note": "brain/hub.md", "depth": 1 },
+      "expected": {
+        "note": "brain/hub.md",
+        "out": ["brain/alpha.md", "personal/beta.md", "personal/gamma.md"],
+        "back": []
+      }
+    },
+    {
+      "args": { "note": "brain/hub.md", "depth": 2 },
+      "expected": {
+        "note": "brain/hub.md",
+        "out": ["brain/alpha.md", "personal/beta.md", "personal/gamma.md"],
+        "back": [],
+        "two_hop": []
+      }
+    },
+    {
+      "args": { "note": "personal/beta.md", "depth": 1 },
+      "expected": {
+        "note": "personal/beta.md",
+        "out": ["personal/gamma.md"],
+        "back": ["brain/alpha.md", "brain/hub.md"]
+      }
+    }
+  ],
+  "pagerank": {
+    "_alpha": 0.85,
+    "_tolerance": 0.0001,
+    "_dangling": "dangling nodes (island, stub) redistribute mass uniformly — networkx default; graphmark must match",
+    "ranking": [
+      ["personal/gamma.md", 0.3315],
+      ["personal/beta.md", 0.2384],
+      ["brain/alpha.md", 0.1289],
+      ["brain/hub.md", 0.1004],
+      ["reference/island.md", 0.1004],
+      ["reference/stub.md", 0.1004]
+    ]
+  }
+}
