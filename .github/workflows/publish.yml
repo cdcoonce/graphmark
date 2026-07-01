@@ -4,7 +4,7 @@ name: Publish to PyPI
 # Uses PyPI Trusted Publishing (OIDC) — no API token stored anywhere.
 # One-time PyPI setup: pypi.org -> your project -> Publishing -> add a trusted
 # publisher (or a "pending publisher" before the first release):
-#   owner: cdcoonce   repo: graphmark   workflow: publish.yml   environment: pypi
+#   owner: cdcoonce   repo: graphmark   workflow: publish.yml   (leave environment blank)
 
 on:
   push:
@@ -14,7 +14,6 @@ on:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
-    environment: pypi
     permissions:
       id-token: write # required for trusted publishing
     steps:
