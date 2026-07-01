@@ -1,5 +1,27 @@
-# afk gate for graphmark.
-# The binary test gate: a change is only publishable if this command exits 0.
-# Structural core stays dependency-light — networkx only, NO fastembed/embeddings
-# (semantic gaps are deferred), so the gate is fast and hermetic.
+# AFK config — graphmark. Executor enabled for Track-A work.
+#
+# Why almost everything here is Track-A (autonomous-safe): correctness is pinned by a
+# FROZEN DIFFERENTIAL ORACLE. Structural outputs are the verbatim results of the reference
+# engine (brain_map.py), and PageRank is checked against networkx — both independent of
+# anything the executor writes. A green gate therefore proves correctness, not just "doesn't
+# crash". The executor cannot regenerate the oracle, so it cannot game it.
+#
+# THE GATE MIRRORS CI (ruff + pytest). ruff/pytest are dev optional-deps, so the gate uses
+# `--extra dev` — a bare `uv run ruff` would not find them.
 test_command = "uv run --extra dev ruff check . && uv run --extra dev ruff format --check . && uv run --extra dev pytest -q"
+permission_mode = "acceptEdits"
+agent_prompt = """Implement the linked GitHub issue using test-driven development \
+(red-green-refactor). Assert behavior against the FROZEN fixtures in tests/fixtures/*/expected.json — \
+NEVER edit an expected.json to make a test pass; the oracle is the specification, and if you believe \
+a value is wrong, stop and flag it. Implement WITHIN the seeded interfaces in model.py / interfaces.py \
+/ config.py; do not redesign module boundaries or rename their types. Keep changes minimal and scoped \
+to the issue's acceptance criteria. See CLAUDE.md for the full reference-parity contract."""
+
+[caps]
+max_retries = 2
+timeout_seconds = 1800
+
+# Scheduled --cycle: read-only producers (scout files proposals from docs/ROADMAP.md;
+# harvest mines merged-PR review comments for prompt-rules). Executor runs on promoted issues.
+[cycle]
+producers = ["scout", "harvest"]
