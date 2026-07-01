@@ -1,0 +1,10 @@
+# Scoped fixture — exercises scoped_folders as an INCLUDE-list. Only docs/ and refs/ are in
+# scope; misc/ and junk/ must be excluded from the graph entirely (not scanned as notes, and
+# links ORIGINATING in them must not appear as edges). Proves include-list semantics.
+root = "vault"
+scoped_folders = ["docs", "refs"]
+excluded_dirs = [".git"]
+rules_files = ["CLAUDE.md", "CLAUDE.local.md"]
+transient_prefixes = []
+orphan_min_chars = 300
+wikilink_pattern = '\[\[(.+?)\]\]'

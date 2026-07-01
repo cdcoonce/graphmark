@@ -1,0 +1,13 @@
+{
+  "_provenance": "FROZEN ORACLE — DO NOT EDIT. Hand-authored by the human conductor and committed BEFORE afk dispatch (afk #5 / repo issue #10), per the oracle-pre-freeze discipline (afk-agent-system#654). config.scoped_folders=['docs','refs'] is an INCLUDE-list: only docs/one.md and refs/two.md are in the graph; misc/excluded.md and junk/ignored.md are NOT scanned, and the link from misc/excluded.md to one must NOT appear as a back-edge. Verified against the trusted engine by simulating the include-list via excluded_dirs=['misc','junk'] (equivalent), which reproduces these values. This oracle FAILS on current main (which scans all folders → notes=4) and passes only once scoped_folders is honored. If you believe a value is wrong, flag it — do not edit it to match your code.",
+  "stats": { "notes": 2, "edges": 1, "orphans": 0, "clusters": 1, "density": 0.5 },
+  "orphans": [],
+  "hubs": [
+    ["docs/one.md", 1],
+    ["refs/two.md", 1]
+  ],
+  "clusters": [
+    ["docs/one.md", "refs/two.md"]
+  ],
+  "bridges": []
+}
