@@ -1,0 +1,15 @@
+{
+  "_provenance": "FROZEN ORACLE — DO NOT EDIT. Computed by feeding graphmark's OWN built graph into brain_map.py's gaps() (the reference engine IS the spec), per afk-agent-system#654. The fake similar_fn (similar.json) has NO embeddings — graphmark owns the ranking/filter algorithm; the embedding source is injected. This oracle exercises every branch: c<->hub is dropped (already linked: hub->c), b<->c dropped (score 0.55 < threshold), e<->a dropped (0.95 > max_score), d<->e dropped (dismissed), a<->b deduped from reciprocal (0.88 kept over 0.70). Ranking is novelty-first: non-hub before hub, cross-folder before same-folder, then score desc — which is why hub<->d (0.80) ranks BELOW d<->a (0.75), since docs/hub.md has degree 3 >= hub_degree. If you believe a value is wrong, flag it — do not edit it to match your code.",
+  "params": {
+    "threshold": 0.6,
+    "k": 8,
+    "max_score": 0.92,
+    "hub_degree": 3,
+    "dismissed": ["weaklink|misc/d.md|refs/e.md"]
+  },
+  "gaps": [
+    { "a": "docs/a.md", "b": "refs/b.md", "score": 0.88, "sig": "weaklink|docs/a.md|refs/b.md" },
+    { "a": "misc/d.md", "b": "docs/a.md", "score": 0.75, "sig": "weaklink|docs/a.md|misc/d.md" },
+    { "a": "docs/hub.md", "b": "misc/d.md", "score": 0.8, "sig": "weaklink|docs/hub.md|misc/d.md" }
+  ]
+}

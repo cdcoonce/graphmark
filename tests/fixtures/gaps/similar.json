@@ -1,0 +1,9 @@
+{
+  "_note": "Deterministic FAKE similar_fn for the gaps oracle — NO embeddings. Maps rel -> [[other, score], ...]. The test wraps this as similar_fn(rel, k) = mapping.get(rel, [])[:k]. Designed to exercise every gaps() branch; see expected.json for how each pair is handled.",
+  "docs/hub.md": [["misc/d.md", 0.8]],
+  "misc/d.md": [["refs/e.md", 0.85], ["docs/a.md", 0.75]],
+  "docs/a.md": [["refs/b.md", 0.88]],
+  "refs/b.md": [["docs/a.md", 0.7], ["misc/c.md", 0.55]],
+  "refs/e.md": [["docs/a.md", 0.95]],
+  "misc/c.md": [["docs/hub.md", 0.9]]
+}

@@ -1,0 +1,9 @@
+# Gaps fixture config. Small vault (docs/refs/misc) with one hub (degree 3) and two isolated
+# notes, sized to exercise every gaps() branch: already-linked filter, threshold, max_score,
+# dismiss, reciprocal dedup, cross-folder ranking, and hub demotion.
+root = "vault"
+excluded_dirs = [".git"]
+rules_files = ["CLAUDE.md", "CLAUDE.local.md"]
+transient_prefixes = []
+orphan_min_chars = 300
+wikilink_pattern = '\[\[(.+?)\]\]'
