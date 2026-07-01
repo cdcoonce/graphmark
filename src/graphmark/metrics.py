@@ -131,6 +131,69 @@ def pagerank(graph: VaultGraph, n: int = 10, alpha: float = 0.85) -> list[list]:
     return [[path, score] for path, score in pairs[:n]]
 
 
+def gaps(
+    graph: VaultGraph,
+    similar_fn,
+    threshold: float = 0.0,
+    k: int = 5,
+    note: str | None = None,
+    dismissed: set | frozenset = frozenset(),
+    exclude_prefixes: tuple = (),
+    max_score: float | None = None,
+    hub_degree: int | None = None,
+    targets: list | None = None,
+) -> list[dict]:
+    """Return link-gap suggestions ranked by novelty (non-hub, cross-folder, score-desc)."""
+    if note is not None:
+        target_list = [note]
+    elif targets is not None:
+        target_list = targets
+    else:
+        target_list = list(graph.nodes.keys())
+
+    G = _undirected(graph)
+
+    def _hub(r: str) -> bool:
+        return hub_degree is not None and G.degree(r) >= hub_degree
+
+    dedup_map: dict = {}
+
+    for rel in target_list:
+        if any(rel.startswith(p) for p in exclude_prefixes):
+            continue
+
+        linked = graph.out_links.get(rel, set()) | graph.back_links.get(rel, set())
+
+        for other, score in similar_fn(rel, k):
+            if other == rel:
+                continue
+            if other in linked:
+                continue
+            if score < threshold:
+                continue
+            if any(other.startswith(p) for p in exclude_prefixes):
+                continue
+            if max_score is not None and score > max_score:
+                continue
+
+            sig = "weaklink|" + "|".join(sorted([rel, other]))
+            if sig in dismissed:
+                continue
+
+            key = frozenset({rel, other})
+            if key not in dedup_map or score > dedup_map[key][2]:
+                dedup_map[key] = (rel, other, score, sig)
+
+    def _rank_key(item):
+        a, b, score, _sig = item
+        hubby = _hub(a) or _hub(b)
+        cross = a.split("/", 1)[0] != b.split("/", 1)[0]
+        return (hubby, not cross, -score, a, b)
+
+    candidates = sorted(dedup_map.values(), key=_rank_key)
+    return [{"a": a, "b": b, "score": round(s, 4), "sig": sig} for a, b, s, sig in candidates]
+
+
 def neighborhood(graph: VaultGraph, note: str, depth: int = 1) -> dict:
     """Return out/back neighbors (and two_hop when depth>=2) for a note."""
     out = sorted(graph.out_links.get(note, set()))

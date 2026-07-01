@@ -12,6 +12,7 @@ from graphmark.graph import NormalizeResolver, VaultGraph
 from graphmark.metrics import (
     bridges,
     clusters,
+    gaps,
     hubs,
     neighborhood,
     orphans,
@@ -64,6 +65,8 @@ def main() -> None:
     exp_p = sub.add_parser("export")
     exp_p.add_argument("format", choices=["dot"])
 
+    sub.add_parser("gaps")
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -90,6 +93,8 @@ def main() -> None:
         print(to_json(pagerank(graph, n=args.n, alpha=args.alpha)))
     elif args.command == "export" and args.format == "dot":
         print(to_dot(graph))
+    elif args.command == "gaps":
+        print(to_json(gaps(graph, lambda _rel, _k: [])))
 
 
 if __name__ == "__main__":
