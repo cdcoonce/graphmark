@@ -73,6 +73,46 @@ def bridges(graph: VaultGraph) -> list[str]:
     return sorted(nx.articulation_points(G))
 
 
+def pagerank(graph: VaultGraph, n: int = 10, alpha: float = 0.85) -> list[list]:
+    """Pure-python power iteration PageRank (matches networkx _pagerank_python).
+
+    Dangling nodes (no out-edges) redistribute mass uniformly across all nodes.
+    Returns top-n [path, score] pairs sorted score-desc then path-asc.
+    """
+    nodes = list(graph.nodes.keys())
+    N = len(nodes)
+    if N == 0:
+        return []
+
+    out_links = {node: graph.out_links.get(node, set()) for node in nodes}
+    dangling = [node for node in nodes if not out_links[node]]
+    dangling_weight = 1.0 / N
+
+    x: dict[str, float] = {node: 1.0 / N for node in nodes}
+
+    for _ in range(100):
+        xlast = x
+        x = dict.fromkeys(xlast, 0.0)
+        danglesum = alpha * sum(xlast[node] for node in dangling)
+
+        for src in nodes:
+            out = out_links[src]
+            if out:
+                share = alpha * xlast[src] / len(out)
+                for dst in out:
+                    x[dst] += share
+
+        for node in nodes:
+            x[node] += danglesum * dangling_weight + (1.0 - alpha) * dangling_weight
+
+        err = sum(abs(x[node] - xlast[node]) for node in nodes)
+        if err < N * 1e-6:
+            break
+
+    pairs = sorted(x.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [[path, score] for path, score in pairs[:n]]
+
+
 def neighborhood(graph: VaultGraph, note: str, depth: int = 1) -> dict:
     """Return out/back neighbors (and two_hop when depth>=2) for a note."""
     out = sorted(graph.out_links.get(note, set()))
