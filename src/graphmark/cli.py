@@ -9,7 +9,16 @@ from pathlib import Path
 from graphmark.config import VaultConfig, load_config
 from graphmark.export import to_dot, to_json
 from graphmark.graph import NormalizeResolver, VaultGraph
-from graphmark.metrics import bridges, clusters, hubs, neighborhood, orphans, pagerank, stats
+from graphmark.metrics import (
+    bridges,
+    clusters,
+    hubs,
+    neighborhood,
+    orphans,
+    pagerank,
+    siloed_notes,
+    stats,
+)
 from graphmark.parse import WikilinkExtractor
 
 
@@ -42,6 +51,7 @@ def main() -> None:
 
     sub.add_parser("clusters")
     sub.add_parser("bridges")
+    sub.add_parser("siloed")
 
     nb_p = sub.add_parser("neighborhood")
     nb_p.add_argument("--note", required=True)
@@ -72,6 +82,8 @@ def main() -> None:
         print(to_json(clusters(graph)))
     elif args.command == "bridges":
         print(to_json(bridges(graph)))
+    elif args.command == "siloed":
+        print(to_json(siloed_notes(graph)))
     elif args.command == "neighborhood":
         print(to_json(neighborhood(graph, args.note, depth=args.depth)))
     elif args.command == "pagerank":

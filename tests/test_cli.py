@@ -14,7 +14,16 @@ import pytest
 
 from graphmark.config import VaultConfig, load_config
 from graphmark.graph import NormalizeResolver, VaultGraph
-from graphmark.metrics import bridges, clusters, hubs, neighborhood, orphans, pagerank, stats
+from graphmark.metrics import (
+    bridges,
+    clusters,
+    hubs,
+    neighborhood,
+    orphans,
+    pagerank,
+    siloed_notes,
+    stats,
+)
 from graphmark.parse import WikilinkExtractor
 
 SIMPLE_CONFIG = Path(__file__).parent / "fixtures" / "simple" / "config.toml"
@@ -165,3 +174,13 @@ class TestExportDotCommand:
             capsys,
         )
         assert json.loads(out) == stats(simple_graph)
+
+
+class TestSiloedCommand:
+    def test_emits_valid_json(self, capsys):
+        out = _run_cli(["graphmark", "--config", str(SIMPLE_CONFIG), "siloed"], capsys)
+        assert isinstance(json.loads(out), list)
+
+    def test_matches_metric_output(self, simple_graph, capsys):
+        out = _run_cli(["graphmark", "--config", str(SIMPLE_CONFIG), "siloed"], capsys)
+        assert json.loads(out) == siloed_notes(simple_graph)

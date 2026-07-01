@@ -73,6 +73,24 @@ def bridges(graph: VaultGraph) -> list[str]:
     return sorted(nx.articulation_points(G))
 
 
+def siloed_notes(graph: VaultGraph) -> list[str]:
+    """Return notes reachable from the mainland only through a single articulation point.
+
+    For each bridge b: remove b, find connected components sorted size-desc; every
+    component except the largest (mainland) is an island. Collect all island nodes
+    (including degree-0 orphans that become singleton islands). Return sorted unique list.
+    """
+    G = _undirected(graph)
+    island_nodes: set[str] = set()
+    for bridge in nx.articulation_points(G):
+        H = G.copy()
+        H.remove_node(bridge)
+        components = sorted(nx.connected_components(H), key=lambda c: -len(c))
+        for component in components[1:]:
+            island_nodes.update(component)
+    return sorted(island_nodes)
+
+
 def pagerank(graph: VaultGraph, n: int = 10, alpha: float = 0.85) -> list[list]:
     """Pure-python power iteration PageRank (matches networkx _pagerank_python).
 
