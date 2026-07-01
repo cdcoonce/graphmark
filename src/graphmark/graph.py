@@ -97,7 +97,7 @@ class VaultGraph:
         for doc in docs:
             for display in extractor.extract(doc.text):
                 target = resolver.resolve(display, catalog)
-                if target is not None:
+                if target is not None and target != doc.rel_path:
                     out_links[doc.rel_path].add(target)
 
         for src, targets in out_links.items():
