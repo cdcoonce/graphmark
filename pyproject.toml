@@ -4,7 +4,26 @@ version = "0.1.0"
 description = "Deterministic knowledge-graph analysis for markdown / [[wikilink]] vaults."
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Charles Coonce", email = "charlescoonce@gmail.com" }]
+keywords = ["knowledge-graph", "markdown", "wikilink", "obsidian", "graph", "pagerank"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Text Processing :: Markup :: Markdown",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
 dependencies = ["networkx>=3.0"]
+
+[project.urls]
+Homepage = "https://github.com/cdcoonce/graphmark"
+Repository = "https://github.com/cdcoonce/graphmark"
+Issues = "https://github.com/cdcoonce/graphmark/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.6"]
@@ -18,6 +37,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/graphmark"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/graphmark", "tests", "docs/ROADMAP.md", "README.md", "LICENSE", "pyproject.toml"]
 
 [tool.ruff]
 line-length = 100
