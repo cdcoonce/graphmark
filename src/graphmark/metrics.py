@@ -154,7 +154,7 @@ def gaps(
     G = _undirected(graph)
 
     def _hub(r: str) -> bool:
-        return hub_degree is not None and G.degree(r) >= hub_degree
+        return hub_degree is not None and r in G and G.degree(r) >= hub_degree
 
     dedup_map: dict = {}
 
