@@ -1,0 +1,4 @@
+{
+  "_note": "Out-of-graph similar_fn for afk #10: docs/a.md is 'similar' to misc/ghost.md, which is NOT a node in the graph (no such file). Exercises the defensive-degree path — gaps() must rank it (ghost = non-hub, degree 0) instead of crashing on G.degree(missing).",
+  "docs/a.md": [["misc/ghost.md", 0.9]]
+}

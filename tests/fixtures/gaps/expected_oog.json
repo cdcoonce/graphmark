@@ -1,0 +1,7 @@
+{
+  "_provenance": "FROZEN ORACLE — DO NOT EDIT. Computed via brain_map.py's gaps() on the gaps/ graph with the out-of-graph similar_fn (similar_oog.json). brain_map treats a note outside the graph as degree 0 (non-hub) rather than crashing; graphmark must match. afk-agent-system#654.",
+  "params": { "threshold": 0.6, "k": 8, "max_score": 0.92, "hub_degree": 3 },
+  "gaps": [
+    { "a": "docs/a.md", "b": "misc/ghost.md", "score": 0.9, "sig": "weaklink|docs/a.md|misc/ghost.md" }
+  ]
+}
