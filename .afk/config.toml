@@ -15,7 +15,9 @@ agent_prompt = """Implement the linked GitHub issue using test-driven developmen
 NEVER edit an expected.json to make a test pass; the oracle is the specification, and if you believe \
 a value is wrong, stop and flag it. Implement WITHIN the seeded interfaces in model.py / interfaces.py \
 / config.py; do not redesign module boundaries or rename their types. Keep changes minimal and scoped \
-to the issue's acceptance criteria. See CLAUDE.md for the full reference-parity contract."""
+to the issue's acceptance criteria. See CLAUDE.md for the full reference-parity contract. If the issue body explicitly \
+directs a change to the seeded surface (a human-triaged decision recorded in the issue), the issue \
+wins over the do-not-redesign default."""
 
 [caps]
 max_retries = 2

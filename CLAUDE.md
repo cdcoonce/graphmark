@@ -16,7 +16,8 @@ This file governs autonomous (afk) work in this repo. It is the contract.
   fixture is wrong, stop and flag it — do not "fix" the oracle to match your code.
 - **Implement within the seeded interfaces.** `model.py`, `interfaces.py`, and `config.py`'s
   `VaultConfig` define the boundaries. Implement against them; do not redesign module boundaries or
-  rename their types.
+  rename their types. Exception: an issue that **explicitly directs** a change to the seeded surface
+  (a human-triaged decision, recorded in the issue) wins over this default — follow the issue.
 - **TDD, always.** Write the failing test first (asserting against the frozen fixture where
   applicable), watch it fail, implement the minimum to pass, refactor. Small, single-purpose PRs.
 - **Human merge gate.** Nothing merges without human review. Security-sensitive changes get extra
