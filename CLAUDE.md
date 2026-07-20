@@ -2,7 +2,7 @@
 
 `graphmark` is a **deterministic knowledge-graph analysis library + CLI** for markdown /
 `[[wikilink]]` vaults. It generalizes a proven vault-specific graph engine (`brain_map.py`) into a
-standalone, config-driven, pip-installable package that works on *any* Obsidian-family vault.
+standalone, config-driven, pip-installable package that works on _any_ Obsidian-family vault.
 
 This file governs autonomous (afk) work in this repo. It is the contract.
 
@@ -30,7 +30,7 @@ A change is publishable only if this exits 0 (see `.afk/config.toml`):
 uv run --extra dev ruff check . && uv run --extra dev ruff format --check . && uv run --extra dev pytest -q
 ```
 
-## Architecture (three layers — keep them separate)
+## Architecture (four parts — keep them separate)
 
 1. **Engine** (`parse.py`, `graph.py`, `metrics.py`) — knows nothing about any specific vault.
    Takes documents + a `VaultConfig` + pluggable `LinkExtractor`/`Resolver` → a `Graph` → metrics.
@@ -38,31 +38,40 @@ uv run --extra dev ruff check . && uv run --extra dev ruff format --check . && u
    excluded dirs, rules files, orphan threshold, wikilink syntax, transient prefixes) is
    config-driven. `configs/my-brain.toml` is the reference instance.
 3. **Surface** (`export.py`, `cli.py`) — JSON + DOT output; CLI entrypoint.
+4. **Dismissal store** (`dismiss.py`) — content-hash weaklink dismissal record consumed by
+   `gaps()` callers; a dismissed pair stays suppressed only while both notes exist with unchanged
+   content (SHA1). Store lives under the vault root (`.claude/data/connect-dismissed.json`).
 
 ## Reference-parity behavior (must match)
 
 - **Link resolution:** normalize (lowercase, punctuation→space, collapse whitespace); resolve a bare
-  `[[Note]]` by exact normalized-basename equality *only when unambiguous* (one path for that key);
+  `[[Note]]` by exact normalized-basename equality _only when unambiguous_ (one path for that key);
   resolve `[[folder/note]]` by unique path-suffix; strip `[[Note|alias]]`→"Note" and
   `[[Note#Section]]`→"Note"; ignore links inside code spans (fenced ``` / ~~~ / inline backticks);
   unresolved links produce no edge.
 - **Degree:** undirected — `neighbors(n) = out_links[n] ∪ back_links[n]`.
 - **orphans:** degree-0 (honoring `transient_prefixes` exclusion). **hubs:** top-N by degree, ties by
   path order. **clusters:** connected components (singletons omitted, sorted size-desc then members
-  sorted). **bridges:** articulation points. **neighborhood:** 1-hop, plus 2-hop when depth ≥ 2.
+  sorted). **bridges:** articulation points. **siloed:** notes reachable from the mainland only
+  through a single articulation point. **neighborhood:** 1-hop, plus 2-hop when depth ≥ 2.
 
 ## Net-new surface (in scope)
 
-- `metrics.pagerank(n)` — real PageRank centrality (networkx), beyond degree-hubs.
+- `metrics.pagerank(n)` — pure-python power-iteration PageRank (verified against networkx).
+- `metrics.gaps(graph, similar_fn, ...)` — **the gaps contract**: graphmark owns the deterministic
+  ranking/filtering (already-linked / self / threshold / max-score / prefix / dismissed filters,
+  reciprocal dedup, novelty-first ordering); the similarity source is **injected by the caller**.
+  No embeddings ship in this package — the gate stays fastembed-free.
 - `export.to_dot()` — Graphviz DOT output.
 - Pluggable `LinkExtractor` / `Resolver` (only the wikilink/normalize implementations are required
   now; the interfaces exist so alternates can be added later).
 
-## Out of scope (do NOT build — deferred by design)
+## Out of scope (do NOT build — dropped by design)
 
-Semantic "gaps" / embeddings, betweenness centrality, Louvain/Leiden community detection,
-CSV/GML/Cypher export, incremental/cached builds, any LLM "propose" pass. Keep the gate
-fastembed-free.
+Embedding/similarity backends inside the package (similarity is injected — see the gaps contract),
+betweenness centrality, Louvain/Leiden community detection, CSV/GML/Cypher export,
+incremental/cached builds, any LLM "propose" pass, MCP/retrieval surface. Keep the gate
+fastembed-free. Current direction lives in `docs/ROADMAP.md`.
 
 Provenance: design + plan of record live in the owner's vault
 (`thinking/2026-06-30-graphmark-seed-design.md`, `-implementation-plan.md`).

@@ -1,8 +1,8 @@
 """Vault configuration — the domain seam that makes the engine general.
 
-``VaultConfig`` holds every vault-specific policy the engine consults. ``load_config`` (TOML →
-VaultConfig) is intentionally left unimplemented; wiring config through the engine is afk Issue #3.
-Fixture tests may construct ``VaultConfig`` directly.
+``VaultConfig`` holds every vault-specific policy the engine consults. ``load_config`` reads a
+TOML file into a ``VaultConfig`` (paths resolved relative to the TOML's directory). Fixture tests
+may construct ``VaultConfig`` directly.
 """
 
 from __future__ import annotations
