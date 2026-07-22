@@ -23,6 +23,14 @@ wins over the do-not-redesign default."""
 max_retries = 2
 timeout_seconds = 1800
 
+# Tier map. default_tier defaults to 'cheap', which the driver requires model.cheap to
+# resolve — without this section every cycle aborts at config load. The promoted backlog
+# is all afk:cheap, so cheap is the working tier; frontier is available for escalation.
+[model]
+cheap = "sonnet"
+frontier = "opus"
+default_tier = "cheap"
+
 # Scheduled --cycle: read-only producers (scout files proposals from docs/ROADMAP.md;
 # harvest mines merged-PR review comments for prompt-rules). Executor runs on promoted issues.
 [cycle]
