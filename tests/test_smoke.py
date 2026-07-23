@@ -4,8 +4,10 @@ afk replaces/augments this with real tests (asserting against tests/fixtures/*/e
 builds each module.
 """
 
+import importlib.metadata
+
 import graphmark
 
 
 def test_package_imports():
-    assert graphmark.__version__ == "0.1.0"
+    assert graphmark.__version__ == importlib.metadata.version("graphmark")
