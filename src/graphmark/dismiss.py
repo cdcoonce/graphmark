@@ -40,7 +40,13 @@ def load_dismissed(root: Path, *, path: str = _DEFAULT_PATH) -> dict:
     dismissed_file = root / path
     if not dismissed_file.exists():
         return {}
-    return json.loads(dismissed_file.read_text())
+    try:
+        loaded = json.loads(dismissed_file.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
+    if not isinstance(loaded, dict):
+        return {}
+    return loaded
 
 
 def active_dismissed_sigs(root: Path, *, path: str = _DEFAULT_PATH) -> set[str]:
