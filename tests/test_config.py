@@ -7,6 +7,7 @@ Path A — alt fixture via load_config reproduces alt/expected.json exactly, inc
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 
@@ -46,9 +47,23 @@ class TestLoadConfig:
         assert cfg.scoped_folders == default.scoped_folders
         assert cfg.excluded_dirs == default.excluded_dirs
         assert cfg.rules_files == default.rules_files
-        assert cfg.wikilink_pattern == default.wikilink_pattern
-        assert cfg.orphan_min_chars == default.orphan_min_chars
         assert cfg.transient_prefixes == default.transient_prefixes
+
+    def test_vault_config_has_no_wikilink_pattern_or_orphan_min_chars_fields(self):
+        field_names = {f.name for f in dataclasses.fields(VaultConfig)}
+        assert "wikilink_pattern" not in field_names
+        assert "orphan_min_chars" not in field_names
+
+    def test_unknown_toml_keys_are_silently_ignored(self, tmp_path):
+        toml = tmp_path / "with-unknown-keys.toml"
+        toml.write_text(
+            'root = "vault"\n'
+            'wikilink_pattern = "\\\\[\\\\[(.+?)\\\\]\\\\]"\n'
+            "orphan_min_chars = 300\n"
+        )
+        cfg = load_config(toml)
+        assert not hasattr(cfg, "wikilink_pattern")
+        assert not hasattr(cfg, "orphan_min_chars")
 
     def test_transient_prefixes_loaded_as_tuple(self):
         cfg = load_config(ALT_DIR / "config.toml")

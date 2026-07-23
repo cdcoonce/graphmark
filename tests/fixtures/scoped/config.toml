@@ -6,5 +6,3 @@ scoped_folders = ["docs", "refs"]
 excluded_dirs = [".git"]
 rules_files = ["CLAUDE.md", "CLAUDE.local.md"]
 transient_prefixes = []
-orphan_min_chars = 300
-wikilink_pattern = '\[\[(.+?)\]\]'
