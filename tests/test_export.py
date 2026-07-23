@@ -78,3 +78,13 @@ class TestToDot:
         edge_count = result.count(" -> ")
         expected = sum(len(targets) for targets in simple_graph.out_links.values())
         assert edge_count == expected
+
+    def test_escapes_quotes_and_backslashes(self):
+        graph = VaultGraph(
+            nodes={'weird"note\\path.md': None, "plain.md": None},
+            out_links={'weird"note\\path.md': {"plain.md"}},
+            back_links={"plain.md": {'weird"note\\path.md'}},
+        )
+        result = to_dot(graph)
+        assert '    "weird\\"note\\\\path.md";' in result
+        assert '    "weird\\"note\\\\path.md" -> "plain.md";' in result
