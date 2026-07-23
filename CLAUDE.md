@@ -34,7 +34,8 @@ uv run --extra dev ruff check . && uv run --extra dev ruff format --check . && u
 ## Architecture (four parts — keep them separate)
 
 1. **Engine** (`parse.py`, `graph.py`, `metrics.py`) — knows nothing about any specific vault.
-   Takes documents + a `VaultConfig` + pluggable `LinkExtractor`/`Resolver` → a `Graph` → metrics.
+   Takes documents + a `VaultConfig` + pluggable `LinkExtractor`/`Resolver` → a `VaultGraph` →
+   metrics.
 2. **Config/policy** (`config.py`) — the domain seam. All vault-specific behavior (scoped folders,
    excluded dirs, rules files, orphan threshold, wikilink syntax, transient prefixes) is
    config-driven. `configs/my-brain.toml` is the reference instance.
