@@ -50,6 +50,12 @@ class TestLoadConfig:
         assert cfg.orphan_min_chars == default.orphan_min_chars
         assert cfg.transient_prefixes == default.transient_prefixes
 
+    def test_missing_root_key_raises_value_error(self, tmp_path):
+        toml = tmp_path / "no-root.toml"
+        toml.write_text('scoped_folders = ["notes"]\n')
+        with pytest.raises(ValueError, match=rf"{toml}.*root"):
+            load_config(toml)
+
     def test_transient_prefixes_loaded_as_tuple(self):
         cfg = load_config(ALT_DIR / "config.toml")
         assert isinstance(cfg.transient_prefixes, tuple)
