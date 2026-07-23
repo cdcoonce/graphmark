@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 from graphmark.model import Document
@@ -60,8 +61,17 @@ class WikilinkExtractor:
 
 def parse_document(path: Path, root: Path) -> Document:
     """Parse a markdown note into a Document, splitting YAML frontmatter from body."""
-    raw = path.read_text(encoding="utf-8")
     rel_path = path.relative_to(root).as_posix()
+    raw_bytes = path.read_bytes()
+    try:
+        raw = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        raw = raw_bytes.decode("utf-8", errors="replace")
+        print(
+            f"graphmark: warning: {rel_path}: invalid UTF-8, decoded with replacement",
+            file=sys.stderr,
+        )
+    raw = raw.replace("\r\n", "\n").replace("\r", "\n")
     m = _FM_RE.match(raw)
     if m:
         frontmatter = _parse_frontmatter(m.group(1))

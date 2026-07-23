@@ -89,3 +89,33 @@ class TestParseDocument:
         doc = parse_document(note, tmp_path)
         assert doc.frontmatter == {}
         assert "[[link]]" in doc.text
+
+    def test_invalid_utf8_does_not_raise(self, tmp_path):
+        note = tmp_path / "bad.md"
+        note.write_bytes(b"# Bad note\n\nSome \xff\xfe invalid bytes and [[link]].")
+        doc = parse_document(note, tmp_path)
+        assert doc.rel_path == "bad.md"
+        assert "[[link]]" in doc.text
+
+    def test_invalid_utf8_emits_stderr_warning(self, tmp_path, capsys):
+        note = tmp_path / "bad.md"
+        note.write_bytes(b"# Bad note\n\n\xff\xfe invalid bytes.")
+        parse_document(note, tmp_path)
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "graphmark: warning: bad.md: invalid UTF-8, decoded with replacement" in captured.err
+
+    def test_valid_utf8_emits_no_warning(self, tmp_path, capsys):
+        note = tmp_path / "plain.md"
+        note.write_text("# Plain\n\nSome [[link]] here.")
+        parse_document(note, tmp_path)
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    def test_crlf_frontmatter_still_parsed(self, tmp_path):
+        note = tmp_path / "crlf.md"
+        note.write_bytes(b"---\r\ndate: 2026-07-23\r\n---\r\nBody with [[link]].")
+        doc = parse_document(note, tmp_path)
+        assert doc.frontmatter == {"date": "2026-07-23"}
+        assert not doc.text.lstrip().startswith("---")
+        assert "[[link]]" in doc.text
