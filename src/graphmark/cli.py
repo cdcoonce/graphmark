@@ -12,7 +12,6 @@ from graphmark.graph import NormalizeResolver, VaultGraph
 from graphmark.metrics import (
     bridges,
     clusters,
-    gaps,
     hubs,
     neighborhood,
     orphans,
@@ -94,7 +93,12 @@ def main() -> None:
     elif args.command == "export" and args.format == "dot":
         print(to_dot(graph))
     elif args.command == "gaps":
-        print(to_json(gaps(graph, lambda _rel, _k: [])))
+        print(
+            "gaps requires an injected similarity source; use the library API "
+            "(graphmark.metrics.gaps) — see README",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
 
 if __name__ == "__main__":

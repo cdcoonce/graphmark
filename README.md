@@ -41,13 +41,12 @@ graphmark siloed                         --root /path/to/vault
 graphmark neighborhood --note a/b.md --depth 2  --root /path/to/vault
 graphmark pagerank --n 10 --alpha 0.85   --root /path/to/vault
 graphmark export dot                     --root /path/to/vault > graph.dot
-graphmark gaps                           --root /path/to/vault
 ```
 
 Note: `gaps` is a **library-first** metric — it ranks and filters link-gap candidates over a
 similarity function you inject (`metrics.gaps(graph, similar_fn, ...)`); the package itself ships no
-embeddings. The CLI subcommand currently runs with an empty similarity source and returns `[]`;
-wiring a real similarity provider into the CLI is planned for 0.2.
+embeddings. `graphmark gaps` on the CLI exits 2 with guidance to use the library API instead of
+silently printing `[]`; wiring a real similarity provider into the CLI is planned for 0.2.
 
 ## Library
 

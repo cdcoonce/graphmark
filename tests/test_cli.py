@@ -184,3 +184,30 @@ class TestSiloedCommand:
     def test_matches_metric_output(self, simple_graph, capsys):
         out = _run_cli(["graphmark", "--config", str(SIMPLE_CONFIG), "siloed"], capsys)
         assert json.loads(out) == siloed_notes(simple_graph)
+
+
+class TestGapsCommand:
+    def test_exits_2_with_guidance(self, capsys):
+        from graphmark.cli import main
+
+        with (
+            patch.object(sys, "argv", ["graphmark", "--config", str(SIMPLE_CONFIG), "gaps"]),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+
+        assert exc_info.value.code == 2
+        err = capsys.readouterr().err
+        assert "gaps requires an injected similarity source" in err
+        assert "graphmark.metrics.gaps" in err
+
+    def test_emits_no_stdout(self, capsys):
+        from graphmark.cli import main
+
+        with (
+            patch.object(sys, "argv", ["graphmark", "--config", str(SIMPLE_CONFIG), "gaps"]),
+            pytest.raises(SystemExit),
+        ):
+            main()
+
+        assert capsys.readouterr().out == ""
