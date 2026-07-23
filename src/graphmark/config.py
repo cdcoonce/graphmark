@@ -2,7 +2,8 @@
 
 ``VaultConfig`` holds every vault-specific policy the engine consults. ``load_config`` reads a
 TOML file into a ``VaultConfig`` (paths resolved relative to the TOML's directory). Fixture tests
-may construct ``VaultConfig`` directly.
+may construct ``VaultConfig`` directly. TOML keys with no matching ``VaultConfig`` field (unknown
+keys, or fields removed from the schema) are silently ignored, not validated against.
 """
 
 from __future__ import annotations
@@ -20,8 +21,6 @@ class VaultConfig:
     scoped_folders: list[str] = field(default_factory=list)
     excluded_dirs: list[str] = field(default_factory=list)
     rules_files: list[str] = field(default_factory=lambda: ["CLAUDE.md", "CLAUDE.local.md"])
-    wikilink_pattern: str = r"\[\[(.+?)\]\]"
-    orphan_min_chars: int = 300
     transient_prefixes: tuple[str, ...] = ()
 
 
@@ -38,7 +37,5 @@ def load_config(path: Path) -> VaultConfig:
         scoped_folders=data.get("scoped_folders", []),
         excluded_dirs=data.get("excluded_dirs", []),
         rules_files=data.get("rules_files", ["CLAUDE.md", "CLAUDE.local.md"]),
-        wikilink_pattern=data.get("wikilink_pattern", r"\[\[(.+?)\]\]"),
-        orphan_min_chars=data.get("orphan_min_chars", 300),
         transient_prefixes=tuple(data.get("transient_prefixes", [])),
     )

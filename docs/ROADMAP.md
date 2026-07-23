@@ -52,8 +52,7 @@ _Where we're going:_ **v0.2.0 — every error path tested, every public knob rea
   `dismiss.load_dismissed` / `active_dismissed_sigs`; `load_config` clear error on missing keys;
   DOT identifier escaping in `to_dot`; defined behavior for `neighborhood` on an unknown note.
 - Cut or wire dead surface: `model.Edge/Graph/Finding` (never consumed); the CLI `gaps` stub
-  (null `similar_fn` — always `[]`); the silent no-op config knobs `wikilink_pattern` and
-  `orphan_min_chars` (wire them or delete them); make the dismissal-store path injectable instead
+  (null `similar_fn` — always `[]`); make the dismissal-store path injectable instead
   of hardcoding `.claude/data/connect-dismissed.json`.
 - Move the validated gaps banding policy (threshold / max-score / k / hub-degree defaults) from the
   consumer's argparse into the package so any consumer gets the proven band.
