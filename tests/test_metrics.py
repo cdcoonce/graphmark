@@ -10,7 +10,19 @@ import pytest
 
 from graphmark.config import VaultConfig, load_config
 from graphmark.graph import NormalizeResolver, VaultGraph
-from graphmark.metrics import bridges, clusters, hubs, neighborhood, orphans, siloed_notes, stats
+from graphmark.metrics import (
+    GAPS_DEFAULT_HUB_DEGREE,
+    GAPS_DEFAULT_K,
+    GAPS_DEFAULT_MAX_SCORE,
+    GAPS_DEFAULT_THRESHOLD,
+    bridges,
+    clusters,
+    hubs,
+    neighborhood,
+    orphans,
+    siloed_notes,
+    stats,
+)
 from graphmark.parse import WikilinkExtractor
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "simple"
@@ -196,3 +208,11 @@ class TestSiloedNotes:
     def test_no_duplicates(self, alt_graph):
         result = siloed_notes(alt_graph)
         assert len(result) == len(set(result))
+
+
+class TestGapsDefaultBand:
+    def test_matches_validated_policy(self):
+        assert GAPS_DEFAULT_THRESHOLD == 0.6
+        assert GAPS_DEFAULT_MAX_SCORE == 0.92
+        assert GAPS_DEFAULT_K == 8
+        assert GAPS_DEFAULT_HUB_DEGREE == 40
