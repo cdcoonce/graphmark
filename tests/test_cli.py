@@ -147,6 +147,28 @@ class TestNeighborhoodCommand:
         )
         assert json.loads(out) == neighborhood(simple_graph, "brain/hub.md", depth=2)
 
+    def test_unknown_note_exits_2_with_stderr_message(self, capsys):
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "graphmark",
+                "--config",
+                str(SIMPLE_CONFIG),
+                "neighborhood",
+                "--note",
+                "unknown/note.md",
+            ],
+        ):
+            from graphmark.cli import main
+
+            with pytest.raises(SystemExit) as excinfo:
+                main()
+        assert excinfo.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "unknown/note.md" in captured.err
+
 
 class TestPagerankCommand:
     def test_emits_valid_json(self, capsys):
