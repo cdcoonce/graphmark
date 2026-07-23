@@ -10,6 +10,7 @@ import networkx as nx
 
 from graphmark.config import VaultConfig
 from graphmark.graph import VaultGraph
+from graphmark.interfaces import Similarity
 
 
 def _undirected(graph: VaultGraph) -> nx.Graph:
@@ -133,7 +134,7 @@ def pagerank(graph: VaultGraph, n: int = 10, alpha: float = 0.85) -> list[list]:
 
 def gaps(
     graph: VaultGraph,
-    similar_fn,
+    similar_fn: Similarity,
     threshold: float = 0.0,
     k: int = 5,
     note: str | None = None,
@@ -143,7 +144,11 @@ def gaps(
     hub_degree: int | None = None,
     targets: list | None = None,
 ) -> list[dict]:
-    """Return link-gap suggestions ranked by novelty (non-hub, cross-folder, score-desc)."""
+    """Return link-gap suggestions ranked by novelty (non-hub, cross-folder, score-desc).
+
+    ``similar_fn`` is the injected similarity source (see ``interfaces.Similarity``): graphmark
+    owns the ranking/filtering, the caller supplies candidate scores.
+    """
     if note is not None:
         target_list = [note]
     elif targets is not None:

@@ -31,3 +31,16 @@ class Resolver(Protocol):
         means a collision → a bare link to it is ambiguous and must not resolve).
         """
         ...
+
+
+class Similarity(Protocol):
+    """Injected similarity source for ``metrics.gaps``.
+
+    graphmark owns the gaps ranking/filtering contract (already-linked / self / threshold /
+    max-score / prefix / dismissed filters, reciprocal dedup, novelty-first ordering); this seam
+    only supplies candidate scores. No embedding backend ships in this package.
+    """
+
+    def __call__(self, rel_path: str, k: int) -> list[tuple[str, float]]:
+        """Return up to ``k`` ``(other_rel_path, score)`` pairs most similar to ``rel_path``."""
+        ...
