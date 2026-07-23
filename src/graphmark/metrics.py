@@ -131,6 +131,15 @@ def pagerank(graph: VaultGraph, n: int = 10, alpha: float = 0.85) -> list[list]:
     return [[path, score] for path, score in pairs[:n]]
 
 
+# Validated gaps banding policy, tuned via daily /connect + /garden use on the
+# reference vault (afk-agent-system#32). Not applied as gaps()'s own defaults —
+# opt in explicitly by passing these constants at the call site.
+GAPS_DEFAULT_THRESHOLD = 0.6
+GAPS_DEFAULT_MAX_SCORE = 0.92
+GAPS_DEFAULT_K = 8
+GAPS_DEFAULT_HUB_DEGREE = 40
+
+
 def gaps(
     graph: VaultGraph,
     similar_fn,
