@@ -54,3 +54,18 @@ class TestRecordDismissalRoundTrip:
         dismiss.record_dismissal(tmp_path, "x.md", "y.md")
         (tmp_path / "y.md").write_text("y CHANGED")  # invalidates the recorded hash
         assert dismiss.active_dismissed_sigs(tmp_path) == set()
+
+
+class TestCorruptedStore:
+    def test_load_dismissed_returns_empty_dict_on_invalid_json(self, tmp_path):
+        dismissed_file = tmp_path / dismiss._DEFAULT_PATH
+        dismissed_file.parent.mkdir(parents=True, exist_ok=True)
+        dismissed_file.write_text("{not valid json")
+        assert dismiss.load_dismissed(tmp_path) == {}
+        assert dismiss.active_dismissed_sigs(tmp_path) == set()
+
+    def test_active_dismissed_sigs_does_not_crash_on_non_dict_json(self, tmp_path):
+        dismissed_file = tmp_path / dismiss._DEFAULT_PATH
+        dismissed_file.parent.mkdir(parents=True, exist_ok=True)
+        dismissed_file.write_text("[1, 2, 3]")
+        assert dismiss.active_dismissed_sigs(tmp_path) == set()
