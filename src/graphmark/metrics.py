@@ -196,6 +196,8 @@ def gaps(
 
 def neighborhood(graph: VaultGraph, note: str, depth: int = 1) -> dict:
     """Return out/back neighbors (and two_hop when depth>=2) for a note."""
+    if note not in graph.nodes:
+        raise ValueError(f"unknown note: {note}")
     out = sorted(graph.out_links.get(note, set()))
     back = sorted(graph.back_links.get(note, set()))
     result: dict = {"note": note, "out": out, "back": back}

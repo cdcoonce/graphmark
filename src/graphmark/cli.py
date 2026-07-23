@@ -88,7 +88,11 @@ def main() -> None:
     elif args.command == "siloed":
         print(to_json(siloed_notes(graph)))
     elif args.command == "neighborhood":
-        print(to_json(neighborhood(graph, args.note, depth=args.depth)))
+        try:
+            print(to_json(neighborhood(graph, args.note, depth=args.depth)))
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(2)
     elif args.command == "pagerank":
         print(to_json(pagerank(graph, n=args.n, alpha=args.alpha)))
     elif args.command == "export" and args.format == "dot":
