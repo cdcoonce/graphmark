@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v0.3.2 (2026-07-25)
+
+### Bug Fixes
+
+- **graph**: Links to non-markdown files are out of scope, not broken
+  ([#102](https://github.com/cdcoonce/graphmark/pull/102),
+  [`0796aa0`](https://github.com/cdcoonce/graphmark/commit/0796aa02d1d582b85a8905fb4b43b72b076bd072))
+
+unresolved reported wikilinks targeting Obsidian Bases, Canvas, images and PDFs as broken. graphmark
+  only indexes *.md, so it has no basis to judge those targets — calling them broken just fills the
+  vault-health count with entries nobody can act on.
+
+Measured on the owner's live vault: 17 of 173 reported breaks (10%) targeted .base/.canvas, and all
+  9 distinct targets exist on disk, in a bases/ directory outside scoped_folders. Every one of those
+  links works in Obsidian.
+
+When the resolver returns None and the target ends in a plausible file extension other than .md,
+  treat it as out of scope: no edge, not counted. The extension test is deliberately strict
+  (trailing dot plus 1-10 alphanumerics) so a title like "v1.2 release notes" is still read as a
+  note. Applying the rule only after the resolver has already failed is what makes it safe — a note
+  that genuinely resolves, such as a real report.v2.md linked as [[report.v2]], never reaches it.
+
+Deliberately no filesystem existence check: it would couple build() to the disk and force
+  enumerating excluded trees like .git. "Out of scope" is the honest report for a file type
+  graphmark does not index.
+
+Closes #101
+
+
 ## v0.3.1 (2026-07-25)
 
 ### Bug Fixes
