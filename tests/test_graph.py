@@ -81,6 +81,36 @@ class TestNormalizeResolver:
         catalog = self._catalog("brain/alpha.md")
         assert self.resolver.resolve("other/alpha", catalog) is None
 
+    def test_repeated_folder_links_resolve_identically(self):
+        catalog = self._catalog("brain/alpha.md", "personal/beta.md", "work/gamma.md")
+        # Multiple folder-style resolutions against one catalog are unchanged by caching.
+        assert self.resolver.resolve("brain/alpha", catalog) == "brain/alpha.md"
+        assert self.resolver.resolve("personal/beta", catalog) == "personal/beta.md"
+        assert self.resolver.resolve("brain/alpha", catalog) == "brain/alpha.md"
+        assert self.resolver.resolve("work/gamma", catalog) == "work/gamma.md"
+
+    def test_flatten_runs_once_per_catalog(self, monkeypatch):
+        catalog = self._catalog("brain/alpha.md", "personal/beta.md")
+        calls = {"n": 0}
+        real_compute = NormalizeResolver._compute_flat
+
+        def counting_compute(cat):
+            calls["n"] += 1
+            return real_compute(cat)
+
+        monkeypatch.setattr(self.resolver, "_compute_flat", counting_compute)
+        for _ in range(5):
+            self.resolver.resolve("brain/alpha", catalog)
+        assert calls["n"] == 1  # the O(n) flatten runs once, reused for the rest
+
+    def test_new_catalog_triggers_reflatten(self):
+        cat1 = self._catalog("brain/alpha.md")
+        cat2 = self._catalog("personal/beta.md")
+        assert self.resolver.resolve("brain/alpha", cat1) == "brain/alpha.md"
+        assert self.resolver.resolve("personal/beta", cat2) == "personal/beta.md"
+        # cat1 no longer flatten-cached, but still resolves correctly
+        assert self.resolver.resolve("brain/alpha", cat1) == "brain/alpha.md"
+
 
 class TestVaultGraphBuild:
     def _build(self) -> VaultGraph:
