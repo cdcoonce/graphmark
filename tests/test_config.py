@@ -46,8 +46,6 @@ class TestLoadConfig:
         assert cfg.scoped_folders == default.scoped_folders
         assert cfg.excluded_dirs == default.excluded_dirs
         assert cfg.rules_files == default.rules_files
-        assert cfg.wikilink_pattern == default.wikilink_pattern
-        assert cfg.orphan_min_chars == default.orphan_min_chars
         assert cfg.transient_prefixes == default.transient_prefixes
 
     def test_missing_root_raises_valueerror_with_path_and_key(self, tmp_path):
@@ -58,6 +56,18 @@ class TestLoadConfig:
         msg = str(exc.value)
         assert str(toml) in msg
         assert "root" in msg
+
+    def test_removed_noop_knobs_are_gone(self):
+        # wikilink_pattern and orphan_min_chars were silent no-ops; they no longer exist.
+        cfg = load_config(SIMPLE_DIR / "config.toml")
+        assert not hasattr(cfg, "wikilink_pattern")
+        assert not hasattr(cfg, "orphan_min_chars")
+
+    def test_unknown_keys_in_toml_are_ignored(self, tmp_path):
+        toml = tmp_path / "extra.toml"
+        toml.write_text('root = "vault"\nwikilink_pattern = "x"\norphan_min_chars = 99\n')
+        cfg = load_config(toml)  # unknown keys are silently ignored, not an error
+        assert cfg.root == tmp_path / "vault"
 
     def test_transient_prefixes_loaded_as_tuple(self):
         cfg = load_config(ALT_DIR / "config.toml")
