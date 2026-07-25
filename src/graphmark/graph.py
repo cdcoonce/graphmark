@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import string
 from pathlib import Path
 
@@ -16,6 +17,27 @@ _PUNCT_TABLE = str.maketrans(string.punctuation, " " * len(string.punctuation))
 def _normalize(text: str) -> str:
     """Lowercase, replace punctuation with spaces, collapse whitespace."""
     return " ".join(text.lower().translate(_PUNCT_TABLE).split())
+
+
+# A trailing dot plus a short alphanumeric run — a plausible file extension. Deliberately
+# strict so a note title like "v1.2 release notes" (spaces after the dot) is not mistaken
+# for one.
+_FILE_SUFFIX_RE = re.compile(r"\.[A-Za-z0-9]{1,10}$")
+
+
+def _targets_non_note_file(display: str) -> bool:
+    """True for a link to a file graphmark does not index, e.g. ``[[Board.canvas]]``.
+
+    Obsidian wikilinks legitimately target Bases, Canvas, images and PDFs. graphmark only
+    indexes markdown, so it has no basis to call such a link broken — reporting it as
+    unresolved just fills the vault-health count with entries nobody can act on.
+
+    Only ever consulted after the resolver has already failed, so a note that genuinely
+    resolves (say a real ``report.v2.md`` linked as ``[[report.v2]]``) is never suppressed.
+    """
+    target = display.split("|")[0].split("#")[0].strip()
+    match = _FILE_SUFFIX_RE.search(target)
+    return bool(match) and match.group(0).lower() != ".md"
 
 
 def _is_intra_note_reference(display: str) -> bool:
@@ -140,6 +162,8 @@ class VaultGraph:
                     continue
                 target = resolver.resolve(display, catalog)
                 if target is None:
+                    if _targets_non_note_file(display):
+                        continue  # out of scope, not a broken note link
                     # Unresolvable OR ambiguous — the Resolver protocol conflates the two, and
                     # both are equally broken from a vault-health view. Record the raw display
                     # (what a human has to go fix) once per occurrence.
