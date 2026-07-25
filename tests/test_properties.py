@@ -15,13 +15,22 @@ shrinks to a minimal reproducer instead of handing back a vault to bisect by han
 from __future__ import annotations
 
 import tempfile
+import unicodedata
 from pathlib import Path
 
+import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from graphmark.config import VaultConfig
-from graphmark.graph import DIAGNOSIS_REASONS, NormalizeResolver, VaultGraph
+from graphmark.graph import (
+    DIAGNOSIS_REASONS,
+    NormalizeResolver,
+    VaultGraph,
+    _normalize,
+    _strip_display,
+    diagnose,
+)
 from graphmark.parse import WikilinkExtractor
 
 # Deterministic and bounded: CI time stays sane and a failure reproduces.
@@ -36,9 +45,43 @@ SETTINGS = settings(
 # tiny pool, so ambiguity and alias contention actually occur rather than being theoretically
 # possible. Accented forms are here because #123 (NFD/NFC) was found by inspection, not by test.
 STEMS = st.sampled_from(
-    ["note", "Note", "no-te", "no te", "NOTE", "café", "cafe", "a.b", "v1.2 release", "Índex"]
+    [
+        "note",
+        "Note",
+        "no-te",
+        "no te",
+        "NOTE",
+        "café",
+        "cafe",
+        "a.b",
+        "v1.2 release",
+        "Índex",
+        # Added after the 2026-07-25 pass, in which four defects were found by reading the code and
+        # none by this generator — because it drew only from shapes the resolver already handled.
+        # Widening the *alphabet* is the fix; each entry below is a class that shipped broken.
+        "Phase 2.1",  # #138: a numeric title suffix read as a file extension
+        "Standard IEC.61850",  # #138 again, where no length bound separates it from ".md"
+        "Q1 — Review",  # #139: non-ASCII punctuation, unfoldable by an ASCII table
+        "Charles’ Notes",  # #139: a curly apostrophe against a straight one
+        "Q1 - Review",  # the ASCII twin of the above, so the pair can collide
+    ]
 )
-FOLDERS = st.sampled_from(["", "docs/", "docs/deep/", "templates/", "archive/", "one/", "two/"])
+# "work"/"homework" and "docs"/"api-docs" are the #136 shape: one folder name ending with another's,
+# which a raw string-suffix match resolved across.
+FOLDERS = st.sampled_from(
+    [
+        "",
+        "docs/",
+        "docs/deep/",
+        "templates/",
+        "archive/",
+        "one/",
+        "two/",
+        "work/",
+        "homework/",
+        "api-docs/",
+    ]
+)
 
 # Display shapes that have each produced a bug, plus the ordinary ones.
 DISPLAY_SUFFIXES = st.sampled_from(
@@ -61,7 +104,10 @@ def vaults(draw):
         body = "\n".join(f"[[{f}{s}{suf}]]" for f, s, suf in body_links)
         # Shapes that must never become edges, mixed in so the suppressed buckets are exercised.
         body += "\n[[#LocalAnchor]]\n`[[InCodeSpan]]`\n```\n[[InFence]]\n```\n"
-        notes[rel] = front + body + "\n"
+        # A UTF-8 BOM defeated frontmatter parsing entirely (#137) — aliases vanished and
+        # frontmatter links leaked into the body. Generated, so no invariant may assume it away.
+        bom = "\ufeff" if draw(st.booleans()) else ""
+        notes[rel] = bom + front + body + "\n"
     scoped = draw(st.sampled_from([[], ["docs"], ["docs", "one"]]))
     excluded = draw(st.sampled_from([[], ["archive"], ["templates"]]))
     return notes, scoped, excluded
@@ -77,6 +123,21 @@ def _materialize(notes: dict[str, str], root: Path) -> None:
 def _build(root: Path, scoped: list[str], excluded: list[str], **kw) -> VaultGraph:
     config = VaultConfig(root=root, scoped_folders=scoped, excluded_dirs=excluded, **kw)
     return VaultGraph.build(config, WikilinkExtractor(), NormalizeResolver())
+
+
+def _assert_no_missing_link_is_known(graph: VaultGraph) -> None:
+    """No link the package reports `missing` may name something it already knows.
+
+    Re-derives the verdict per display through the public `diagnose`, because `unresolved` merges
+    `ambiguous` with `missing` and an ambiguous display legitimately matches catalog keys.
+    """
+    for rel, displays in graph.unresolved.items():
+        for display in displays:
+            if diagnose(graph, display).reason != "missing":
+                continue
+            key = _normalize(_strip_display(display))
+            assert key not in graph.catalog, f"{rel}: [[{display}]] is missing but names a note"
+            assert key not in graph.aliases, f"{rel}: [[{display}]] is missing but names an alias"
 
 
 def _extracted_total(graph: VaultGraph) -> int:
@@ -320,3 +381,312 @@ def test_an_intra_note_reference_is_never_counted_as_missing(display):
     assert counts["missing"] == 0
     assert counts["intra-note"] == 1
     assert unresolved == {}
+
+
+@SETTINGS
+@given(vaults())
+def test_no_missing_link_names_something_the_resolver_knows(vault):
+    """The Track F invariant: `missing` and "the package knows this name" cannot both be true.
+
+    Under correct behavior such a link would have resolved, so this is an internal-consistency
+    assertion rather than a heuristic — no thresholds, no calibration, and no false-positive mode.
+
+    It catches the *class* #119 belonged to rather than its symptom: any future regression in alias
+    lookup, normalization or the catalog itself surfaces as a link the package simultaneously claims
+    not to know and does know. Chosen over the four statistical heuristics #127 proposed because
+    those were measured and fire constantly on healthy vaults — see #133 for the numbers.
+    """
+    notes, scoped, excluded = vault
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _materialize(notes, root)
+        graph = _build(root, scoped, excluded)
+        _assert_no_missing_link_is_known(graph)
+
+
+@SETTINGS
+@given(vaults())
+def test_the_invariant_holds_with_aliases_disabled(vault):
+    """With the feature off the alias map is empty, so the catalog half still applies.
+
+    The alias half is then vacuous rather than wrong — which is the distinction between the
+    documented `resolve_aliases=False` opt-out and a genuine regression in the lookup.
+    """
+    notes, scoped, excluded = vault
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _materialize(notes, root)
+        graph = _build(root, scoped, excluded, resolve_aliases=False)
+        assert graph.aliases == {}
+        _assert_no_missing_link_is_known(graph)
+
+
+def test_the_invariant_fails_when_alias_lookup_regresses(monkeypatch):
+    """Teeth: break the lookup while the map is still built, and the assertion must catch it.
+
+    This is the #119 shape exactly — `build_aliases` still runs and `graph.aliases` is still
+    populated, but the classifier stops consulting it, so links written against a live alias are
+    reported `missing`. Without this test the invariant above could be vacuously true.
+    """
+    from graphmark import graph as graph_mod
+
+    original = graph_mod._diagnose
+    monkeypatch.setattr(
+        graph_mod,
+        "_diagnose",
+        lambda display, catalog, oos, resolver, aliases=None: original(
+            display, catalog, oos, resolver, None
+        ),
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _materialize(
+            {
+                "Target.md": "---\naliases:\n  - TGT\n---\n\nbody\n",
+                "src.md": "[[TGT]]\n",
+            },
+            root,
+        )
+        graph = _build(root, [], [])
+        assert graph.aliases, "the map must still be built, or this proves nothing"
+        assert graph.link_counts["missing"] == 1
+        with pytest.raises(AssertionError):
+            _assert_no_missing_link_is_known(graph)
+
+
+# ---------------------------------------------------------------------------------------------
+# Round-trip generation: the half the invariants above cannot reach.
+#
+# Measured on 2026-07-25: with #136, #137 and #139 reverted one at a time, every invariant above
+# stayed green. They are conservation and self-consistency properties, and each of those bugs is
+# perfectly self-consistent — #136's fabricated edge IS in the graph, so nothing vanishes; a BOM'd
+# note simply has no frontmatter, which is consistent; a link the normalizer cannot match is
+# genuinely missing by the package's own rules. Self-consistency cannot see a wrong answer.
+#
+# What is missing is an *oracle*: a link whose intended target is known independently of what the
+# resolver says. So these build a note first and then write a link derived from it by a
+# transformation Obsidian treats as identity-preserving. The expected answer is known by
+# construction, and any transformation the package mishandles fails immediately.
+# ---------------------------------------------------------------------------------------------
+
+#: Ways to write a link that must still name the same note. Each is a documented equivalence —
+#: Obsidian resolves all of them, and several are exactly where a defect has already been found.
+TRANSFORMS = st.sampled_from(
+    [
+        "identity",
+        "upper",
+        "lower",
+        "md_suffix",  # [[Note.md]]
+        "anchor",  # [[Note#Section]]
+        "alias_display",  # [[Note|whatever]]
+        "padded",  # [[  Note  ]]
+        "nfd",  # #123: the form macOS stores filenames in
+        "nfc",  # #123: the form an editor emits
+        "hyphens_to_spaces",  # the normalizer's documented punctuation folding
+        "spaces_to_hyphens",
+        "path_qualified",  # [[folder/Note]] — #136's territory
+        "ascii_punct_twin",  # #139: the em-dash/curly-quote title typed with ASCII
+    ]
+)
+
+#: Non-ASCII marks and the ASCII characters a human types instead. Obsidian's own switcher matches
+#: across these, and so must the normalizer — #139 was exactly this gap.
+ASCII_TWINS = {"—": "-", "–": "-", "’": "'", "“": '"', "”": '"', "…": "..."}
+
+
+def _ascii_punct_twin(text: str) -> str:
+    for fancy, plain in ASCII_TWINS.items():
+        text = text.replace(fancy, plain)
+    return text
+
+
+#: Folder sets a single generated vault draws from. Each pool is small so its notes actually
+#: collide, and the first three are the pairs where one name ends with another's — the shape #136
+#: resolved across.
+FOLDER_POOLS = st.sampled_from(
+    [
+        ["work/", "homework/"],
+        ["docs/", "api-docs/"],
+        ["one/", "one/two/"],
+        [""],
+        ["", "docs/"],
+        ["docs/", "docs/deep/"],
+        ["archive/", "templates/"],
+    ]
+)
+
+
+def _components(name: str) -> list[str]:
+    """Normalized path components, `.md` dropped — the spec's notion of "names this note".
+
+    Written from the documented behavior rather than by calling the resolver's helpers, so it is an
+    independent check and not a restatement of the implementation.
+    """
+    name = name.removesuffix(".md") if name.lower().endswith(".md") else name
+    return [_normalize(part) for part in name.split("/") if part]
+
+
+def _apply_transform(rel: str, kind: str) -> str:
+    """Rewrite a note's rel_path into a link display that must still name it."""
+    stem = Path(rel).stem
+    parent = Path(rel).parent.as_posix()
+    if kind == "upper":
+        return stem.upper()
+    if kind == "lower":
+        return stem.lower()
+    if kind == "md_suffix":
+        return f"{stem}.md"
+    if kind == "anchor":
+        return f"{stem}#Some Section"
+    if kind == "alias_display":
+        return f"{stem}|a display"
+    if kind == "padded":
+        return f"  {stem}  "
+    if kind == "nfd":
+        return unicodedata.normalize("NFD", stem)
+    if kind == "nfc":
+        return unicodedata.normalize("NFC", stem)
+    if kind == "hyphens_to_spaces":
+        return stem.replace("-", " ")
+    if kind == "spaces_to_hyphens":
+        return stem.replace(" ", "-")
+    if kind == "path_qualified" and parent != ".":
+        return f"{parent}/{stem}"
+    if kind == "ascii_punct_twin":
+        return _ascii_punct_twin(stem)
+    return stem
+
+
+@st.composite
+def vaults_with_known_links(draw):
+    """A vault where every link was derived from a note that exists, plus the intended targets."""
+    # Narrow per-vault pools, drawn first. Sampling each note independently from the full alphabet
+    # spreads a 4-note vault across 10 folders and 15 stems, so the *collisions* that matter almost
+    # never co-occur — with the wide pools, reverting #136 left this property green. FOLDER_POOLS
+    # deliberately includes the suffix-colliding pair that defect turned on.
+    folders = draw(FOLDER_POOLS)
+    stems = draw(st.lists(STEMS, min_size=1, max_size=3, unique=True))
+
+    # Deduped case- and form-insensitively, not just by string: macOS is case-insensitive and may
+    # normalize, so "note.md" and "Note.md" would land on ONE file and the oracle would claim a
+    # note exists that does not. This is a property of the filesystem under test, not of graphmark.
+    drawn = [f + s + ".md" for f in folders for s in stems]
+    seen: set[str] = set()
+    rels = []
+    for rel in sorted(drawn):
+        key = unicodedata.normalize("NFC", rel).casefold()
+        if key not in seen:
+            seen.add(key)
+            rels.append(rel)
+
+    intents: list[tuple[str, str]] = []  # (display, intended rel_path)
+    notes = {rel: "body\n" for rel in rels}
+
+    for index, rel in enumerate(rels):
+        for _ in range(draw(st.integers(min_value=0, max_value=2))):
+            intents.append((_apply_transform(rel, draw(TRANSFORMS)), rel))
+
+        # An alias, optionally on a BOM'd note. That pairing is the point: a BOM defeats frontmatter
+        # parsing entirely (#137), so the alias silently stops existing — a shape no generator whose
+        # notes have no frontmatter can reach.
+        if draw(st.booleans()):
+            # Keyed by index so uniqueness is structural. Deriving the alias from the note's name
+            # made two notes declare aliases that *normalize* to one key ("no te" / "no-te"), which
+            # build_aliases correctly refuses to resolve — the oracle would then be wrong, not the
+            # package. The alias text is not what is under test; the alias mechanism is.
+            alias = f"alias number {index}"
+            bom = "﻿" if draw(st.booleans()) else ""
+            notes[rel] = f"{bom}---\naliases:\n  - {alias}\n---\n\nbody\n"
+            if draw(st.booleans()):
+                intents.append((alias, rel))
+
+    notes["source.md"] = "".join(f"[[{d}]]\n" for d, _ in intents)
+    return notes, intents
+
+
+@SETTINGS
+@given(vaults_with_known_links())
+def test_a_link_written_from_an_existing_note_names_that_note(vault):
+    """The oracle property: an identity-preserving rewrite must not break resolution.
+
+    A genuine collision is a legitimate refusal, so an `ambiguous` verdict passes **only** when the
+    intended note is among the candidates the resolver saw. That keeps the property from being
+    satisfiable by declining everything.
+    """
+    notes, intents = vault
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _materialize(notes, root)
+        graph = _build(root, [], [])
+        for display, intended in intents:
+            d = diagnose(graph, display)
+            if d.reason == "ambiguous":
+                assert intended in d.candidates, (
+                    f"[[{display}]] was declined as ambiguous without {intended} among "
+                    f"the candidates {d.candidates}"
+                )
+                # An ambiguity must be real. Every candidate has to be a note the display actually
+                # names, component-wise — a spurious extra match is how #136 turned a correct link
+                # into a reported break, and a candidate set checked only for membership hides it.
+                wanted = _components(_strip_display(display))
+                for candidate in d.candidates:
+                    have = _components(candidate)
+                    assert have[-len(wanted) :] == wanted, (
+                        f"[[{display}]] was declined as ambiguous against {candidate}, "
+                        f"which it does not name"
+                    )
+                continue
+            assert d.reason == "resolved", f"[[{display}]] should name {intended}, got {d.reason}"
+            assert d.target == intended, f"[[{display}]] resolved to {d.target}, not {intended}"
+
+
+@SETTINGS
+@given(vaults_with_known_links())
+def test_a_link_written_from_an_existing_note_is_never_counted_broken(vault):
+    """The same guarantee at the level of the number the CI gate reports."""
+    notes, intents = vault
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _materialize(notes, root)
+        graph = _build(root, [], [])
+        assert graph.link_counts["missing"] == 0, graph.unresolved
+        assert graph.link_counts["non-note-file"] == 0, graph.unresolved
+
+
+#: Names deliberately absent from the generated vaults. Numbered titles are here because a decimal
+#: suffix was read as a file extension and the link vanished from the health count (#138) — a
+#: *false negative*, which no conservation property can see.
+ABSENT_NAMES = st.sampled_from(
+    [
+        "Nothing Named This",
+        "Meeting 3.5",
+        "Phase 9.4",
+        "Spec v0.9",
+        "Budget FY26.2",
+        "Standard IEC.61850",
+        "Ghost — Note",
+    ]
+)
+
+
+@SETTINGS
+@given(vaults_with_known_links(), st.lists(ABSENT_NAMES, min_size=1, max_size=3))
+def test_a_link_to_a_note_that_does_not_exist_is_reported_missing(vault, absent):
+    """The negative oracle: a broken link must reach the count, not a suppressing bucket.
+
+    Every previous defect class inflated the broken-link number; #138 deflated it, by filing a
+    genuine break under `non-note-file`. An undercount is invisible by construction and reads as
+    health, so it needs an oracle of its own — a name known not to exist.
+    """
+    notes, _ = vault
+    absent = [name for name in absent if name.lower() not in {Path(r).stem.lower() for r in notes}]
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        notes = dict(notes)
+        notes["broken.md"] = "".join(f"[[{name}]]\n" for name in absent)
+        _materialize(notes, root)
+        graph = _build(root, [], [])
+        for name in absent:
+            reason = diagnose(graph, name).reason
+            assert reason == "missing", f"[[{name}]] does not exist but was filed as {reason}"
+        assert graph.link_counts["missing"] >= len(absent)
