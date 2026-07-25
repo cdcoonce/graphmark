@@ -10,6 +10,7 @@ from pathlib import Path
 import networkx as nx
 
 from graphmark import __version__
+from graphmark.check import breach_lines, run_check
 from graphmark.config import VaultConfig, load_config
 from graphmark.export import to_dot, to_json
 from graphmark.graph import NormalizeResolver, VaultGraph
@@ -83,6 +84,11 @@ def main() -> None:
 
     sub.add_parser("gaps", help="Link-gap suggestions (library-only; see the README)")
 
+    sub.add_parser(
+        "check",
+        help="Gate vault health against the config's [check] thresholds (exit 1 on breach)",
+    )
+
     args = parser.parse_args()
 
     # Usage errors all exit 2, matching argparse's own convention (and leaving exit 1 free for
@@ -135,6 +141,18 @@ def main() -> None:
         print(to_json(result))
     elif args.command == "export" and args.format == "dot":
         print(to_dot(graph))
+    elif args.command == "check":
+        try:
+            report = run_check(graph, config)
+        except ValueError as e:
+            # A misconfigured gate is a usage error (2), never a breach (1) — CI must be able
+            # to tell "your vault is unhealthy" from "your config is wrong".
+            print(f"error: {e}", file=sys.stderr)
+            sys.exit(2)
+        print(to_json(report))
+        for line in breach_lines(report):
+            print(line, file=sys.stderr)
+        sys.exit(0 if report["pass"] else 1)
 
 
 if __name__ == "__main__":
