@@ -176,6 +176,20 @@ class TestExportDotCommand:
         assert json.loads(out) == stats(simple_graph)
 
 
+class TestGapsCommand:
+    def test_exits_2_with_stderr_guidance_and_no_stdout(self, capsys):
+        from graphmark.cli import main
+
+        argv = ["graphmark", "--config", str(SIMPLE_CONFIG), "gaps"]
+        with patch.object(sys, "argv", argv), pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""  # never silently prints []
+        assert "injected similarity source" in captured.err
+        assert "graphmark.metrics.gaps" in captured.err
+
+
 class TestSiloedCommand:
     def test_emits_valid_json(self, capsys):
         out = _run_cli(["graphmark", "--config", str(SIMPLE_CONFIG), "siloed"], capsys)
