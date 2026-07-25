@@ -28,12 +28,15 @@ from graphmark.dismiss import (
 from graphmark.export import to_dot, to_json
 from graphmark.graph import (
     DIAGNOSIS_REASONS,
+    SUGGEST_MAX_MATCHES,
+    SUGGEST_MIN_COVERAGE,
     LinkDiagnosis,
     NormalizeResolver,
     VaultGraph,
     build_catalog,
     candidates_for,
     diagnose,
+    suggest_notes,
 )
 from graphmark.interfaces import LinkExtractor, Resolver, Similarity
 from graphmark.metrics import (
@@ -96,6 +99,8 @@ __all__ = [
     "Document",
     "LinkExtractor",
     "DIAGNOSIS_REASONS",
+    "SUGGEST_MAX_MATCHES",
+    "SUGGEST_MIN_COVERAGE",
     "LinkDiagnosis",
     "NormalizeResolver",
     "Resolver",
@@ -110,6 +115,7 @@ __all__ = [
     "build_catalog",
     "candidates_for",
     "diagnose",
+    "suggest_notes",
     "clusters",
     "gaps",
     "hubs",

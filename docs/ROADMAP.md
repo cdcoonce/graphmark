@@ -82,7 +82,7 @@ already learned were fine. #107 is the fourth fix that had to be applied in two 
 The gardener's stack survives because it answers questions graphmark cannot yet answer. graphmark
 says _whether_ a link resolves; Lane A needs to know **why it failed and what to do about it** —
 the ambiguity set, the near-miss candidates behind a "did you mean", and the canonical title of
-the note a display resolves to (so `[[ethan courtman]]` can be repaired to `[[Ethan Courtman]]`).
+the note a display resolves to (so `[[jordan ellis]]` can be repaired to `[[Jordan Ellis]]`).
 
 _Where we're going:_ a documented, typed **link-diagnosis** surface that makes the consumer a
 formatter over graphmark's answers instead of a second resolver. The classification is already

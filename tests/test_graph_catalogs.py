@@ -34,8 +34,8 @@ def _build(root: Path, **config_kwargs) -> VaultGraph:
 
 class TestCatalog:
     def test_maps_normalized_stem_to_rel_path(self, tmp_path):
-        _write(tmp_path, "Ethan Courtman.md")
-        assert _build(tmp_path).catalog == {"ethan courtman": ["Ethan Courtman.md"]}
+        _write(tmp_path, "Jordan Ellis.md")
+        assert _build(tmp_path).catalog == {"jordan ellis": ["Jordan Ellis.md"]}
 
     def test_punctuation_normalizes_to_the_same_key_as_spaces(self, tmp_path):
         # The vault's real repair case: [[oura pipeline]] should be able to find oura-pipeline.md.
