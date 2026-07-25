@@ -6,6 +6,7 @@ import re
 import string
 import unicodedata
 from dataclasses import dataclass, field, replace
+from functools import lru_cache
 from pathlib import Path
 
 from graphmark.config import VaultConfig
@@ -32,9 +33,37 @@ def _fold_case(text: str) -> str:
     return unicodedata.normalize("NFC", text).lower()
 
 
+@lru_cache(maxsize=4096)
+def _is_foldable(char: str) -> bool:
+    """True for a Unicode punctuation (``P*``) or symbol (``S*``) character."""
+    return unicodedata.category(char)[0] in ("P", "S")
+
+
+def _fold_punctuation(text: str) -> str:
+    """Replace punctuation and symbols with spaces — ASCII **and** non-ASCII.
+
+    ``string.punctuation`` is ASCII-only, so every non-ASCII mark used to survive normalization and
+    then had to be typed byte-for-byte: an em-dash title was unreachable from a typed hyphen, a
+    curly apostrophe from a straight one, ``…`` from ``...``. Folding by Unicode *category* is a
+    superset of the old ASCII table, so pure-ASCII results are unchanged.
+
+    The ASCII table stays the fast path; the per-character category lookup runs only on strings that
+    still hold non-ASCII after it, and is cached. This function runs once per catalog entry and once
+    per link, so it must not become a per-character Python loop over the whole vault.
+
+    Callers must compose to NFC first (``_fold_case``): a decomposed ``é`` is a letter plus a
+    combining mark of category ``Mn``, which this fold correctly leaves alone but which would
+    otherwise leave the accent stranded.
+    """
+    folded = text.translate(_PUNCT_TABLE)
+    if folded.isascii():
+        return folded
+    return "".join(" " if not c.isascii() and _is_foldable(c) else c for c in folded)
+
+
 def _normalize(text: str) -> str:
     """Compose to NFC, lowercase, replace punctuation with spaces, collapse whitespace."""
-    return " ".join(_fold_case(text).translate(_PUNCT_TABLE).split())
+    return " ".join(_fold_punctuation(_fold_case(text)).split())
 
 
 # A trailing dot plus a short alphanumeric run — a plausible file extension. Deliberately
