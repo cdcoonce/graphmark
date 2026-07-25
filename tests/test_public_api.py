@@ -117,6 +117,7 @@ class TestPublicSurface:
         "diagnose",
         "LinkDiagnosis",
         "DIAGNOSIS_REASONS",
+        "build_aliases",
         "candidates_for",
         "suggest_notes",
         "SUGGEST_MAX_MATCHES",

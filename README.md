@@ -158,6 +158,7 @@ graphmark.to_dot(graph)                       # Graphviz DOT
 graph.unresolved                              # {rel_path: [broken link displays]}
 graph.catalog                                 # {normalized stem: [rel_paths]} — 2+ means ambiguous
 graph.out_of_scope                            # same, for markdown outside the configured scope
+graph.aliases                                 # {normalized alias: rel_path} — frontmatter aliases
 ```
 
 `catalog` and `out_of_scope` are the resolution state the build consulted. They are what you need to
@@ -226,10 +227,40 @@ Both constants were calibrated against a human-annotated baseline of a real vaul
 rather than chosen by taste — see [`tests/fixtures/suggest/README.md`](tests/fixtures/suggest/README.md)
 for the method and the measured result.
 
+## Frontmatter aliases
+
+Obsidian's `aliases:` property declares additional real names for a note, so links written against
+one resolve like any other link. Block, inline and scalar forms all work:
+
+```yaml
+---
+aliases:
+  - Mood Tracker
+  - mood-tracker
+---
+```
+
+`[[Mood Tracker]]` now resolves to `2026-04-11-mood-tracker.md` and produces a real edge. On a
+521-note vault this was the difference between **23 reported broken links and 0** — every one of the
+23 a false positive, plus 17 edges that were silently missing.
+
+Three rules keep it conservative:
+
+- **A real note name always wins.** An alias can never hijack a link to a note that actually bears
+  that name.
+- **An alias that collides with any real note name is dropped entirely** — not merely outranked, so
+  an already-ambiguous basename can't be rescued into resolving by someone's alias.
+- **An alias claimed by two notes resolves to nothing**, the same refusal applied to colliding
+  basenames.
+
+Set `resolve_aliases = false` for strict basename-only resolution. `graph.aliases` exposes the
+resolved map.
+
 ## Configuration
 
 ```toml
 root = "."                                    # required unless --root is passed
+resolve_aliases = true                        # resolve frontmatter aliases: (default true)
 scoped_folders = ["brain", "work"]            # limit the vault to these top-level folders
 excluded_dirs = [".git", "templates"]         # skip notes under these directories
 rules_files = ["CLAUDE.md", "CLAUDE.local.md"]  # agent-rules files, not vault content

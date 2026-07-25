@@ -164,3 +164,94 @@ class TestFrontmatterLineEndings:
         doc = self._parse(tmp_path, "fm_only_crlf.md", b"---\r\ntitle: Note\r\n---")
         assert doc.frontmatter == {"title": "Note"}
         assert doc.text == ""
+
+
+class TestBlockStyleLists:
+    """`key:` followed by `  - item` lines — what Obsidian's Properties UI actually writes.
+
+    The parser handled scalars, quoted strings and inline lists, but a block list's item lines
+    contain no `:` so the loop skipped them, and the bare `key:` line stored `''`. Every
+    block-style property in a real vault — `aliases:`, `tags:` — silently became an empty string
+    rather than a list. Not an error, just quietly wrong data behind a public attribute.
+    """
+
+    def _fm(self, raw: str) -> dict:
+        from graphmark.parse import _parse_frontmatter
+
+        return _parse_frontmatter(raw)
+
+    def test_block_list_parses_to_a_list(self):
+        assert self._fm("aliases:\n  - One\n  - Two") == {"aliases": ["One", "Two"]}
+
+    def test_a_single_item_block_is_still_a_list(self):
+        assert self._fm("tags:\n  - project") == {"tags": ["project"]}
+
+    def test_inline_lists_are_unchanged(self):
+        assert self._fm("aliases: [One, Two]") == {"aliases": ["One", "Two"]}
+
+    def test_scalars_are_unchanged(self):
+        assert self._fm("title: Solo") == {"title": "Solo"}
+
+    def test_quoted_scalars_are_unchanged(self):
+        assert self._fm('description: "a thing"') == {"description": "a thing"}
+
+    def test_an_empty_key_stays_an_empty_string(self):
+        # A key with no items is an empty VALUE, not an empty list — unchanged behavior.
+        assert self._fm("aliases:\ndate: 2026-07-25") == {"aliases": "", "date": "2026-07-25"}
+
+    def test_the_block_ends_at_the_next_key(self):
+        parsed = self._fm("aliases:\n  - One\n  - Two\ndate: 2026-07-25\ntitle: T")
+        assert parsed == {"aliases": ["One", "Two"], "date": "2026-07-25", "title": "T"}
+
+    def test_a_stray_item_after_another_key_is_not_absorbed(self):
+        # The block must CLOSE at the next key, not merely pause. Without that, a malformed or
+        # mid-edit note silently grows the earlier list — the fail-soft promise says drop the
+        # junk, not misattribute it.
+        parsed = self._fm("aliases:\n  - One\ndate: 2026-07-25\n  - Stray")
+        assert parsed == {"aliases": ["One"], "date": "2026-07-25"}
+
+    def test_two_block_lists_in_one_document(self):
+        parsed = self._fm("aliases:\n  - A\ntags:\n  - x\n  - y")
+        assert parsed == {"aliases": ["A"], "tags": ["x", "y"]}
+
+    def test_quoted_block_items_are_unquoted(self):
+        assert self._fm("aliases:\n  - \"Mood Tracker\"\n  - 'mood-tracker'") == {
+            "aliases": ["Mood Tracker", "mood-tracker"]
+        }
+
+    def test_empty_items_are_dropped(self):
+        assert self._fm("aliases:\n  - One\n  -\n  - Two") == {"aliases": ["One", "Two"]}
+
+    def test_items_containing_a_colon_are_not_read_as_keys(self):
+        # "- Note: A Subtitle" is an item, not a nested key — the dash decides.
+        assert self._fm("aliases:\n  - Note: A Subtitle") == {"aliases": ["Note: A Subtitle"]}
+
+    def test_a_block_list_survives_a_real_note(self, tmp_path):
+        note = tmp_path / "n.md"
+        note.write_text(
+            "---\naliases:\n  - Mood Tracker\ntags:\n  - health\n---\n\nBody [[x]].\n",
+            encoding="utf-8",
+        )
+        doc = parse_document(note, tmp_path)
+        assert doc.frontmatter["aliases"] == ["Mood Tracker"]
+        assert doc.frontmatter["tags"] == ["health"]
+        assert "Body" in doc.text
+
+
+class TestFixtureFrontmatterUnchanged:
+    def test_no_fixture_note_uses_a_block_list(self):
+        # The parity argument for this change: fixture notes use inline/scalar frontmatter only,
+        # so no expected.json can move. If this ever fails, re-check the oracles before shipping.
+        import re
+
+        block_key = re.compile(r"^[A-Za-z_][\w-]*:\s*$", re.MULTILINE)
+        fixtures = Path(__file__).parent / "fixtures"
+        offenders = []
+        for note in fixtures.rglob("*.md"):
+            raw = note.read_text(encoding="utf-8")
+            if not raw.startswith("---"):
+                continue
+            end = raw.find("\n---", 3)
+            if block_key.search(raw[3:end] if end != -1 else raw[3:]):
+                offenders.append(str(note))
+        assert offenders == []
