@@ -21,6 +21,17 @@ class LinkExtractor(Protocol):
         ...
 
 
+class Similarity(Protocol):
+    """Injected similarity source for ``gaps()`` — the package's similarity seam.
+
+    graphmark owns the deterministic ranking/filtering; the similarity *source* is supplied by
+    the caller. An implementation returns up to ``k`` ``(rel_path, score)`` pairs most similar to
+    the note at ``rel_path`` (higher score = more similar). No embeddings ship in this package.
+    """
+
+    def __call__(self, rel_path: str, k: int) -> list[tuple[str, float]]: ...
+
+
 class Resolver(Protocol):
     """Resolves a link display to a target note."""
 
