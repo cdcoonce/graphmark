@@ -175,3 +175,61 @@ class TestIntraNoteAnchorLinks:
     def test_mixed_note_keeps_only_the_real_break(self, tmp_path):
         _write(tmp_path, "a.md", "[[#Local]] and [[Missing]] and [[#Other|x]].\n")
         assert _build(tmp_path).unresolved == {"a.md": ["Missing"]}
+
+
+class TestNonMarkdownTargets:
+    """A link to a file graphmark does not index is out of scope, not broken.
+
+    Obsidian wikilinks legitimately target Bases (.base), Canvas (.canvas), images and PDFs.
+    graphmark only indexes *.md, so it has no basis to call those links broken — on a real
+    vault they were 10% of the reported total, every one of them a working link.
+    """
+
+    @pytest.mark.parametrize(
+        "display",
+        [
+            "Stale Side-Projects.base",
+            "Board.canvas",
+            "diagram.png",
+            "spec.pdf",
+            "sketch.excalidraw",
+            "People Missing Context.base|People Missing Context",
+            "Board.canvas#Section",
+        ],
+    )
+    def test_non_markdown_target_is_not_unresolved(self, tmp_path, display):
+        _write(tmp_path, "a.md", f"See [[{display}]].\n")
+        graph = _build(tmp_path)
+        assert graph.unresolved == {}
+        assert graph.out_links["a.md"] == set()
+
+    def test_md_targets_are_exempt_from_the_rule(self, tmp_path):
+        # .md is explicitly excluded from the non-note rule, so a link ending in .md keeps
+        # whatever the resolver decides. graphmark does not currently resolve a trailing
+        # ".md" (an Obsidian-compatibility gap tracked separately) — the point here is only
+        # that this rule does not silently swallow it.
+        _write(tmp_path, "a.md", "See [[b.md]].\n")
+        _write(tmp_path, "b.md", "Target.\n")
+        assert _build(tmp_path).unresolved == {"a.md": ["b.md"]}
+
+    def test_missing_md_target_is_still_unresolved(self, tmp_path):
+        _write(tmp_path, "a.md", "See [[Nowhere.md]].\n")
+        assert _build(tmp_path).unresolved == {"a.md": ["Nowhere.md"]}
+
+    def test_dotted_title_is_not_mistaken_for_a_file_extension(self, tmp_path):
+        # "v1.2 release notes" has spaces after the dot — it is a note title, so a missing
+        # one must still be reported.
+        _write(tmp_path, "a.md", "See [[v1.2 release notes]].\n")
+        assert _build(tmp_path).unresolved == {"a.md": ["v1.2 release notes"]}
+
+    def test_a_resolvable_dotted_note_is_never_suppressed(self, tmp_path):
+        # The rule only applies after the resolver fails, so a real note wins.
+        _write(tmp_path, "a.md", "See [[report.v2]].\n")
+        _write(tmp_path, "report.v2.md", "Target.\n")
+        graph = _build(tmp_path)
+        assert graph.unresolved == {}
+        assert graph.out_links["a.md"] == {"report.v2.md"}
+
+    def test_mixed_note_keeps_only_the_missing_note(self, tmp_path):
+        _write(tmp_path, "a.md", "[[Chart.base]] and [[Missing]] and [[#local]].\n")
+        assert _build(tmp_path).unresolved == {"a.md": ["Missing"]}
