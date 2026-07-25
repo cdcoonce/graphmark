@@ -196,6 +196,36 @@ Alias, anchor and `.md` forms all diagnose identically to the bare form.
 contradict the graph it describes: `unresolved` is exactly the displays diagnosing as `ambiguous` or
 `missing`, and the edges are exactly the `resolved` non-self targets.
 
+### Near-miss suggestions
+
+Pass `suggest=k` to turn a `missing` verdict into an actionable one. Suggestions are computed only
+for `missing` — every other reason already carries the rel_paths in play — so the default of `0`
+costs nothing on the `check` hot path.
+
+```python
+graphmark.diagnose(graph, "Jordan", suggest=5).candidates
+# ('people/Jordan Ellis.md',)
+```
+
+Matching is **directional**, which is what separates a suggestion from a wrong answer:
+
+- a display inside a candidate name is an abbreviation — `[[Jordan]]` → `Jordan Ellis`, or
+  `[[Mood Tracker]]` → `2026-04-11-mood-tracker` (pure-digit tokens are filing metadata, not
+  content);
+- a candidate inside a display is offered only when it covers at least `SUGGEST_MIN_COVERAGE` of it
+  — `[[fable-prompt-technique-reference]]` → `fable-prompt-technique` is the answer, while
+  `[[Dagster PJM InSchedules]]` → `Dagster` is a real note that is _not_ the target;
+- partial overlap in neither direction is rejected;
+- a display matching more than `SUGGEST_MAX_MATCHES` notes names a topic, not a typo, and gets
+  nothing at all.
+
+Notes whose stem is generic (`SKILL.md`, `README.md`) are matched on their **parent folder**, where
+their name actually lives.
+
+Both constants were calibrated against a human-annotated baseline of a real vault's broken links
+rather than chosen by taste — see [`tests/fixtures/suggest/README.md`](tests/fixtures/suggest/README.md)
+for the method and the measured result.
+
 ## Configuration
 
 ```toml

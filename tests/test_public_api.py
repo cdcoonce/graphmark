@@ -118,6 +118,9 @@ class TestPublicSurface:
         "LinkDiagnosis",
         "DIAGNOSIS_REASONS",
         "candidates_for",
+        "suggest_notes",
+        "SUGGEST_MAX_MATCHES",
+        "SUGGEST_MIN_COVERAGE",
         # dismissal store
         "weaklink_sig",
         "record_dismissal",
