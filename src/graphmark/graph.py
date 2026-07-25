@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import re
 import string
+import unicodedata
 from dataclasses import dataclass, field, replace
+from functools import lru_cache
 from pathlib import Path
 
 from graphmark.config import VaultConfig
@@ -15,15 +17,67 @@ from graphmark.parse import parse_document
 _PUNCT_TABLE = str.maketrans(string.punctuation, " " * len(string.punctuation))
 
 
+def _fold_case(text: str) -> str:
+    """Compose to NFC, then lowercase — the two form-flattening steps, in that order.
+
+    macOS's HFS+/APFS store filenames **decomposed** (NFD: ``é`` is ``e`` + U+0301) while text typed
+    in an editor is **composed** (NFC: a single U+00E9). Without this the two never compare equal
+    and an accented note title is a phantom broken link, which Obsidian resolves fine.
+
+    NFC rather than NFD because it is what editors emit and what the web standardized on; the
+    filesystem's NFD becomes an implementation detail that never escapes the catalog.
+
+    Shared by ``_normalize`` and by path-suffix matching — the one place that does *not* go through
+    ``_normalize`` — so no comparison in this module can be left in the wrong form.
+    """
+    return unicodedata.normalize("NFC", text).lower()
+
+
+@lru_cache(maxsize=4096)
+def _is_foldable(char: str) -> bool:
+    """True for a Unicode punctuation (``P*``) or symbol (``S*``) character."""
+    return unicodedata.category(char)[0] in ("P", "S")
+
+
+def _fold_punctuation(text: str) -> str:
+    """Replace punctuation and symbols with spaces — ASCII **and** non-ASCII.
+
+    ``string.punctuation`` is ASCII-only, so every non-ASCII mark used to survive normalization and
+    then had to be typed byte-for-byte: an em-dash title was unreachable from a typed hyphen, a
+    curly apostrophe from a straight one, ``…`` from ``...``. Folding by Unicode *category* is a
+    superset of the old ASCII table, so pure-ASCII results are unchanged.
+
+    The ASCII table stays the fast path; the per-character category lookup runs only on strings that
+    still hold non-ASCII after it, and is cached. This function runs once per catalog entry and once
+    per link, so it must not become a per-character Python loop over the whole vault.
+
+    Callers must compose to NFC first (``_fold_case``): a decomposed ``é`` is a letter plus a
+    combining mark of category ``Mn``, which this fold correctly leaves alone but which would
+    otherwise leave the accent stranded.
+    """
+    folded = text.translate(_PUNCT_TABLE)
+    if folded.isascii():
+        return folded
+    return "".join(" " if not c.isascii() and _is_foldable(c) else c for c in folded)
+
+
 def _normalize(text: str) -> str:
-    """Lowercase, replace punctuation with spaces, collapse whitespace."""
-    return " ".join(text.lower().translate(_PUNCT_TABLE).split())
+    """Compose to NFC, lowercase, replace punctuation with spaces, collapse whitespace."""
+    return " ".join(_fold_punctuation(_fold_case(text)).split())
 
 
-# A trailing dot plus a short alphanumeric run — a plausible file extension. Deliberately
-# strict so a note title like "v1.2 release notes" (spaces after the dot) is not mistaken
-# for one.
-_FILE_SUFFIX_RE = re.compile(r"\.[A-Za-z0-9]{1,10}$")
+# A trailing dot plus a short alphanumeric run containing at least one letter — a plausible file
+# extension. Deliberately strict in two ways, and both matter:
+#
+# * spaces after the dot disqualify it, so a note title like "v1.2 release notes" is not mistaken
+#   for one;
+# * an all-digit run disqualifies it, so a *numbered* title — "[[Meeting 3.5]]", "[[Phase 2.1]]",
+#   "[[Spec v0.9]]" — is reported as the broken link it is rather than suppressed as a file.
+#
+# The letter requirement is what separates them: ".5" and ".61850" differ only in length, so no
+# length bound could. Suppressing a genuine break *deflates* the vault-health count, which is worse
+# than inflating it — an undercount is invisible and reads as health.
+_FILE_SUFFIX_RE = re.compile(r"\.(?=[A-Za-z0-9]{1,10}$)[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]*$")
 
 
 def _strip_display(display: str) -> str:
@@ -65,7 +119,7 @@ def _matches_path_suffix(rel_path: str, suffix: str) -> bool:
 
     The match is legal only when it consumes the whole rel_path or is preceded by ``/``.
     """
-    lowered = rel_path.lower()
+    lowered = _fold_case(rel_path)
     if not lowered.endswith(suffix):
         return False
     rest = len(lowered) - len(suffix)
@@ -87,7 +141,7 @@ def candidates_for(display: str, catalog: dict[str, list[str]]) -> list[str]:
     if not target:
         return []
     if "/" in target:
-        suffix = target.lower() + ".md"
+        suffix = _fold_case(target) + ".md"
         return sorted(
             path
             for paths in catalog.values()
@@ -189,7 +243,7 @@ class NormalizeResolver:
 
         if "/" in display:
             # Path-suffix resolution: find unique rel_path ending with "display.md"
-            suffix = display.lower() + ".md"
+            suffix = _fold_case(display) + ".md"
             all_paths = self._flatten_paths(catalog)
             matches = [p for p in all_paths if _matches_path_suffix(p, suffix)]
             return matches[0] if len(matches) == 1 else None

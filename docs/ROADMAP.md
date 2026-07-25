@@ -163,6 +163,28 @@ Two things this says about the track:
   names that are suffixes of other folder names, BOMs, numeric title suffixes, non-ASCII
   punctuation. Widening the generator's _alphabet_ — not its vault count — is the follow-on.
 
+_Follow-on, same day (#133's slice):_ widening the alphabet was **not enough, and the measurement
+says why.** With the alphabet widened, reverting #123/#136/#137/#138/#139 one at a time left the
+whole property suite green — a catch rate of **0 of 4** on the classes it was widened for. Every
+invariant in that file is a _conservation or self-consistency_ property, and each of those bugs is
+perfectly self-consistent: #136's fabricated edge really is in the graph, so nothing vanishes; a
+BOM'd note simply has no frontmatter; a link the normalizer cannot match is genuinely missing by the
+package's own rules. **Self-consistency cannot see a wrong answer.**
+
+What was missing is an **oracle** — a link whose intended target is known independently of what the
+resolver says. The generator now builds a note first and writes the link _from_ it, through a
+transformation Obsidian treats as identity-preserving (case, `.md`, anchor, alias display, padding,
+NFD/NFC, punctuation swaps, path qualification, ASCII twins of typographic marks), plus a negative
+oracle over names known to be absent. Two further changes were needed to make it bite: narrow
+per-vault name pools, so the collisions that matter actually co-occur, and an assertion that an
+`ambiguous` candidate set is _minimal_, not merely non-empty.
+
+Catch rate on the same experiment: **6 of 6**, adding #119 — the class that started this track.
+
+The generalizable lesson, and the one to carry into future test design here: **a property suite over
+generated input still needs a correct answer to compare against.** Invariants prove the package is
+consistent with itself, which is exactly the thing a systematically wrong resolver also is.
+
 Audited alongside: the reference vault's two suppressed buckets, by hand — 17 `non-note-file` (all
 genuine `.base`/`.png`) and 40 `intra-note` (all genuine heading refs), 0 false suppressions. A
 suppressed bucket is only trustworthy once someone has read it.
