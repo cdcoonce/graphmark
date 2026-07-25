@@ -26,9 +26,17 @@ class VaultConfig:
 
 
 def load_config(path: Path) -> VaultConfig:
-    """Load a VaultConfig from a TOML file."""
+    """Load a VaultConfig from a TOML file.
+
+    ``root`` is the only required key (resolved relative to the TOML's directory). Every other
+    key is optional and falls back to the ``VaultConfig`` dataclass default. A TOML missing
+    ``root`` raises ``ValueError`` naming the file and the missing key.
+    """
     with open(path, "rb") as f:
         data = tomllib.load(f)
+
+    if "root" not in data:
+        raise ValueError(f"config {path}: missing required key 'root'")
 
     toml_dir = path.parent
     root = toml_dir / data["root"]
