@@ -27,7 +27,7 @@ Repository = "https://github.com/cdcoonce/graphmark"
 Issues = "https://github.com/cdcoonce/graphmark/issues"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.6"]
+dev = ["pytest>=8.0", "ruff>=0.6", "hypothesis>=6.100"]
 
 [project.scripts]
 graphmark = "graphmark.cli:main"
