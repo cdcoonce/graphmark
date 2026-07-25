@@ -23,22 +23,27 @@ class VaultConfig:
     transient_prefixes: tuple[str, ...] = ()
 
 
-def load_config(path: Path) -> VaultConfig:
+def load_config(path: Path, *, root_override: Path | None = None) -> VaultConfig:
     """Load a VaultConfig from a TOML file.
 
     ``root`` is the only required key (resolved relative to the TOML's directory). Every other
     key that maps to a ``VaultConfig`` field is optional and falls back to the dataclass default;
     any other key in the TOML is silently ignored. A TOML missing ``root`` raises ``ValueError``
     naming the file and the missing key.
+
+    ``root_override`` supplies the vault root from outside the TOML (the CLI's ``--root`` flag).
+    When given it wins over any ``root`` key and makes that key optional, so a policy-only config
+    — such as the shipped ``configs/my-brain.toml`` — can be paired with an explicit root.
     """
     with open(path, "rb") as f:
         data = tomllib.load(f)
 
-    if "root" not in data:
+    if root_override is not None:
+        root = root_override
+    elif "root" in data:
+        root = path.parent / data["root"]
+    else:
         raise ValueError(f"config {path}: missing required key 'root'")
-
-    toml_dir = path.parent
-    root = toml_dir / data["root"]
 
     return VaultConfig(
         root=root,

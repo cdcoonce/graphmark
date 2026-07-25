@@ -69,6 +69,22 @@ class TestLoadConfig:
         cfg = load_config(toml)  # unknown keys are silently ignored, not an error
         assert cfg.root == tmp_path / "vault"
 
+    def test_root_override_replaces_the_toml_root(self, tmp_path):
+        toml = tmp_path / "with-root.toml"
+        toml.write_text('root = "vault"\nexcluded_dirs = [".git"]\n')
+        cfg = load_config(toml, root_override=tmp_path / "elsewhere")
+        assert cfg.root == tmp_path / "elsewhere"
+        assert cfg.excluded_dirs == [".git"]  # other keys still honored
+
+    def test_root_override_makes_the_root_key_optional(self, tmp_path):
+        # The shipped reference config (configs/my-brain.toml) has no root key — it is meant to
+        # be paired with an explicit root, so an override must satisfy the requirement.
+        toml = tmp_path / "rootless.toml"
+        toml.write_text('scoped_folders = ["brain"]\n')
+        cfg = load_config(toml, root_override=tmp_path / "vault")
+        assert cfg.root == tmp_path / "vault"
+        assert cfg.scoped_folders == ["brain"]
+
     def test_transient_prefixes_loaded_as_tuple(self):
         cfg = load_config(ALT_DIR / "config.toml")
         assert isinstance(cfg.transient_prefixes, tuple)

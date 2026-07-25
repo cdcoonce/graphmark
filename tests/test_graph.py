@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from graphmark.config import VaultConfig
 from graphmark.graph import NormalizeResolver, VaultGraph, build_catalog
 from graphmark.model import Document
@@ -110,6 +112,35 @@ class TestNormalizeResolver:
         assert self.resolver.resolve("personal/beta", cat2) == "personal/beta.md"
         # cat1 no longer flatten-cached, but still resolves correctly
         assert self.resolver.resolve("brain/alpha", cat1) == "brain/alpha.md"
+
+
+class TestVaultGraphBuildRootValidation:
+    """A bad root must fail loudly — rglob on a missing dir silently yields nothing."""
+
+    def _build(self, root: Path) -> VaultGraph:
+        return VaultGraph.build(
+            VaultConfig(root=root),
+            WikilinkExtractor(),
+            NormalizeResolver(),
+        )
+
+    def test_nonexistent_root_raises_valueerror_naming_the_path(self, tmp_path):
+        missing = tmp_path / "no-such-vault"
+        with pytest.raises(ValueError, match="no-such-vault"):
+            self._build(missing)
+
+    def test_root_pointing_at_a_file_raises_valueerror(self, tmp_path):
+        as_file = tmp_path / "not-a-dir.md"
+        as_file.write_text("# I am a file\n")
+        with pytest.raises(ValueError, match="not-a-dir.md"):
+            self._build(as_file)
+
+    def test_empty_but_existing_root_is_valid(self, tmp_path):
+        # An empty vault is legitimate — only a MISSING root is an error.
+        vault = tmp_path / "empty-vault"
+        vault.mkdir()
+        graph = self._build(vault)
+        assert graph.nodes == {}
 
 
 class TestVaultGraphBuild:

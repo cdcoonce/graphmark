@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import tomllib
 from pathlib import Path
 
 from graphmark.config import VaultConfig, load_config
@@ -23,16 +24,22 @@ from graphmark.parse import WikilinkExtractor
 
 
 def _load(args: argparse.Namespace) -> tuple[VaultGraph, VaultConfig]:
-    if args.config is not None:
-        config = load_config(Path(args.config))
-        if args.root is not None:
-            config.root = Path(args.root)
-    elif args.root is not None:
-        config = VaultConfig(root=Path(args.root))
-    else:
+    if args.config is None and args.root is None:
         print("error: --config or --root required", file=sys.stderr)
         sys.exit(1)
-    graph = VaultGraph.build(config, WikilinkExtractor(), NormalizeResolver())
+
+    root = Path(args.root) if args.root is not None else None
+    try:
+        if args.config is not None:
+            # root_override is applied during the load, so a policy-only config (no root key)
+            # paired with --root works instead of raising before the override could apply.
+            config = load_config(Path(args.config), root_override=root)
+        else:
+            config = VaultConfig(root=root)
+        graph = VaultGraph.build(config, WikilinkExtractor(), NormalizeResolver())
+    except (OSError, tomllib.TOMLDecodeError, ValueError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(2)
     return graph, config
 
 
