@@ -52,6 +52,70 @@ def _run_cli(argv: list[str], capsys) -> str:
     return capsys.readouterr().out
 
 
+def _run_cli_expect_exit(argv: list[str], capsys, code: int):
+    """Run the CLI expecting SystemExit(code); return (stdout, stderr)."""
+    from graphmark.cli import main
+
+    with patch.object(sys, "argv", argv), pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == code
+    captured = capsys.readouterr()
+    return captured.out, captured.err
+
+
+class TestBadInputHandling:
+    """A bad path or config must fail loudly with exit 2 — never silently-empty JSON."""
+
+    def test_nonexistent_root_exits_2_not_empty_graph(self, tmp_path, capsys):
+        missing = tmp_path / "typo-vault"
+        out, err = _run_cli_expect_exit(["graphmark", "--root", str(missing), "stats"], capsys, 2)
+        assert out == ""  # must NOT print {"notes": 0, ...}
+        assert "typo-vault" in err
+
+    def test_nonexistent_config_exits_2(self, tmp_path, capsys):
+        missing = tmp_path / "no-such.toml"
+        out, err = _run_cli_expect_exit(["graphmark", "--config", str(missing), "stats"], capsys, 2)
+        assert out == ""
+        assert "no-such.toml" in err
+
+    def test_malformed_toml_exits_2(self, tmp_path, capsys):
+        bad = tmp_path / "bad.toml"
+        bad.write_text('root = "vault"\nthis is not = = valid toml\n')
+        out, err = _run_cli_expect_exit(["graphmark", "--config", str(bad), "stats"], capsys, 2)
+        assert out == ""
+        assert err.startswith("error:")
+
+    def test_config_missing_root_exits_2(self, tmp_path, capsys):
+        rootless = tmp_path / "rootless.toml"
+        rootless.write_text('scoped_folders = ["brain"]\n')
+        out, err = _run_cli_expect_exit(
+            ["graphmark", "--config", str(rootless), "stats"], capsys, 2
+        )
+        assert out == ""
+        assert "root" in err
+
+    def test_rootless_config_works_when_root_is_supplied(self, simple_graph, capsys):
+        # The shipped configs/my-brain.toml has no root key; pairing it with --root must work.
+        rootless = SIMPLE_CONFIG.parent / "rootless-probe.toml"
+        rootless.write_text('excluded_dirs = [".git"]\n')
+        try:
+            out = _run_cli(
+                ["graphmark", "--config", str(rootless), "--root", str(SIMPLE_VAULT), "stats"],
+                capsys,
+            )
+            assert json.loads(out) == stats(simple_graph)
+        finally:
+            rootless.unlink()
+
+    def test_shipped_reference_config_works_with_root(self, capsys):
+        repo_config = Path(__file__).parent.parent / "configs" / "my-brain.toml"
+        out = _run_cli(
+            ["graphmark", "--config", str(repo_config), "--root", str(SIMPLE_VAULT), "stats"],
+            capsys,
+        )
+        assert json.loads(out)["notes"] >= 0
+
+
 class TestStatsCommand:
     def test_emits_valid_json(self, simple_graph, capsys):
         out = _run_cli(["graphmark", "--config", str(SIMPLE_CONFIG), "stats"], capsys)

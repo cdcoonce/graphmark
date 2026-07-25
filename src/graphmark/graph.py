@@ -89,6 +89,10 @@ class VaultGraph:
         resolver: Resolver,
     ) -> VaultGraph:
         root = config.root
+        # rglob on a missing path silently yields nothing, so an unvalidated root turns a typo
+        # into a structurally valid empty graph. An existing-but-empty vault is still legitimate.
+        if not root.is_dir():
+            raise ValueError(f"vault root does not exist or is not a directory: {root}")
         excluded = set(config.excluded_dirs)
         rules = set(config.rules_files)
 
