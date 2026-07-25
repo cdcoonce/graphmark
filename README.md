@@ -71,3 +71,16 @@ print(gaps(graph, similar_fn=my_similarity, threshold=0.6, k=8))
 
 `dismiss.py` provides a content-hash dismissal store for gap suggestions: a dismissed pair stays
 suppressed only while both notes exist with unchanged content.
+
+## Development & releases
+
+Two long-lived branches: **`dev`** is the integration branch (open PRs against it); **`main`** is
+the release branch. Both are gated by CI (`ruff check` + `ruff format --check` + `pytest -q` on
+Ubuntu and macOS).
+
+Releases are automated by conventional commits. When `dev` is promoted to `main`,
+`.github/workflows/release.yml` runs [python-semantic-release](https://python-semantic-release.readthedocs.io):
+it reads the commit history since the last tag, bumps the version, updates `CHANGELOG.md`, tags
+`v<version>`, cuts a GitHub release, and publishes to PyPI via OIDC Trusted Publishing. So the
+version is a function of your commit messages — `feat:` bumps the minor, `fix:`/`perf:` the patch
+(pre-1.0, breaking changes bump the minor, not the major). No manual version edits, no tokens.
