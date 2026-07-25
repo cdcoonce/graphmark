@@ -179,6 +179,10 @@ class TestNeighborhood:
         assert result["out"] == sorted(result["out"])
         assert result["back"] == sorted(result["back"])
 
+    def test_unknown_note_raises_valueerror_with_note(self, graph):
+        with pytest.raises(ValueError, match="does/not/exist.md"):
+            neighborhood(graph, "does/not/exist.md")
+
 
 class TestSiloedNotes:
     def test_simple_no_bridges_returns_empty(self, graph):

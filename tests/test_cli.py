@@ -147,6 +147,24 @@ class TestNeighborhoodCommand:
         )
         assert json.loads(out) == neighborhood(simple_graph, "brain/hub.md", depth=2)
 
+    def test_unknown_note_exits_2_with_stderr_and_no_stdout(self, capsys):
+        from graphmark.cli import main
+
+        argv = [
+            "graphmark",
+            "--config",
+            str(SIMPLE_CONFIG),
+            "neighborhood",
+            "--note",
+            "brain/typo.md",
+        ]
+        with patch.object(sys, "argv", argv), pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "brain/typo.md" in captured.err
+
 
 class TestPagerankCommand:
     def test_emits_valid_json(self, capsys):

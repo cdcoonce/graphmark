@@ -195,7 +195,13 @@ def gaps(
 
 
 def neighborhood(graph: VaultGraph, note: str, depth: int = 1) -> dict:
-    """Return out/back neighbors (and two_hop when depth>=2) for a note."""
+    """Return out/back neighbors (and two_hop when depth>=2) for a note.
+
+    Raises ``ValueError`` if ``note`` is not a node in the graph, so a typo is distinguishable
+    from a genuinely isolated note.
+    """
+    if note not in graph.nodes:
+        raise ValueError(f"unknown note: {note}")
     out = sorted(graph.out_links.get(note, set()))
     back = sorted(graph.back_links.get(note, set()))
     result: dict = {"note": note, "out": out, "back": back}
