@@ -42,7 +42,39 @@ def _load(args: argparse.Namespace) -> tuple[VaultGraph, VaultConfig]:
     return graph, config
 
 
+def _reconcile_globals(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """Merge each global's leading and trailing occurrence into one value.
+
+    ``--config``/``--root`` are attached to the top-level parser *and*, under a separate dest, to
+    every subparser, so both ``graphmark --root X stats`` and ``graphmark stats --root X`` work.
+    Trailing-option order is what every comparable CLI accepts and what a user types by reflex — and
+    it is what the README documents, so before this the first command a new user copied errored.
+
+    Repeats with the **same** value are harmless. Two different values are a usage error rather than
+    a silent last-wins: guessing which one the user meant is exactly the kind of quiet wrong answer
+    this tool exists not to give. Both options collect with ``action="append"``, so this covers a
+    repeat *within* one position (``stats --root A --root B``) as well as one across the two —
+    argparse's own last-wins would otherwise swallow the first silently.
+    """
+    for name in ("config", "root"):
+        after = f"{name}_after"
+        # `after` is absent when no subcommand ran at all — argparse never reached a subparser.
+        given = (getattr(args, name) or []) + (getattr(args, after, None) or [])
+        distinct = sorted(set(given))
+        if len(distinct) > 1:
+            parser.error(f"--{name} given more than once with conflicting values: {distinct}")
+        setattr(args, name, distinct[0] if distinct else None)
+        if hasattr(args, after):
+            delattr(args, after)
+
+
 def main() -> None:
+    # Attached to every subparser under a distinct dest, then reconciled: argparse would otherwise
+    # let the subparser's default (None) overwrite a value the top-level parser had already read.
+    trailing_globals = argparse.ArgumentParser(add_help=False)
+    trailing_globals.add_argument("--config", metavar="PATH", dest="config_after", action="append")
+    trailing_globals.add_argument("--root", metavar="PATH", dest="root_after", action="append")
+
     parser = argparse.ArgumentParser(
         prog="graphmark",
         description=(
@@ -51,49 +83,86 @@ def main() -> None:
         ),
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    parser.add_argument("--config", metavar="PATH", help="TOML config file")
-    parser.add_argument("--root", metavar="PATH", help="Vault root (overrides --config root)")
+    parser.add_argument("--config", metavar="PATH", action="append", help="TOML config file")
+    parser.add_argument(
+        "--root", metavar="PATH", action="append", help="Vault root (overrides --config root)"
+    )
 
     sub = parser.add_subparsers(dest="command", metavar="COMMAND")
 
-    sub.add_parser("stats", help="Aggregate vault stats: notes, edges, orphans, clusters, density")
-    sub.add_parser("orphans", help="Notes with no links in or out (degree 0)")
+    sub.add_parser(
+        "stats",
+        parents=[trailing_globals],
+        help="Aggregate vault stats: notes, edges, orphans, clusters, density",
+    )
+    sub.add_parser(
+        "orphans", parents=[trailing_globals], help="Notes with no links in or out (degree 0)"
+    )
 
-    hubs_p = sub.add_parser("hubs", help="Most-connected notes, by undirected degree")
+    hubs_p = sub.add_parser(
+        "hubs", parents=[trailing_globals], help="Most-connected notes, by undirected degree"
+    )
     hubs_p.add_argument("--n", type=int, default=10, help="How many hubs to return (default: 10)")
 
-    sub.add_parser("clusters", help="Connected components of the link graph, largest first")
-    sub.add_parser("bridges", help="Articulation points: notes whose removal splits the graph")
-    sub.add_parser("siloed", help="Notes reachable from the mainland only through one bridge")
+    sub.add_parser(
+        "clusters",
+        parents=[trailing_globals],
+        help="Connected components of the link graph, largest first",
+    )
+    sub.add_parser(
+        "bridges",
+        parents=[trailing_globals],
+        help="Articulation points: notes whose removal splits the graph",
+    )
+    sub.add_parser(
+        "siloed",
+        parents=[trailing_globals],
+        help="Notes reachable from the mainland only through one bridge",
+    )
 
-    nb_p = sub.add_parser("neighborhood", help="Links in and out of one note")
+    nb_p = sub.add_parser(
+        "neighborhood", parents=[trailing_globals], help="Links in and out of one note"
+    )
     nb_p.add_argument("--note", required=True, help="Vault-relative path, e.g. brain/hub.md")
     nb_p.add_argument(
         "--depth", type=int, default=1, help="1 for direct links, 2 to add two-hop (default: 1)"
     )
 
-    pr_p = sub.add_parser("pagerank", help="PageRank importance ranking over the link graph")
+    pr_p = sub.add_parser(
+        "pagerank",
+        parents=[trailing_globals],
+        help="PageRank importance ranking over the link graph",
+    )
     pr_p.add_argument("--n", type=int, default=10, help="How many notes to return (default: 10)")
     pr_p.add_argument(
         "--alpha", type=float, default=0.85, help="Damping factor in (0, 1) (default: 0.85)"
     )
 
-    exp_p = sub.add_parser("export", help="Export the graph in another format")
+    exp_p = sub.add_parser(
+        "export", parents=[trailing_globals], help="Export the graph in another format"
+    )
     exp_p.add_argument("format", choices=["dot"], help="Output format")
 
-    sub.add_parser("gaps", help="Link-gap suggestions (library-only; see the README)")
+    sub.add_parser(
+        "gaps",
+        parents=[trailing_globals],
+        help="Link-gap suggestions (library-only; see the README)",
+    )
 
     sub.add_parser(
         "links",
+        parents=[trailing_globals],
         help="How every wikilink was classified: counts per reason, plus alias resolutions",
     )
 
     sub.add_parser(
         "check",
+        parents=[trailing_globals],
         help="Gate vault health against the config's [check] thresholds (exit 1 on breach)",
     )
 
     args = parser.parse_args()
+    _reconcile_globals(parser, args)
 
     # Usage errors all exit 2, matching argparse's own convention (and leaving exit 1 free for
     # future domain-level outcomes such as a `check` threshold breach). Help for a missing
