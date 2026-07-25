@@ -1,9 +1,10 @@
-"""Graph construction: catalog building, link resolution, and VaultGraph."""
+"""Graph construction: catalog building, link resolution, diagnosis, and VaultGraph."""
 
 from __future__ import annotations
 
 import re
 import string
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from graphmark.config import VaultConfig
@@ -53,26 +54,26 @@ def _targets_non_note_file(display: str) -> bool:
     return bool(match) and match.group(0).lower() != ".md"
 
 
-def _targets_out_of_scope_note(display: str, out_of_scope: dict[str, list[str]]) -> bool:
-    """True for a link to a markdown note that exists but is outside the configured scope.
+def candidates_for(display: str, catalog: dict[str, list[str]]) -> list[str]:
+    """Every rel_path in ``catalog`` that ``display`` names, sorted; empty if it names none.
 
-    ``build`` drops unscoped folders, excluded dirs and rules files from the catalog, so links to
-    them fail the resolver — yet the link is correct, Obsidian follows it, and there is nothing for
-    anyone to fix. Reporting it as broken just fills the vault-health count with noise.
+    Answers "what did this display match?" — the question behind both an ambiguity verdict (the
+    resolver saw these and refused to pick) and the out-of-scope check (a link into unindexed
+    markdown). Deciding *uniqueness* remains the ``Resolver``'s job; this only reports matches, so
+    the two never disagree about which notes were in play.
 
-    Only ever consulted after the resolver has already failed, so an in-graph note always wins over
-    an out-of-scope namesake. **Any** candidate suppresses: out-of-scope notes are never link
-    targets, so ambiguity among them says nothing about whether the in-graph link is broken.
+    Matching mirrors ``NormalizeResolver``: bare displays by normalized stem, ``[[folder/note]]``
+    by path suffix. Both branches read the same stripped display.
     """
     target = _strip_display(display)
     if not target:
-        return False
+        return []
     if "/" in target:
         suffix = target.lower() + ".md"
-        return any(
-            path.lower().endswith(suffix) for paths in out_of_scope.values() for path in paths
+        return sorted(
+            path for paths in catalog.values() for path in paths if path.lower().endswith(suffix)
         )
-    return _normalize(target) in out_of_scope
+    return list(catalog.get(_normalize(target), ()))
 
 
 def _is_intra_note_reference(display: str) -> bool:
@@ -143,6 +144,91 @@ class NormalizeResolver:
         return paths[0]
 
 
+#: Every value ``LinkDiagnosis.reason`` can take, in the order they are decided. A consumer
+#: switches on these strings, so the set is part of the public contract.
+DIAGNOSIS_REASONS = (
+    "resolved",
+    "ambiguous",
+    "non-note-file",
+    "out-of-scope-note",
+    "missing",
+    "intra-note",
+)
+
+
+@dataclass(frozen=True)
+class LinkDiagnosis:
+    """Why a single wikilink display ended up where it did.
+
+    ``build`` sorts every link into one of the ``DIAGNOSIS_REASONS`` and then keeps only whether it
+    resolved, which conflates an *ambiguous* link with a *missing* one. Those need opposite repairs
+    — disambiguate against the colliding notes, versus create or delete the target — so a consumer
+    holding only ``unresolved`` cannot act without rebuilding the resolver itself.
+
+    ``target`` is the resolved rel_path, set only when ``reason == "resolved"``; the caller recovers
+    the note's canonical title from its stem, which is what makes a case repair like
+    ``[[ethan courtman]]`` → ``[[Ethan Courtman]]`` possible.
+
+    ``candidates`` carries the rel_paths in play: the colliding notes for ``ambiguous``, the
+    unindexed markdown for ``out-of-scope-note``. Empty for every other reason.
+    """
+
+    display: str
+    target: str | None = None
+    reason: str = "missing"
+    candidates: tuple[str, ...] = field(default=())
+
+
+def _diagnose(
+    display: str,
+    catalog: dict[str, list[str]],
+    out_of_scope: dict[str, list[str]],
+    resolver: Resolver,
+) -> LinkDiagnosis:
+    """Classify one display against already-built resolution state.
+
+    The single classifier: ``build`` calls this while assembling a graph (before a ``VaultGraph``
+    exists to pass), and the public ``diagnose`` wraps it for callers holding a built graph. Two
+    independent classifiers would drift from each other inside the package, which is the exact
+    failure this surface exists to remove.
+    """
+    if _is_intra_note_reference(display):
+        return LinkDiagnosis(display=display, reason="intra-note")
+
+    target = resolver.resolve(display, catalog)
+    if target is not None:
+        return LinkDiagnosis(display=display, target=target, reason="resolved")
+
+    # The resolver declined. Whether it declined because nothing matched or because too much did
+    # is the distinction consumers need, and only the catalog can answer it.
+    collisions = candidates_for(display, catalog)
+    if collisions:
+        return LinkDiagnosis(display=display, reason="ambiguous", candidates=tuple(collisions))
+
+    # Ordered as build has always ordered it: a "[[Board.canvas]]" is a non-note file even if some
+    # out-of-scope note happens to share the stem.
+    if _targets_non_note_file(display):
+        return LinkDiagnosis(display=display, reason="non-note-file")
+
+    unindexed = candidates_for(display, out_of_scope)
+    if unindexed:
+        return LinkDiagnosis(
+            display=display, reason="out-of-scope-note", candidates=tuple(unindexed)
+        )
+
+    return LinkDiagnosis(display=display, reason="missing")
+
+
+def diagnose(graph: VaultGraph, display: str) -> LinkDiagnosis:
+    """Explain what ``display`` names in ``graph`` — see :class:`LinkDiagnosis`.
+
+    Uses the resolver the graph was built with, so a diagnosis can never contradict the graph it
+    describes. A directly constructed ``VaultGraph`` with no resolver falls back to
+    ``NormalizeResolver``.
+    """
+    return _diagnose(display, graph.catalog, graph.out_of_scope, graph.resolver)
+
+
 class VaultGraph:
     """Built graph: all nodes plus resolved out/back adjacency.
 
@@ -166,6 +252,7 @@ class VaultGraph:
         unresolved: dict[str, list[str]] | None = None,
         catalog: dict[str, list[str]] | None = None,
         out_of_scope: dict[str, list[str]] | None = None,
+        resolver: Resolver | None = None,
     ) -> None:
         self.nodes = nodes
         self.out_links = out_links
@@ -173,6 +260,9 @@ class VaultGraph:
         self.unresolved = unresolved if unresolved is not None else {}
         self.catalog = catalog if catalog is not None else {}
         self.out_of_scope = out_of_scope if out_of_scope is not None else {}
+        # Retained so diagnose() answers with the same resolver that built the graph; a
+        # pluggable Resolver that disagreed with the graph it describes would be worse than none.
+        self.resolver: Resolver = resolver if resolver is not None else NormalizeResolver()
 
     @classmethod
     def build(
@@ -219,25 +309,21 @@ class VaultGraph:
 
         unresolved: dict[str, list[str]] = {}
 
+        # Classification lives in _diagnose so build and the public diagnose() can never disagree
+        # about why a link failed. Ambiguous and missing are both broken from a vault-health view;
+        # the raw display is recorded once per occurrence, since that is what a human goes and
+        # fixes.
+        broken = {"ambiguous", "missing"}
         for doc in docs:
             for display in extractor.extract(doc.text):
-                if _is_intra_note_reference(display):
-                    continue
-                target = resolver.resolve(display, catalog)
-                if target is None:
-                    if _targets_non_note_file(display) or _targets_out_of_scope_note(
-                        display, out_of_scope
-                    ):
-                        continue  # out of scope, not a broken note link
-                    # Unresolvable OR ambiguous — the Resolver protocol conflates the two, and
-                    # both are equally broken from a vault-health view. Record the raw display
-                    # (what a human has to go fix) once per occurrence.
+                d = _diagnose(display, catalog, out_of_scope, resolver)
+                if d.reason in broken:
                     unresolved.setdefault(doc.rel_path, []).append(display)
-                elif target != doc.rel_path:
-                    out_links[doc.rel_path].add(target)
+                elif d.target is not None and d.target != doc.rel_path:
+                    out_links[doc.rel_path].add(d.target)
 
         for src, targets in out_links.items():
             for dst in targets:
                 back_links[dst].add(src)
 
-        return cls(nodes, out_links, back_links, unresolved, catalog, out_of_scope)
+        return cls(nodes, out_links, back_links, unresolved, catalog, out_of_scope, resolver)

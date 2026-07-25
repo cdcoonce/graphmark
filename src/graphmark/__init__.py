@@ -26,7 +26,15 @@ from graphmark.dismiss import (
     weaklink_sig,
 )
 from graphmark.export import to_dot, to_json
-from graphmark.graph import NormalizeResolver, VaultGraph, build_catalog
+from graphmark.graph import (
+    DIAGNOSIS_REASONS,
+    LinkDiagnosis,
+    NormalizeResolver,
+    VaultGraph,
+    build_catalog,
+    candidates_for,
+    diagnose,
+)
 from graphmark.interfaces import LinkExtractor, Resolver, Similarity
 from graphmark.metrics import (
     GAPS_DEFAULT_BAND,
@@ -87,6 +95,8 @@ __all__ = [
     "CheckPolicy",
     "Document",
     "LinkExtractor",
+    "DIAGNOSIS_REASONS",
+    "LinkDiagnosis",
     "NormalizeResolver",
     "Resolver",
     "Similarity",
@@ -98,6 +108,8 @@ __all__ = [
     "bridges",
     "build",
     "build_catalog",
+    "candidates_for",
+    "diagnose",
     "clusters",
     "gaps",
     "hubs",
