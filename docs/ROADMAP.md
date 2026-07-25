@@ -64,14 +64,17 @@ Shipped: `graph.unresolved`, the `[check]` policy block (`max_orphans` /
 reserved for breach and a byte-stable JSON report, `graphmark.build()` + curated top-level
 re-exports, and a README rewritten around the real surface.
 
-_Where we are (0.3.4):_ the gate works and the vault dogfoods it. The remaining risk is the
-**credibility of its flagship number**. Four false-positive classes have been found and fixed by
-triaging a real vault against the metric — same-note anchors (#98, 19% of the count),
-non-markdown targets (#101, 10%), the `.md` extension (#104), and links to notes that exist but
-are out of graph scope (#107, 7%). A threshold nobody trusts is not a gate.
+_Where we are (0.6.0):_ the gate works and the vault dogfoods it. The remaining risk is the
+**credibility of its flagship number**. Seven false-positive classes have been found and fixed —
+same-note anchors (#98, 19% of the count), non-markdown targets (#101, 10%), whitespace-padded
+displays, the `.md` extension (#104), out-of-scope notes (#107, 7%), frontmatter aliases (#119,
+**23 phantom breaks against an actual 0**), and Unicode NFD/NFC (#123). A threshold nobody trusts
+is not a gate.
 
-_Where we're going:_ keep truthing the metric against live vaults, then the thin GitHub Action
-wrapper — but only once the count is trustworthy enough to fail someone's build.
+_Where we're going:_ **Track F, not the GitHub Action.** Every one of those seven was found by a
+human reading link lists on one vault, which does not scale and has no reason to be finished. The
+Action ships once the accounting underneath it is auditable — see Track F for why that ordering is
+deliberate.
 
 ### Track E — One resolver: absorb the consumer's second link stack (feature track)
 
