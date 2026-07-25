@@ -76,6 +76,43 @@ def candidates_for(display: str, catalog: dict[str, list[str]]) -> list[str]:
     return list(catalog.get(_normalize(target), ()))
 
 
+def build_aliases(docs: list[Document], catalog: dict[str, list[str]]) -> dict[str, str]:
+    """Map normalized alias → rel_path, for aliases that unambiguously name one note.
+
+    Obsidian's ``aliases:`` property declares additional real names for a note, so a link written
+    against one is not a broken link. Two rules keep this conservative, and both matter:
+
+    * **An alias that collides with any real note name is dropped entirely** — not merely
+      outranked. A note's own title must never be hijackable by someone else's alias, and an
+      already-ambiguous basename must not be rescued into resolving by a third note's alias.
+    * **An alias claimed by two or more notes resolves to nothing** — the same refusal graphmark
+      already applies to colliding basenames. Ambiguity stays ambiguous.
+
+    Alias keys go through ``_normalize``, the function that builds catalog keys, so an alias and a
+    note name can never drift apart on case or punctuation.
+    """
+    claims: dict[str, set[str]] = {}
+    for doc in docs:
+        raw = doc.frontmatter.get("aliases")
+        # A scalar is one alias; a list is many; anything else (a number, a mapping, a missing
+        # key) yields none rather than raising — a note someone is mid-edit must not break a build.
+        if isinstance(raw, str):
+            values = [raw]
+        elif isinstance(raw, list):
+            values = [v for v in raw if isinstance(v, str)]
+        else:
+            continue
+        for alias in values:
+            # A path is not a name: "[[folder/note]]" is resolved by path suffix, never by alias.
+            if "/" in alias:
+                continue
+            key = _normalize(alias)
+            if not key or key in catalog:
+                continue
+            claims.setdefault(key, set()).add(doc.rel_path)
+    return {key: paths.pop() for key, paths in claims.items() if len(paths) == 1}
+
+
 def _is_intra_note_reference(display: str) -> bool:
     """True for a link that targets no note, e.g. ``[[#Heading]]`` or ``[[#^block]]``.
 
@@ -269,6 +306,7 @@ def _diagnose(
     catalog: dict[str, list[str]],
     out_of_scope: dict[str, list[str]],
     resolver: Resolver,
+    aliases: dict[str, str] | None = None,
 ) -> LinkDiagnosis:
     """Classify one display against already-built resolution state.
 
@@ -283,6 +321,22 @@ def _diagnose(
     target = resolver.resolve(display, catalog)
     if target is not None:
         return LinkDiagnosis(display=display, target=target, reason="resolved")
+
+    # The resolver runs first, so a real note named X always beats an alias X — otherwise renaming
+    # a note could silently hijack live links. An alias hit is a genuine resolution, not a
+    # consolation: it names the note as surely as the filename does.
+    #
+    # Given the rules build_aliases already enforces, this ordering is defense in depth rather
+    # than load-bearing: an alias key can never collide with a catalog key (dropped at index
+    # time), and a path-qualified display is excluded from alias lookup below, so no display can
+    # match both paths. Mutating the order leaves the suite green, which is expected — the
+    # ordering is insurance against a future relaxation of those rules, not the mechanism.
+    if aliases:
+        stripped = _strip_display(display)
+        if stripped and "/" not in stripped:
+            aliased = aliases.get(_normalize(stripped))
+            if aliased is not None:
+                return LinkDiagnosis(display=display, target=aliased, reason="resolved")
 
     # The resolver declined. Whether it declined because nothing matched or because too much did
     # is the distinction consumers need, and only the catalog can answer it.
@@ -318,7 +372,7 @@ def diagnose(graph: VaultGraph, display: str, *, suggest: int = 0) -> LinkDiagno
     """
     if suggest < 0:
         raise ValueError(f"suggest must be >= 0, got {suggest}")
-    diagnosis = _diagnose(display, graph.catalog, graph.out_of_scope, graph.resolver)
+    diagnosis = _diagnose(display, graph.catalog, graph.out_of_scope, graph.resolver, graph.aliases)
     if suggest and diagnosis.reason == "missing":
         return replace(diagnosis, candidates=suggest_notes(display, graph.catalog, suggest))
     return diagnosis
@@ -348,6 +402,7 @@ class VaultGraph:
         catalog: dict[str, list[str]] | None = None,
         out_of_scope: dict[str, list[str]] | None = None,
         resolver: Resolver | None = None,
+        aliases: dict[str, str] | None = None,
     ) -> None:
         self.nodes = nodes
         self.out_links = out_links
@@ -355,6 +410,7 @@ class VaultGraph:
         self.unresolved = unresolved if unresolved is not None else {}
         self.catalog = catalog if catalog is not None else {}
         self.out_of_scope = out_of_scope if out_of_scope is not None else {}
+        self.aliases = aliases if aliases is not None else {}
         # Retained so diagnose() answers with the same resolver that built the graph; a
         # pluggable Resolver that disagreed with the graph it describes would be worse than none.
         self.resolver: Resolver = resolver if resolver is not None else NormalizeResolver()
@@ -398,6 +454,7 @@ class VaultGraph:
         docs = [parse_document(p, root) for p in md_files]
         nodes = {doc.rel_path: doc for doc in docs}
         catalog = build_catalog(docs)
+        aliases = build_aliases(docs, catalog) if config.resolve_aliases else {}
 
         out_links: dict[str, set[str]] = {rel: set() for rel in nodes}
         back_links: dict[str, set[str]] = {rel: set() for rel in nodes}
@@ -411,7 +468,7 @@ class VaultGraph:
         broken = {"ambiguous", "missing"}
         for doc in docs:
             for display in extractor.extract(doc.text):
-                d = _diagnose(display, catalog, out_of_scope, resolver)
+                d = _diagnose(display, catalog, out_of_scope, resolver, aliases)
                 if d.reason in broken:
                     unresolved.setdefault(doc.rel_path, []).append(display)
                 elif d.target is not None and d.target != doc.rel_path:
@@ -421,4 +478,6 @@ class VaultGraph:
             for dst in targets:
                 back_links[dst].add(src)
 
-        return cls(nodes, out_links, back_links, unresolved, catalog, out_of_scope, resolver)
+        return cls(
+            nodes, out_links, back_links, unresolved, catalog, out_of_scope, resolver, aliases
+        )
