@@ -117,3 +117,50 @@ class TestParseDocument:
         parse_document(note, tmp_path)
         captured = capsys.readouterr()
         assert captured.err == ""
+
+
+class TestFrontmatterLineEndings:
+    """CRLF notes (Windows / git autocrlf vaults) must parse identically to their LF twins.
+
+    A frontmatter block that fails to split stays in the body, so a frontmatter wikilink
+    (`related: "[[X]]"` — a common Obsidian pattern) becomes a phantom graph edge.
+    """
+
+    FM_BYTES_LF = b'---\ntitle: Note\nrelated: "[[Other Note]]"\n---\nBody with [[Real Link]].\n'
+    FM_BYTES_CRLF = (
+        b'---\r\ntitle: Note\r\nrelated: "[[Other Note]]"\r\n---\r\nBody with [[Real Link]].\r\n'
+    )
+
+    def _parse(self, tmp_path, name: str, data: bytes):
+        note = tmp_path / name
+        note.write_bytes(data)
+        return parse_document(note, tmp_path)
+
+    def test_crlf_frontmatter_matches_lf_twin(self, tmp_path):
+        lf = self._parse(tmp_path, "lf.md", self.FM_BYTES_LF)
+        crlf = self._parse(tmp_path, "crlf.md", self.FM_BYTES_CRLF)
+        assert crlf.frontmatter == lf.frontmatter
+        assert crlf.frontmatter == {"title": "Note", "related": "[[Other Note]]"}
+
+    def test_crlf_frontmatter_wikilink_is_not_a_phantom_link(self, tmp_path):
+        crlf = self._parse(tmp_path, "crlf.md", self.FM_BYTES_CRLF)
+        links = WikilinkExtractor().extract(crlf.text)
+        # "Other Note" lives in frontmatter — it must never reach the extractor.
+        assert "Other Note" not in links
+        assert links == ["Real Link"]
+
+    def test_crlf_body_survives_the_split(self, tmp_path):
+        crlf = self._parse(tmp_path, "crlf.md", self.FM_BYTES_CRLF)
+        assert not crlf.text.lstrip().startswith("---")
+        assert "[[Real Link]]" in crlf.text
+
+    def test_closing_delimiter_at_eof_without_trailing_newline(self, tmp_path):
+        # A frontmatter-only note (no body, no trailing newline) is legitimate; parse it.
+        doc = self._parse(tmp_path, "fm_only.md", b"---\ntitle: Note\n---")
+        assert doc.frontmatter == {"title": "Note"}
+        assert doc.text == ""
+
+    def test_closing_delimiter_at_eof_crlf(self, tmp_path):
+        doc = self._parse(tmp_path, "fm_only_crlf.md", b"---\r\ntitle: Note\r\n---")
+        assert doc.frontmatter == {"title": "Note"}
+        assert doc.text == ""
