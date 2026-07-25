@@ -1,6 +1,66 @@
 # CHANGELOG
 
 
+## v0.7.1 (2026-07-25)
+
+### Bug Fixes
+
+- **graph**: Match path-suffix links on component boundaries (#136)
+  ([#140](https://github.com/cdcoonce/graphmark/pull/140),
+  [`3c23b1a`](https://github.com/cdcoonce/graphmark/commit/3c23b1a04a86cdf1c482075c976ed5db86f4e18e))
+
+`[[work/Tasks]]` resolved to `homework/Tasks.md`. Path-suffix resolution tested a raw string suffix,
+  so nothing required the character before the match to be `/`.
+
+This is the first defect class in this package that fabricates an *edge* rather than moving a link
+  between reported buckets, and it is invisible by construction: the link counts `resolved`, so no
+  bucket looks implausible, while orphans, hubs, clusters, bridges, siloed_notes and PageRank all
+  read a graph that does not describe the vault. The mirror case is equally wrong — when the real
+  folder also exists, the spurious second match makes the resolver decline a correct link and report
+  it ambiguous.
+
+`_matches_path_suffix` requires the match to consume the whole rel_path or be preceded by `/`, and
+  both the resolver and `candidates_for` go through it, so the ambiguity set a consumer is shown can
+  never contain a path the resolver would not have considered.
+
+Measured on the reference vault: 0 occurrences, graph byte-identical. Latent, not absent — it needs
+  one folder whose name ends with another's (`work`/`homework`, `ops`/`devops`,
+  `<x>`/`archive-<x>`), which is ordinary.
+
+- **parse**: Strip a leading UTF-8 BOM before the frontmatter split (#137)
+  ([#141](https://github.com/cdcoonce/graphmark/pull/141),
+  [`e92afd6`](https://github.com/cdcoonce/graphmark/commit/e92afd6484d4d8b966122df1db858cd791b33e0a))
+
+`_FM_RE` is anchored with `.match` and decoding leaves U+FEFF at index 0, so a BOM'd note had no
+  frontmatter at all. One cause, two opposite symptoms: its `aliases:` never registered, so links
+  written against them were phantom breaks (#119's class, reintroduced through the parser); and its
+  frontmatter wikilinks stayed in the body and became phantom edges — the exact failure `_FM_RE`'s
+  own docstring says it exists to prevent. That regex was hardened for CRLF and for a block ending
+  at EOF, but not for the byte that can precede the block.
+
+Stripped on the decoded text, so the frontmatter split, the body and the extractor all see the same
+  string on both decode paths. Leading only: elsewhere U+FEFF is a zero-width no-break space and is
+  legitimate content.
+
+Reference vault: 0 BOM'd notes. Latent, not absent — Windows editors, PowerShell's default Out-File
+  and some git filters emit BOMs.
+
+### Documentation
+
+- **roadmap**: Record Track F's interim finding-method result
+  ([#142](https://github.com/cdcoonce/graphmark/pull/142),
+  [`2e6c368`](https://github.com/cdcoonce/graphmark/commit/2e6c368aa16cd3b0cd5dbf4fe6912dcbe7bb1427))
+
+Four defects (#136 #137 #138 #139) found in one pass after #124-#126 shipped — none by reading link
+  lists, none by the property generator. The method that worked was adversarial reading of the
+  resolver and parser, confirmed by probe. All four measure 0 occurrences on the reference vault.
+
+Names two limits this exposes: the counts cannot surface a wrong answer INSIDE a bucket (#136 files
+  as `resolved`, #138 hides a break in `non-note-file`), and #126's generator draws from an alphabet
+  that never reaches these input classes. Also records the hand audit of both suppressed buckets: 0
+  false suppressions.
+
+
 ## v0.7.0 (2026-07-25)
 
 ### Documentation
