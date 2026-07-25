@@ -1,6 +1,163 @@
 # CHANGELOG
 
 
+## v0.5.0 (2026-07-25)
+
+### Features
+
+- **graph**: Add calibrated near-miss suggestions (#112)
+  ([#116](https://github.com/cdcoonce/graphmark/pull/116),
+  [`db873b1`](https://github.com/cdcoonce/graphmark/commit/db873b1009bbef599e9eef035720306b62a548b8))
+
+Track E slice 3, and the last thing keeping a consumer's parallel resolver alive. diagnose(graph,
+  display, suggest=k) fills candidates with near-miss notes for a `missing` verdict only — every
+  other reason already carries the rel_paths in play — so the default of 0 leaves the check gate's
+  hot path untouched.
+
+The rule was calibrated, not invented. The prior art (bidirectional substring containment over
+  stems) was frozen over a real 521-note vault's broken links, giving 53 distinct displays, each
+  annotated by a human as useful / useless / missing / correct-none. Only then was an algorithm
+  chosen, and it is justified against that set: 27/27 useful kept — the non-negotiable — 7 of 8
+  useless dropped, 4 of 5 missing found, zero new false suggestions. Method and measured result in
+  tests/fixtures/suggest/README.md; the vault is private, so every shape is reproduced as a named
+  test with invented names rather than committing the rows.
+
+Matching is directional, which is what separates a suggestion from a wrong answer. A display inside
+  a candidate is an abbreviation and always offered ([[Jordan]] -> Jordan Ellis). A candidate inside
+  a display is offered only above SUGGEST_MIN_COVERAGE: dropping a "-reference" suffix is the
+  answer, matching one word out of five is a real note that is NOT the target, and that shape is
+  what made the old hints untrustworthy. Partial overlap in neither direction is rejected — it
+  carried no useful hint anywhere in the baseline, and rejecting it is what holds the
+  false-suggestion rate at zero.
+
+Two annotations were corrected mid-calibration and both changed the design: [[Work Tasks]] and
+  [[Personal Index]] looked useless only because the old rule printed bare stems, rendering four
+  distinct Index.md files as "Index, Index, Index, Index". Both are correct answers. Suggestions
+  therefore return rel_paths, and `index` is deliberately NOT a generic stem.
+
+Also scrubs real colleague names out of the package. They had been used as doc/test examples and one
+  shipped in a docstring in 0.4.0; all replaced with invented placeholders. Published history still
+  carries them.
+
+Both constants are pinned by the baseline: the cap is the lowest value that keeps every useful
+  suggestion, the floor the highest. Teeth-checked by mutation — disabling suppression fails 1,
+  dropping the coverage floor fails 3, dropping folder-keying fails 2, suggesting on every reason
+  fails 3, and dropping the digit filter initially survived until a ranking test was added to cover
+  it.
+
+
+## v0.4.0 (2026-07-25)
+
+### Features
+
+- **graph**: Add diagnose() — why a link failed, not just that it did (#111)
+  ([#114](https://github.com/cdcoonce/graphmark/pull/114),
+  [`1d124a3`](https://github.com/cdcoonce/graphmark/commit/1d124a3423fc5a6f3c8a0a084e8d15927dd1d828))
+
+Track E slice 2. graph.unresolved conflates two problems needing opposite repairs: a link matching
+  NOTHING wants its target created or deleted, a link matching TOO MUCH wants disambiguating against
+  what it collided with. A consumer holding only unresolved cannot tell them apart, so it rebuilds
+  the resolver — the drift this track exists to end.
+
+diagnose(graph, display) returns a frozen LinkDiagnosis: display echoed verbatim, target when
+  resolved, one of the six DIAGNOSIS_REASONS, and the rel_paths in play (the colliding notes for
+  ambiguous, the unindexed markdown for out-of-scope-note). The reason set is exported as a tuple in
+  decision order so a consumer can switch on it exhaustively.
+
+build() now classifies through the same function rather than agreeing with it separately — two
+  classifiers in one package would recreate the drift inside the package. Two property tests pin
+  them together: unresolved is exactly the ambiguous+missing displays, edges are exactly the
+  resolved non-self targets.
+
+candidates_for() consolidates the two-branch matching that _targets_out_of_scope_note had duplicated
+  from the resolver. It reports matches only; deciding uniqueness stays the Resolver's job, so the
+  two cannot disagree about which notes were in play. The graph now also retains the resolver it was
+  built with, so a diagnosis can never contradict its own graph.
+
+Behavior is unchanged: on the live vault, 130 unresolved / 3582 edges both before and after, and all
+  six frozen fixtures byte-identical. What is new is the answer — 8 of those 130 are ambiguous
+  collisions ([[2026-W27-tasks]] existing under both personal/archive and work/archive,
+  [[RESOURCES]] under four learning folders), which the old surface reported as plain breaks.
+
+- **graph**: Retain catalog + out_of_scope on the built graph (#110)
+  ([#113](https://github.com/cdcoonce/graphmark/pull/113),
+  [`7f7a91c`](https://github.com/cdcoonce/graphmark/commit/7f7a91cae961a06155f565384a429c92356868fb))
+
+* docs(roadmap): close Tracks C and D, open Track E (#110-#112)
+
+afk-driver --expand reads this file verbatim, so a stale one makes the fleet propose already-built
+  work and pollutes the telemetry dataset. It still targeted "v0.2.0 — every error path tested"
+  while the package is 0.3.4 with Tracks C and D both fully shipped.
+
+Track C closed (every item landed at 0.2.0). Track D marked shipped at 0.3.0, with its real
+  remaining risk named: the credibility of its flagship number. Four false-positive classes have now
+  been found by triaging a live vault against max_unresolved_links — #98 anchors (19%), #101
+  non-markdown (10%), #104 the .md extension, #107 out-of-scope notes (7%) — so "keep truthing the
+  metric before shipping a GitHub Action that fails someone's build" is the direction, not more
+  surface.
+
+Track E opened: absorb the consumer's second link stack. graphmark says whether a link resolves; the
+  gardener needs to know why it failed and what to do about it, which is why it still carries its
+  own resolver and why #107 had to be fixed in two places. Sliced #110/#111/#112, with #112 flagged
+  not-autonomous-safe past freezing the baseline — its expected values are human judgment, not
+  oracle-derived.
+
+* feat(graph): retain catalog + out_of_scope on the built graph (#110)
+
+Track E slice 1. build() computed both mappings and threw both away, so a consumer that needs to say
+  anything about a link beyond "resolved / didn't" had to rebuild the entire parse/catalog/resolve
+  stack. the-vault's graph_gardener.py does exactly that, and the two stacks drift: #107 was the
+  fourth resolution fix that had to be applied in two places.
+
+graph.catalog is normalized stem → in-scope rel_paths; a key with two or more paths IS an ambiguity
+  set, which is what lets a consumer say WHICH notes a bare link collided with instead of only that
+  it failed. graph.out_of_scope is the same for markdown outside the configured scope, retained from
+  #107. Both are constructor-optional, so three-positional construction keeps working.
+
+Value lists are sorted by rel_path explicitly rather than inheriting the walk's order. Those
+  disagree: sorted(rglob) orders Path objects by parts tuple, yielding a/note.md before a-b/note.md,
+  while rel_path string order is the reverse ('-' < '/'). The first version of the ordering tests
+  used paths where the two agree, so deleting the sorts left the suite green — caught by mutation,
+  and the tests now use the discriminating case.
+
+No behavior change: nothing about what resolves or what an edge is moves, and every frozen fixture
+  is byte-identical.
+
+
+## v0.3.4 (2026-07-25)
+
+### Bug Fixes
+
+- **graph**: Links to existing out-of-scope notes are not broken (#107)
+  ([#108](https://github.com/cdcoonce/graphmark/pull/108),
+  [`9e386f6`](https://github.com/cdcoonce/graphmark/commit/9e386f6df700b1d866b7d50854b0cc8734a08bf5))
+
+build() dropped unscoped folders, excluded dirs and rules files from the catalog and then forgot
+  they existed, so a link to one failed the resolver and landed in unresolved. The link is correct —
+  Obsidian follows it — it just points somewhere graphmark deliberately does not index, so there was
+  nothing for anyone to fix. On the live vault that was 11 of 155 reported breaks: 8 [[CLAUDE]], 1
+  [[AGENTS]], 2 into templates/.
+
+The same rglob that builds the catalog now records what it skipped, so no extra I/O buys the ability
+  to tell "exists but out of scope" apart from "exists nowhere". Consulted only AFTER the resolver
+  fails — mirroring _targets_non_note_file — so an in-graph note always wins over an out-of-scope
+  namesake and keeps its edge. Any candidate suppresses: out-of-scope notes are never link targets,
+  so ambiguity among them says nothing about whether the in-graph link is broken.
+
+Alias/anchor/.md stripping moved into a shared _strip_display so the resolver and the new check
+  cannot drift on what a display names. That refactor also strips surrounding whitespace, which the
+  resolver did not: 13 column-aligned links of the form [[folder/note | alias]] were reported broken
+  while pointing at real notes, and now resolve into edges (3570 → 3583 on the live vault). Covered
+  by its own test class.
+
+Fixtures are untouched: only the unresolved path changes shape, no expected.json carries an
+  unresolved key, and edges only grow via the whitespace fix. uv.lock catches up to the 0.3.3
+  release bump.
+
+Live vault: 155 → 130 unresolved (12 suppressed, 13 resolved), no genuine break lost — verified by
+  diffing the full before/after sets.
+
+
 ## v0.3.3 (2026-07-25)
 
 ### Bug Fixes
