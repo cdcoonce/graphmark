@@ -86,7 +86,13 @@ def siloed_notes(graph: VaultGraph) -> list[str]:
     for bridge in nx.articulation_points(G):
         H = G.copy()
         H.remove_node(bridge)
-        components = sorted(nx.connected_components(H), key=lambda c: -len(c))
+        # Largest component is the mainland; the rest are islands. When components tie for
+        # largest, break the tie deterministically by member order (the component whose sorted
+        # members are lexicographically smallest is the mainland) rather than relying on
+        # nx.connected_components' incidental traversal order. NOTE: this tie-break is
+        # graphmark's own defined convention — it is unverified against the reference engine,
+        # which no frozen fixture exercises; a future divergence is caught by this rule + test.
+        components = sorted(nx.connected_components(H), key=lambda c: (-len(c), sorted(c)))
         for component in components[1:]:
             island_nodes.update(component)
     return sorted(island_nodes)
