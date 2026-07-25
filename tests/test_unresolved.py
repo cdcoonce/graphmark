@@ -233,3 +233,106 @@ class TestNonMarkdownTargets:
     def test_mixed_note_keeps_only_the_missing_note(self, tmp_path):
         _write(tmp_path, "a.md", "[[Chart.base]] and [[Missing]] and [[#local]].\n")
         assert _build(tmp_path).unresolved == {"a.md": ["Missing"]}
+
+
+class TestPaddedDisplays:
+    """Whitespace around the note part must not stop a link from resolving.
+
+    Real vaults contain column-aligned tables — ``[[folder/note        | alias]]`` — where the
+    note part carries trailing spaces. Both resolution branches now see the stripped display
+    (13 such links on a live vault were reported broken while pointing at real notes).
+    """
+
+    def test_padded_bare_display_resolves(self, tmp_path):
+        _write(tmp_path, "a.md", "See [[ b  | the alias]].\n")
+        _write(tmp_path, "b.md", "Target.\n")
+        graph = _build(tmp_path)
+        assert graph.unresolved == {}
+        assert graph.out_links["a.md"] == {"b.md"}
+
+    def test_padded_path_qualified_display_resolves(self, tmp_path):
+        _write(tmp_path, "a.md", "See [[docs/b     | the alias]].\n")
+        _write(tmp_path, "docs/b.md", "Target.\n")
+        graph = _build(tmp_path)
+        assert graph.unresolved == {}
+        assert graph.out_links["a.md"] == {"docs/b.md"}
+
+    def test_padded_md_extension_still_strips(self, tmp_path):
+        _write(tmp_path, "a.md", "See [[b.md  | alias]].\n")
+        _write(tmp_path, "b.md", "Target.\n")
+        assert _build(tmp_path).out_links["a.md"] == {"b.md"}
+
+    def test_a_padded_missing_note_is_still_unresolved(self, tmp_path):
+        _write(tmp_path, "a.md", "See [[ Nowhere  | alias]].\n")
+        assert _build(tmp_path).unresolved == {"a.md": [" Nowhere  | alias"]}
+
+
+class TestOutOfScopeNoteTargets:
+    """A link to a note that exists but is out of graph scope is out of scope, not broken.
+
+    build() drops unscoped folders, excluded dirs and rules files from the catalog and then
+    forgets they exist, so links to them fail the resolver. The link is correct — Obsidian
+    follows it — it just points somewhere graphmark deliberately does not index. On a real
+    vault these were 7% of the reported total ([[CLAUDE]], [[AGENTS]], a templates/ note).
+
+    Consulted only AFTER the resolver fails, so nothing that resolves in-graph is affected.
+    """
+
+    def test_link_to_a_rules_file_is_not_unresolved(self, tmp_path):
+        _write(tmp_path, "notes/a.md", "See [[CLAUDE]].\n")
+        _write(tmp_path, "CLAUDE.md", "Rules.\n")
+        graph = _build(tmp_path, rules_files=["CLAUDE.md"])
+        assert graph.unresolved == {}
+        assert graph.out_links["notes/a.md"] == set()
+
+    def test_link_into_an_unscoped_folder_is_not_unresolved(self, tmp_path):
+        _write(tmp_path, "docs/a.md", "See [[Intake Guide]].\n")
+        _write(tmp_path, "templates/Intake Guide.md", "Template.\n")
+        assert _build(tmp_path, scoped_folders=["docs"]).unresolved == {}
+
+    def test_link_into_an_excluded_dir_is_not_unresolved(self, tmp_path):
+        _write(tmp_path, "a.md", "See [[old thing]].\n")
+        _write(tmp_path, "archive/old thing.md", "Archived.\n")
+        assert _build(tmp_path, excluded_dirs=["archive"]).unresolved == {}
+
+    @pytest.mark.parametrize(
+        "display",
+        ["CLAUDE", "claude", "CLAUDE|the rules", "CLAUDE#Non-negotiables", "CLAUDE.md"],
+    )
+    def test_alias_anchor_case_and_md_forms_all_suppress(self, tmp_path, display):
+        _write(tmp_path, "notes/a.md", f"See [[{display}]].\n")
+        _write(tmp_path, "CLAUDE.md", "Rules.\n")
+        assert _build(tmp_path, rules_files=["CLAUDE.md"]).unresolved == {}
+
+    def test_path_qualified_link_to_an_out_of_scope_note_is_not_unresolved(self, tmp_path):
+        _write(tmp_path, "docs/a.md", "See [[templates/data/Intake Guide]].\n")
+        _write(tmp_path, "templates/data/Intake Guide.md", "Template.\n")
+        assert _build(tmp_path, scoped_folders=["docs"]).unresolved == {}
+
+    def test_an_ambiguous_out_of_scope_stem_still_suppresses(self, tmp_path):
+        # Out-of-scope notes are never link targets, so ambiguity among them says nothing
+        # about whether the in-graph link is broken. Any candidate suppresses.
+        _write(tmp_path, "docs/a.md", "See [[shared]].\n")
+        _write(tmp_path, "templates/one/shared.md", "")
+        _write(tmp_path, "templates/two/shared.md", "")
+        assert _build(tmp_path, scoped_folders=["docs"]).unresolved == {}
+
+    def test_a_note_that_exists_nowhere_is_still_unresolved(self, tmp_path):
+        _write(tmp_path, "docs/a.md", "See [[Nowhere]].\n")
+        _write(tmp_path, "templates/Something Else.md", "")
+        assert _build(tmp_path, scoped_folders=["docs"]).unresolved == {"docs/a.md": ["Nowhere"]}
+
+    def test_an_in_scope_note_still_wins_over_an_out_of_scope_namesake(self, tmp_path):
+        # The rule only applies after the resolver fails, so the real in-graph note wins and
+        # keeps its edge.
+        _write(tmp_path, "docs/a.md", "See [[guide]].\n")
+        _write(tmp_path, "docs/guide.md", "In scope.\n")
+        _write(tmp_path, "templates/guide.md", "Out of scope.\n")
+        graph = _build(tmp_path, scoped_folders=["docs"])
+        assert graph.unresolved == {}
+        assert graph.out_links["docs/a.md"] == {"docs/guide.md"}
+
+    def test_mixed_note_keeps_only_the_real_break(self, tmp_path):
+        _write(tmp_path, "docs/a.md", "[[Intake Guide]] and [[Missing]].\n")
+        _write(tmp_path, "templates/Intake Guide.md", "Template.\n")
+        assert _build(tmp_path, scoped_folders=["docs"]).unresolved == {"docs/a.md": ["Missing"]}
