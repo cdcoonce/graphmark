@@ -66,10 +66,18 @@ def _normalize(text: str) -> str:
     return " ".join(_fold_punctuation(_fold_case(text)).split())
 
 
-# A trailing dot plus a short alphanumeric run — a plausible file extension. Deliberately
-# strict so a note title like "v1.2 release notes" (spaces after the dot) is not mistaken
-# for one.
-_FILE_SUFFIX_RE = re.compile(r"\.[A-Za-z0-9]{1,10}$")
+# A trailing dot plus a short alphanumeric run containing at least one letter — a plausible file
+# extension. Deliberately strict in two ways, and both matter:
+#
+# * spaces after the dot disqualify it, so a note title like "v1.2 release notes" is not mistaken
+#   for one;
+# * an all-digit run disqualifies it, so a *numbered* title — "[[Meeting 3.5]]", "[[Phase 2.1]]",
+#   "[[Spec v0.9]]" — is reported as the broken link it is rather than suppressed as a file.
+#
+# The letter requirement is what separates them: ".5" and ".61850" differ only in length, so no
+# length bound could. Suppressing a genuine break *deflates* the vault-health count, which is worse
+# than inflating it — an undercount is invisible and reads as health.
+_FILE_SUFFIX_RE = re.compile(r"\.(?=[A-Za-z0-9]{1,10}$)[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]*$")
 
 
 def _strip_display(display: str) -> str:
