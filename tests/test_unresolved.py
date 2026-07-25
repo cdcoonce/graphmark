@@ -204,13 +204,13 @@ class TestNonMarkdownTargets:
         assert graph.out_links["a.md"] == set()
 
     def test_md_targets_are_exempt_from_the_rule(self, tmp_path):
-        # .md is explicitly excluded from the non-note rule, so a link ending in .md keeps
-        # whatever the resolver decides. graphmark does not currently resolve a trailing
-        # ".md" (an Obsidian-compatibility gap tracked separately) — the point here is only
-        # that this rule does not silently swallow it.
+        # .md is excluded from the non-note rule, so a link ending in .md is left to the
+        # resolver — which now resolves it (a trailing ".md" is stripped, matching Obsidian).
         _write(tmp_path, "a.md", "See [[b.md]].\n")
         _write(tmp_path, "b.md", "Target.\n")
-        assert _build(tmp_path).unresolved == {"a.md": ["b.md"]}
+        graph = _build(tmp_path)
+        assert graph.unresolved == {}
+        assert graph.out_links["a.md"] == {"b.md"}
 
     def test_missing_md_target_is_still_unresolved(self, tmp_path):
         _write(tmp_path, "a.md", "See [[Nowhere.md]].\n")

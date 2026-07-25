@@ -190,3 +190,50 @@ class TestVaultGraphBuild:
         assert degree("personal/gamma.md") == 2
         assert degree("reference/island.md") == 0
         assert degree("reference/stub.md") == 0
+
+
+class TestMarkdownExtensionInLinks:
+    """Obsidian treats [[Note.md]] and [[Note]] as the same link; so must the resolver."""
+
+    def setup_method(self):
+        self.resolver = NormalizeResolver()
+
+    def _catalog(self, *rel_paths: str) -> dict[str, list[str]]:
+        return build_catalog([_doc(p) for p in rel_paths])
+
+    def test_bare_link_with_md_extension_resolves(self):
+        catalog = self._catalog("brain/alpha.md")
+        assert self.resolver.resolve("alpha.md", catalog) == "brain/alpha.md"
+
+    def test_extension_match_is_case_insensitive(self):
+        catalog = self._catalog("brain/alpha.md")
+        assert self.resolver.resolve("Alpha.MD", catalog) == "brain/alpha.md"
+
+    def test_md_extension_with_alias_resolves(self):
+        catalog = self._catalog("brain/alpha.md")
+        assert self.resolver.resolve("alpha.md|the first note", catalog) == "brain/alpha.md"
+
+    def test_md_extension_with_anchor_resolves(self):
+        catalog = self._catalog("brain/alpha.md")
+        assert self.resolver.resolve("alpha.md#Section", catalog) == "brain/alpha.md"
+
+    def test_path_style_link_with_md_extension_resolves(self):
+        catalog = self._catalog("brain/alpha.md", "personal/beta.md")
+        assert self.resolver.resolve("brain/alpha.md", catalog) == "brain/alpha.md"
+
+    def test_missing_target_with_md_extension_stays_unresolved(self):
+        catalog = self._catalog("brain/alpha.md")
+        assert self.resolver.resolve("nowhere.md", catalog) is None
+
+    def test_ambiguous_stem_stays_ambiguous_with_the_extension(self):
+        catalog = {"note": ["dir1/note.md", "dir2/note.md"]}
+        assert self.resolver.resolve("note.md", catalog) is None
+
+    def test_extensionless_links_are_unaffected(self):
+        catalog = self._catalog("brain/alpha.md")
+        assert self.resolver.resolve("alpha", catalog) == "brain/alpha.md"
+
+    def test_a_title_ending_in_md_as_a_word_is_not_stripped(self):
+        # "Doctor MD" ends with "md" but not ".md" — it must not be truncated.
+        catalog = self._catalog("org/Doctor MD.md")
+        assert self.resolver.resolve("Doctor MD", catalog) == "org/Doctor MD.md"
