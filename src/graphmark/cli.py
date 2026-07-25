@@ -9,11 +9,11 @@ from pathlib import Path
 
 import networkx as nx
 
-from graphmark import __version__
+from graphmark import __version__, build
 from graphmark.check import breach_lines, run_check
 from graphmark.config import VaultConfig, load_config
 from graphmark.export import to_dot, to_json
-from graphmark.graph import NormalizeResolver, VaultGraph
+from graphmark.graph import VaultGraph
 from graphmark.metrics import (
     bridges,
     clusters,
@@ -24,7 +24,6 @@ from graphmark.metrics import (
     siloed_notes,
     stats,
 )
-from graphmark.parse import WikilinkExtractor
 
 
 def _load(args: argparse.Namespace) -> tuple[VaultGraph, VaultConfig]:
@@ -36,7 +35,7 @@ def _load(args: argparse.Namespace) -> tuple[VaultGraph, VaultConfig]:
             config = load_config(Path(args.config), root_override=root)
         else:
             config = VaultConfig(root=root)
-        graph = VaultGraph.build(config, WikilinkExtractor(), NormalizeResolver())
+        graph = build(config)
     except (OSError, tomllib.TOMLDecodeError, ValueError) as e:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(2)
