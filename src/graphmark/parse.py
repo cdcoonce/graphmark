@@ -45,10 +45,38 @@ def _strip_fenced_blocks(text: str) -> str:
     return "".join(out)
 
 
+#: A block-list item line: leading whitespace, a dash, then the value. Checked before the
+#: key/value split because an item may itself contain a colon ("- Note: A Subtitle") — the dash
+#: decides, not the colon.
+_BLOCK_ITEM_RE = re.compile(r"^\s+-\s*(.*)$")
+
+
 def _parse_frontmatter(raw: str) -> dict:
-    """Minimal YAML-like frontmatter parser covering scalar, quoted-string, inline-list."""
+    """Minimal YAML-like frontmatter parser: scalar, quoted-string, inline-list, block-list.
+
+    Deliberately a targeted scan rather than a YAML dependency — this runs over every note in a
+    vault, and a note someone is mid-edit must not take the graph down. Anything unparseable
+    yields nothing rather than raising.
+
+    Block lists (``key:`` followed by indented ``- item`` lines) are what Obsidian's own
+    Properties UI writes, so they are the common form in real vaults, not an edge case. They
+    produce the same ``list[str]`` an inline list does. A ``key:`` with no items that follow stays
+    ``""`` — an empty value, not an empty list.
+    """
     result: dict = {}
+    current_list_key: str | None = None
     for line in raw.splitlines():
+        item = _BLOCK_ITEM_RE.match(line)
+        if item is not None and current_list_key is not None:
+            value = item.group(1).strip().strip("\"'")
+            if value:
+                # The key held "" until its first item arrived; replace it with the list.
+                if not isinstance(result.get(current_list_key), list):
+                    result[current_list_key] = []
+                result[current_list_key].append(value)
+            continue
+
+        current_list_key = None
         if ":" not in line:
             continue
         key, _, value = line.partition(":")
@@ -59,6 +87,9 @@ def _parse_frontmatter(raw: str) -> dict:
             result[key] = [i for i in items if i]
         else:
             result[key] = value.strip("\"'")
+            # A bare "key:" may open a block list; the next line decides.
+            if not value:
+                current_list_key = key
     return result
 
 
