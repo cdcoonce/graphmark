@@ -239,6 +239,17 @@ class TestPagerankCommand:
         out = _run_cli(["graphmark", "--config", str(SIMPLE_CONFIG), "pagerank"], capsys)
         assert json.loads(out) == pagerank(simple_graph)
 
+    def test_bad_alpha_exits_2_with_stderr_and_no_stdout(self, capsys):
+        from graphmark.cli import main
+
+        argv = ["graphmark", "--config", str(SIMPLE_CONFIG), "pagerank", "--alpha", "1.5"]
+        with patch.object(sys, "argv", argv), pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "alpha" in captured.err
+
 
 class TestExportDotCommand:
     def test_emits_dot_output(self, capsys):

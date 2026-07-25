@@ -16,6 +16,9 @@ from graphmark.interfaces import Similarity
 # live vault (~340 notes). Ships in-package so any consumer gets the tuned band instead of
 # re-deriving policy; consumers opt in by passing these to gaps(). gaps()'s own signature defaults
 # are intentionally left unchanged (non-breaking).
+# Power-iteration cap for pagerank; matches networkx's default max_iter.
+_MAX_ITER = 100
+
 GAPS_DEFAULT_THRESHOLD = 0.6
 GAPS_DEFAULT_MAX_SCORE = 0.92
 GAPS_DEFAULT_K = 8
@@ -112,7 +115,15 @@ def pagerank(graph: VaultGraph, n: int = 10, alpha: float = 0.85) -> list[list]:
 
     Dangling nodes (no out-edges) redistribute mass uniformly across all nodes.
     Returns top-n [path, score] pairs sorted score-desc then path-asc.
+
+    ``alpha`` is the damping factor and must lie in (0, 1); anything else is not a PageRank and
+    raises ``ValueError``. Matching networkx, failing to reach tolerance within ``_MAX_ITER``
+    iterations raises ``networkx.PowerIterationFailedConvergence`` rather than returning the
+    unconverged vector as if it were a result.
     """
+    if not 0.0 < alpha < 1.0:
+        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+
     nodes = list(graph.nodes.keys())
     N = len(nodes)
     if N == 0:
@@ -124,7 +135,7 @@ def pagerank(graph: VaultGraph, n: int = 10, alpha: float = 0.85) -> list[list]:
 
     x: dict[str, float] = {node: 1.0 / N for node in nodes}
 
-    for _ in range(100):
+    for _ in range(_MAX_ITER):
         xlast = x
         x = dict.fromkeys(xlast, 0.0)
         danglesum = alpha * sum(xlast[node] for node in dangling)
@@ -142,6 +153,10 @@ def pagerank(graph: VaultGraph, n: int = 10, alpha: float = 0.85) -> list[list]:
         err = sum(abs(x[node] - xlast[node]) for node in nodes)
         if err < N * 1e-6:
             break
+    else:
+        # Never reached tolerance — networkx raises here, and returning the unconverged
+        # vector would present meaningless numbers as scores.
+        raise nx.PowerIterationFailedConvergence(_MAX_ITER)
 
     pairs = sorted(x.items(), key=lambda kv: (-kv[1], kv[0]))
     return [[path, score] for path, score in pairs[:n]]

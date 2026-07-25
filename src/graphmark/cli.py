@@ -7,6 +7,8 @@ import sys
 import tomllib
 from pathlib import Path
 
+import networkx as nx
+
 from graphmark.config import VaultConfig, load_config
 from graphmark.export import to_dot, to_json
 from graphmark.graph import NormalizeResolver, VaultGraph
@@ -111,7 +113,12 @@ def main() -> None:
             sys.exit(2)
         print(to_json(result))
     elif args.command == "pagerank":
-        print(to_json(pagerank(graph, n=args.n, alpha=args.alpha)))
+        try:
+            result = pagerank(graph, n=args.n, alpha=args.alpha)
+        except (ValueError, nx.PowerIterationFailedConvergence) as e:
+            print(f"error: {e}", file=sys.stderr)
+            sys.exit(2)
+        print(to_json(result))
     elif args.command == "export" and args.format == "dot":
         print(to_dot(graph))
 

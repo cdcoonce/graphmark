@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import networkx as nx
 import pytest
 
 from graphmark.config import VaultConfig, load_config
@@ -106,3 +107,40 @@ class TestPagerankAlt:
         result = pagerank(alt_graph, n=10)
         result_paths = {p for p, _ in result}
         assert result_paths == set(alt_graph.nodes.keys())
+
+
+class TestPagerankAlphaValidation:
+    """alpha outside (0, 1) is not a damping factor — it must not silently produce numbers."""
+
+    @pytest.mark.parametrize("bad_alpha", [0.0, 1.0, 1.5, -0.5, 2.0])
+    def test_out_of_range_alpha_raises(self, simple_graph, bad_alpha):
+        with pytest.raises(ValueError, match="alpha"):
+            pagerank(simple_graph, alpha=bad_alpha)
+
+    @pytest.mark.parametrize("good_alpha", [0.5, 0.85, 0.95])
+    def test_in_range_alpha_still_works(self, simple_graph, good_alpha):
+        result = pagerank(simple_graph, alpha=good_alpha)
+        assert len(result) == len(simple_graph.nodes)
+        assert all(score > 0 for _, score in result)
+
+
+class TestPagerankConvergence:
+    """networkx raises PowerIterationFailedConvergence at max_iter; so must we."""
+
+    @staticmethod
+    def _chain(n: int) -> VaultGraph:
+        nodes = {f"n{i}.md": None for i in range(n)}
+        out = {f"n{i}.md": ({f"n{i + 1}.md"} if i < n - 1 else set()) for i in range(n)}
+        back = {f"n{i}.md": ({f"n{i - 1}.md"} if i > 0 else set()) for i in range(n)}
+        return VaultGraph(nodes=nodes, out_links=out, back_links=back)
+
+    def test_non_converging_graph_raises_instead_of_returning(self):
+        # A 200-node chain at alpha=0.999 does not reach tolerance within 100 iterations.
+        graph = self._chain(200)
+        with pytest.raises(nx.PowerIterationFailedConvergence):
+            pagerank(graph, alpha=0.999)
+
+    def test_converging_graph_returns_normally(self):
+        graph = self._chain(200)
+        result = pagerank(graph, alpha=0.85, n=5)
+        assert len(result) == 5
