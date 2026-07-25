@@ -8,8 +8,31 @@ may construct ``VaultConfig`` directly.
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
+
+
+@dataclass(frozen=True)
+class CheckPolicy:
+    """Vault-health thresholds for ``graphmark check``; ``None`` means "not enforced".
+
+    Field declaration order is the report order, so it is part of the check contract.
+    """
+
+    max_orphans: int | None = None
+    max_unresolved_links: int | None = None
+    max_siloed: int | None = None
+
+    def is_configured(self) -> bool:
+        """True when at least one threshold is enforced.
+
+        A gate with nothing to check must not be able to report green, so callers use this to
+        refuse rather than trivially pass.
+        """
+        return any(
+            getattr(self, f.name) is not None
+            for f in fields(self)  # noqa: B009 - dataclass
+        )
 
 
 @dataclass
@@ -21,6 +44,39 @@ class VaultConfig:
     excluded_dirs: list[str] = field(default_factory=list)
     rules_files: list[str] = field(default_factory=lambda: ["CLAUDE.md", "CLAUDE.local.md"])
     transient_prefixes: tuple[str, ...] = ()
+    check: CheckPolicy = field(default_factory=CheckPolicy)
+
+
+def _parse_check(data: dict, path: Path) -> CheckPolicy:
+    """Parse the optional [check] table.
+
+    Unknown keys inside [check] are an ERROR, unlike unknown keys elsewhere in the TOML: a
+    silently-ignored typo would produce a gate that reports green forever, which is the worst
+    failure mode a CI gate can have.
+    """
+    raw = data.get("check", {})
+    if not isinstance(raw, dict):
+        raise ValueError(f"config {path}: [check] must be a table, got {type(raw).__name__}")
+
+    valid = [f.name for f in fields(CheckPolicy)]
+    for key in raw:
+        if key not in valid:
+            raise ValueError(
+                f"config {path}: unknown key '{key}' in [check]; valid keys are {valid}"
+            )
+
+    values: dict[str, int] = {}
+    for key in valid:
+        if key not in raw:
+            continue
+        value = raw[key]
+        # bool is an int subclass in Python; a boolean threshold is a config error, not 0/1.
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ValueError(
+                f"config {path}: [check].{key} must be a non-negative integer, got {value!r}"
+            )
+        values[key] = value
+    return CheckPolicy(**values)
 
 
 def load_config(path: Path, *, root_override: Path | None = None) -> VaultConfig:
@@ -30,6 +86,10 @@ def load_config(path: Path, *, root_override: Path | None = None) -> VaultConfig
     key that maps to a ``VaultConfig`` field is optional and falls back to the dataclass default;
     any other key in the TOML is silently ignored. A TOML missing ``root`` raises ``ValueError``
     naming the file and the missing key.
+
+    The one exception to that leniency is the optional ``[check]`` table (see ``CheckPolicy``):
+    an unknown key or a non-negative-integer value there raises, because a silently-ignored
+    typo would leave a CI gate reporting green forever.
 
     ``root_override`` supplies the vault root from outside the TOML (the CLI's ``--root`` flag).
     When given it wins over any ``root`` key and makes that key optional, so a policy-only config
@@ -51,4 +111,5 @@ def load_config(path: Path, *, root_override: Path | None = None) -> VaultConfig
         excluded_dirs=data.get("excluded_dirs", []),
         rules_files=data.get("rules_files", ["CLAUDE.md", "CLAUDE.local.md"]),
         transient_prefixes=tuple(data.get("transient_prefixes", [])),
+        check=_parse_check(data, path),
     )
