@@ -7,7 +7,7 @@ import json
 from graphmark.graph import VaultGraph
 
 
-def to_json(obj) -> str:
+def to_json(obj: object) -> str:
     """Serialise any JSON-serialisable object to a string."""
     return json.dumps(obj)
 
