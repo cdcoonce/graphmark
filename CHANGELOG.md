@@ -1,6 +1,372 @@
 # CHANGELOG
 
 
+## v0.3.0 (2026-07-25)
+
+### Bug Fixes
+
+- Validate the vault root and handle config errors cleanly in the CLI
+  ([#81](https://github.com/cdcoonce/graphmark/pull/81),
+  [`7aaae1d`](https://github.com/cdcoonce/graphmark/commit/7aaae1d08530e2996636432a661180984c2221c6))
+
+Three failures at the same boundary:
+
+1. rglob on a missing dir silently yields nothing, so a typo'd --root produced a structurally valid
+  zero-metrics graph with exit 0 — indistinguishable from an empty vault. VaultGraph.build now
+  raises ValueError when root is not a directory. An existing-but-empty vault stays legitimate. 2.
+  cli._load caught nothing: a missing config file, malformed TOML, or a config missing 'root' each
+  dumped a raw traceback. It now catches OSError / TOMLDecodeError / ValueError and exits 2 with a
+  one-line stderr message, matching the existing error convention. 3. load_config raised for a
+  missing 'root' key BEFORE the --root override applied, so the shipped configs/my-brain.toml
+  (policy-only, no root key) was unusable from the package's own CLI. load_config grows a
+  keyword-only root_override; when given it wins over any root key and makes that key optional, so
+  the override is applied during the load rather than patched on after.
+
+Closes #64
+
+- **cli**: Unify usage errors on exit 2; keep help off stdout
+  ([#89](https://github.com/cdcoonce/graphmark/pull/89),
+  [`a5c208d`](https://github.com/cdcoonce/graphmark/commit/a5c208d1c8be2033870605341b6c898bb6b78d87))
+
+Three conflicting conventions coexisted: missing --config/--root exited 1 via a hand-rolled print, a
+  bare 'graphmark' printed full help to STDOUT while exiting 1 (success-shaped output with a
+  failure-shaped code — piping captured help as if it were data), while argparse's own errors and
+  the CLI's deliberate error paths exited 2.
+
+Unify on argparse's convention: the missing-source check moves into main() as parser.error(), and a
+  missing command prints help to stderr and exits 2. One rule now holds — 0 success, 2 usage error —
+  which also leaves exit 1 free for the domain outcome Track D reserves it for (a "check" threshold
+  breach).
+
+Closes #72
+
+- **gaps**: Single-source the weaklink signature format
+  ([#91](https://github.com/cdcoonce/graphmark/pull/91),
+  [`dd695e2`](https://github.com/cdcoonce/graphmark/commit/dd695e2b953154321c7c53d1618f6d7ea01d8ae5))
+
+The dismissal-signature format was written out twice — inline in metrics.gaps() and again as
+  dismiss.weaklink_sig() — with nothing tying them together. The format is load-bearing across both
+  modules: gaps() emits sig, callers persist it via record_dismissal, and feed active_dismissed_sigs
+  back in as dismissed=. A drift in either definition would silently un-suppress every recorded
+  dismissal, since the mismatch produces no error, just suggestions reappearing.
+
+metrics now imports and calls dismiss.weaklink_sig. The import direction is engine -> store, but
+  weaklink_sig is a pure string helper (no IO, no extra deps, no graph knowledge) and dismiss
+  imports nothing from metrics, so no cycle and no real layering violation.
+
+Add round-trip tests covering the loop end to end: a gaps()-emitted sig equals weaklink_sig(), and
+  suggest -> record_dismissal -> active_dismissed_sigs -> gaps(dismissed=...) actually suppresses
+  the suggestion.
+
+Drive-by: restore the comment ordering in metrics.py, where the gaps banding comment had been
+  orphaned above _MAX_ITER.
+
+Closes #74
+
+- **pagerank**: Validate alpha and raise on non-convergence
+  ([#82](https://github.com/cdcoonce/graphmark/pull/82),
+  [`6b9dcaa`](https://github.com/cdcoonce/graphmark/commit/6b9dcaa544448714d67a691af4385b2da0b1e976))
+
+pagerank accepted any alpha and always returned after 100 iterations, converged or not — while its
+  own docstring claims it 'matches networkx _pagerank_python', which rejects nothing-burger alphas
+  and raises PowerIterationFailedConvergence at max_iter. Verified: alpha=1.5 returned
+  plausible-looking values on the simple fixture (and negative, million-scale values on other
+  topologies), presented as real scores; a 200-node chain at alpha=0.999 returned unconverged
+  numbers silently.
+
+Raise ValueError for alpha outside (0, 1), and raise nx.PowerIterationFailedConvergence (networkx's
+  own type, since networkx is already the sole runtime dep) when tolerance is never reached — via a
+  for/else so the success path is unchanged. The CLI catches both for its pagerank branch and exits
+  2. Fixture pagerank outputs converge well inside 100 iterations, so every oracle is
+  byte-identical.
+
+Closes #65
+
+- **parse**: Tolerate CRLF and EOF-terminated frontmatter delimiters
+  ([#80](https://github.com/cdcoonce/graphmark/pull/80),
+  [`7a97662`](https://github.com/cdcoonce/graphmark/commit/7a9766264bb00ff1545aa1c75517654c5e8e737d))
+
+_FM_RE only matched LF, so on a CRLF note (Windows / git autocrlf) the delimiter line is '---\r\n',
+  the regex failed, and the entire frontmatter block stayed in the body — turning a frontmatter
+  wikilink like 'related: "[[X]]"' into a phantom graph edge. Every metric
+  (orphans/hubs/clusters/pagerank/gaps) then differed purely by line-ending convention, silently.
+
+Accept \r?\n on all three delimiter lines, and also accept a closing '---' at EOF with no trailing
+  newline (a frontmatter-only note, which previously failed to parse at all). _parse_frontmatter
+  already handles \r via splitlines. Frozen fixtures are LF, so all oracles are byte-identical.
+
+Closes #63
+
+### Continuous Integration
+
+- Test the advertised python matrix; ship CHANGELOG.md in the sdist
+  ([#87](https://github.com/cdcoonce/graphmark/pull/87),
+  [`695c2fb`](https://github.com/cdcoonce/graphmark/commit/695c2fb34f1330de009a6b6f93d71ed420e3f637))
+
+The classifiers advertise 3.11/3.12/3.13 but CI's matrix covered only OS, so 'uv run' resolved a
+  single interpreter and two of the three claimed versions never executed — an untested promise to
+  anyone who installs on the strength of the classifier. This repo already learned the lesson on the
+  OS axis (the macOS leg exists because the afk gate is Linux-only); the python axis had the same
+  hole.
+
+Add python: [3.11, 3.12, 3.13] to the matrix, passed to setup-uv's python-version, and name the jobs
+  so a failing leg is identifiable. Six legs, fail-fast already false. Verified locally: the full
+  suite passes on all three (251 tests each).
+
+Also add CHANGELOG.md to the sdist include list — semantic-release maintains it on every release but
+  sdist consumers never received it — with a gate-enforced test (removing it from the include list
+  fails).
+
+Closes #70
+
+### Documentation
+
+- Rewrite the README around the current surface; accept str paths
+  ([#96](https://github.com/cdcoonce/graphmark/pull/96),
+  [`a5e151b`](https://github.com/cdcoonce/graphmark/commit/a5e151b0dbb1b8b6d1872b0f90b235e025d1efc6))
+
+The README was the PyPI landing page and it opened with "Status: v0.1.1 on PyPI" while the package
+  was 0.2.0 — and the drift was structural, since semantic-release bumps pyproject while the README
+  hardcoded a number. Replace it with a PyPI version badge that cannot drift, and document the
+  surface shipped since: the graphmark check CI gate, the top-level build() quickstart,
+  GAPS_DEFAULT_BAND, the Similarity protocol, the dismiss store API, graph.unresolved, py.typed, and
+  the config reference. The CLAUDE.md pointer becomes an absolute URL, since that file is neither
+  shipped nor linkable from PyPI.
+
+Executing every example surfaced two real footguns, fixed here rather than papered over: -
+  load_config("vault.toml") crashed with AttributeError: 'str' object has no attribute 'parent'. It
+  now accepts str | Path for both the config path and root_override, matching build(), which already
+  took str. - VaultConfig(root="/path") survived construction and failed much later on the first
+  Path operation. __post_init__ now coerces, so the declared type is honest.
+
+Every code block in the README was run against the simple fixture and its output matched before
+  commit.
+
+Closes #79
+
+### Features
+
+- Add graphmark.build() and curated top-level re-exports
+  ([#95](https://github.com/cdcoonce/graphmark/pull/95),
+  [`9a0cdbf`](https://github.com/cdcoonce/graphmark/commit/9a0cdbf6d9fbad1fd035c2d81c7e94b3c03cbf23))
+
+Getting a graph took four submodule imports plus the tribal knowledge that WikilinkExtractor pairs
+  with NormalizeResolver — a pairing with no defaults that the CLI and the live vault consumer each
+  re-implemented.
+
+Add graphmark.build(source, *, extractor=None, resolver=None) accepting a vault-root str/Path or a
+  full VaultConfig and defaulting the extractor/resolver pair, plus __all__ re-exports of the whole
+  public surface: config and CheckPolicy, the graph and model types, the three Protocols, every
+  metric, the gaps band constants, run_check, the dismissal-store helpers, and the exporters.
+  Driving it from a TOML is build(load_config(path)) — no path/config-file guessing by extension.
+
+The quickstart is now three lines:
+
+import graphmark graph = graphmark.build("/path/to/vault") print(graphmark.stats(graph))
+
+cli._load calls the same helper, deleting the duplicated construction. Purely additive —
+  VaultGraph.build and every submodule import keep working unchanged, verified by test.
+
+Closes #78
+
+- **check**: Add the graphmark check vault-health gate
+  ([#94](https://github.com/cdcoonce/graphmark/pull/94),
+  [`0a4d234`](https://github.com/cdcoonce/graphmark/commit/0a4d2349c87299c192fff1a5b76084707314f934))
+
+Track D slice 3 of 3, completing the deterministic CI gate the roadmap names as the one unserved
+  ecosystem niche: Obsidian's official CLI needs the desktop app, the dormant python incumbent has
+  no CLI, and link checkers do no graph metrics.
+
+New check.py evaluates config.check against a built graph. It is policy evaluation rather than a
+  structural metric, so it lives beside the engine instead of inside metrics.py, composing orphans
+  (which honors transient_prefixes, so scratch notes cannot fail the gate), the unresolved-link
+  count from slice 1, and siloed_notes.
+
+The contract: - exit 0 = every enforced threshold passes; exit 1 = at least one breach, reserved for
+  breach ALONE; exit 2 = usage or config error. A policy that enforces nothing exits 2, never 0 — a
+  gate with nothing to check must not be able to report green. A bad vault root or a typo'd [check]
+  key is likewise 2, so CI can tell "your vault is unhealthy" from "your config is wrong". - stdout
+  is exactly one line, the JSON report; stderr carries one human-readable line per breach and never
+  pollutes stdout. - thresholds are inclusive: actual == limit passes. - the report is byte-stable —
+  key insertion order is fixed and checks appear in CheckPolicy field-declaration order — so runs
+  over an unchanged vault diff to nothing. A test pins it against a literal.
+
+Closes #77
+
+- **cli**: Add --version and help text for every subcommand and flag
+  ([#88](https://github.com/cdcoonce/graphmark/pull/88),
+  [`7abfb5d`](https://github.com/cdcoonce/graphmark/commit/7abfb5d681db15da0b7efb233d32fb93d5edbf3a))
+
+A PyPI-published CLI could not report its own version, and 'graphmark --help' printed a bare choices
+  dump — none of the 10 subcommands or 5 flags carried a help string, so 'graphmark hubs --help'
+  explained nothing and users had to read the source to learn what 'siloed' or 'bridges' meant.
+
+Add --version (sourced from the already single-sourced __version__), a parser description naming the
+  stdout-is-JSON/stderr-is-errors contract, a one-line help for each subcommand, and help for --n,
+  --note, --depth, --alpha, and the export format argument.
+
+Closes #71
+
+- **config**: Add the [check] policy block for vault-health gating
+  ([#93](https://github.com/cdcoonce/graphmark/pull/93),
+  [`377ecf9`](https://github.com/cdcoonce/graphmark/commit/377ecf9ac742d554de623974be31d58ee537e0b1))
+
+Track D slice 2 of 3. load_config read only flat top-level keys and documented unknown keys as
+  silently ignored, so a [check] table written today was swallowed whole and the planned gate had
+  nothing to read.
+
+Add a frozen CheckPolicy dataclass (max_orphans, max_unresolved_links, max_siloed; None = not
+  enforced) plus a check field on VaultConfig defaulting to all-None, and parse the optional [check]
+  table.
+
+The block is deliberately STRICT, unlike the rest of the file: an unknown key inside [check], a
+  negative value, a non-integer, or a boolean all raise ValueError naming the file, the key, and the
+  valid keys. A silently-ignored typo like max_orphan would leave a CI gate reporting green forever,
+  which is the worst failure a gate can have. The documented leniency everywhere else in the TOML is
+  preserved.
+
+CheckPolicy.is_configured() reports whether anything is enforced at all, so slice 3 can refuse to
+  report green on an empty policy rather than trivially passing. Field declaration order is the
+  report order and thus part of the check contract.
+
+Extending the seeded config surface is directed by docs/ROADMAP.md's Track D section, which
+  CLAUDE.md's exception clause defers to.
+
+Closes #76
+
+- **gaps**: Add GAPS_DEFAULT_BAND and parameterize the signature annotations
+  ([#90](https://github.com/cdcoonce/graphmark/pull/90),
+  [`a5d0004`](https://github.com/cdcoonce/graphmark/commit/a5d0004e0a9d75ef2604b3fa893a3b6ec54412f8))
+
+Opting into the validated banding policy took four keyword arguments referencing four separate
+  constants — exactly what the live consumer hand-copies. Add GAPS_DEFAULT_BAND so the opt-in is one
+  gesture: gaps(graph, fn, **GAPS_DEFAULT_BAND).
+
+Parameterize the loose annotations for IDE/type-checker help, now that the package ships py.typed:
+  dismissed set|frozenset -> Collection[str], exclude_prefixes tuple -> tuple[str, ...], targets
+  list|None -> Sequence[str] | None. Runtime behavior is unchanged.
+
+Document the note/targets precedence rather than making the conflict raise. The issue proposed
+  raising ValueError, conditional on verifying no consumer relies on the precedence — verification
+  found one that does: the-vault's graph_cli.py computes `targets = siloed_notes(graph) if
+  args.near_bridges else None` and passes it alongside an optional `note=args.note` in the same
+  call, so `--gaps --note X --near-bridges` passes both. Raising would break /connect and /garden at
+  runtime. Passing both is a legitimate pattern (compute one unconditionally, keep the other
+  optional), so the docstring now states that note wins as the more specific scope, and a test pins
+  it.
+
+Closes #73
+
+- **graph**: Record unresolved links instead of dropping them silently
+  ([#92](https://github.com/cdcoonce/graphmark/pull/92),
+  [`32e5a1d`](https://github.com/cdcoonce/graphmark/commit/32e5a1d57167e1e645814a108472cc458725f8c1))
+
+build() discarded every unresolvable link with no record anywhere, so "how many broken links does
+  this vault have" — the flagship check threshold from the roadmap, and the one vault-health signal
+  ordinary link checkers already cover — was uncomputable from any graphmark surface.
+
+Add VaultGraph.unresolved: dict[str, list[str]] mapping a rel_path to the raw link displays in it
+  that resolved to nothing, in extraction order; notes with none are absent. The constructor
+  parameter is optional and defaults to {}, so three-argument construction keeps working. No
+  Resolver/LinkExtractor protocol change and no model.py change.
+
+Semantics the reference engine never defined for us, now pinned by test: - an AMBIGUOUS bare link
+  counts as unresolved (the Resolver returns None for both cases; both are equally broken from a
+  health view); - a resolved SELF-link does NOT count (it resolved, it is merely not an edge); -
+  every OCCURRENCE counts, so three [[Missing]] links contribute 3.
+
+Purely additive: every frozen expected.json is untouched, and the differential invariant covers only
+  metrics shared with the reference.
+
+Closes #75
+
+- **packaging**: Ship the PEP 561 py.typed marker
+  ([#86](https://github.com/cdcoonce/graphmark/pull/86),
+  [`e289fcf`](https://github.com/cdcoonce/graphmark/commit/e289fcfefe0b47c590619b3d1afa1d70b6fd17a5))
+
+The package is fully annotated — including the three Protocols that are its design seams
+  (LinkExtractor, Resolver, and the Similarity protocol shipped in 0.2.0 to type the injected
+  similar_fn) — but shipped no py.typed, so PEP 561 told mypy/pyright to treat every graphmark
+  import as untyped Any. The entire payoff of the annotation work was zero for consumers, starting
+  with the-vault's graph_cli.py.
+
+Add the marker (hatchling's packages=['src/graphmark'] ships it with no build-config change),
+  declare the 'Typing :: Typed' classifier, and annotate the one gap, export.to_json(obj: object).
+
+The guarantee is gate-enforced rather than assumed: new tests/test_packaging.py builds the real
+  wheel and sdist and asserts the marker is inside each. Removing the marker fails 3 of them.
+
+Closes #69
+
+### Testing
+
+- Pin degenerate-vault behavior and enforce the networkx PageRank claim
+  ([#85](https://github.com/cdcoonce/graphmark/pull/85),
+  [`5124db8`](https://github.com/cdcoonce/graphmark/commit/5124db83e2c31af12a1bbfcc7baf9a869eecf5c5))
+
+Two untested regions closed.
+
+Degenerate vaults: no test built an empty vault, so the density guard (notes > 0) and the pagerank N
+  == 0 guard never executed — yet pointing the CLI at an empty or wrong directory is a likely first
+  contact for a PyPI user. Pin the full empty-vault surface (stats all-zero, every list metric
+  empty, pagerank [], gaps [], a valid empty digraph, neighborhood raising, CLI exit 0 with valid
+  JSON) plus the smallest non-empty case, a single unlinked note.
+
+networkx parity: docs/ROADMAP.md claims 'PageRank is checked against networkx' but nothing enforced
+  it. Cross-check both fixtures at three alphas (0.5/0.85/0.95) against networkx's _pagerank_python
+  — the pure python implementation graphmark's docstring actually claims parity with, since
+  nx.pagerank dispatches to a scipy backend and this package ships no numpy/scipy. Measured
+  agreement is ~7e-7; the assertion uses 1e-5, far below any teleport or convergence mutation.
+
+Mutation-verified: dropping dangling redistribution fails 9 tests, (1-alpha) -> alpha fails 7,
+  loosening the convergence tolerance fails 6 (the fixture tolerance alone could not catch this),
+  and corrupting the empty-graph guard fails 1.
+
+Closes #68
+
+- **build**: Cover the excluded_dirs and rules_files selection filters
+  ([#83](https://github.com/cdcoonce/graphmark/pull/83),
+  [`d8e5e3c`](https://github.com/cdcoonce/graphmark/commit/d8e5e3c24303497ffd81d72ef200ff52bf1e28cb))
+
+Both filters in VaultGraph.build were mutation-dead: every fixture config sets
+  excluded_dirs=['.git'] but no fixture vault holds a note under an excluded dir, and no fixture
+  vault contains a rules file — so deleting either filter, or widening rel_parts[:-1] to rel_parts,
+  left all 192 tests green. The live consumer depends on both daily; a silent regression would pull
+  rules files and archived notes into the graph, corrupting orphans/stats/gaps behind a green gate.
+
+Add 15 tests building real vaults under tmp_path (no frozen-fixture edits) covering: exclusion by
+  name and at any depth, multiple excluded dirs, dirs-only semantics (a FILE whose name matches an
+  entry stays — pinning the [:-1] slice), rules files at root and nested, custom and empty
+  rules_files, no-edge/no-back-edge contribution from filtered notes, and all three filters
+  composing with scoped_folders.
+
+Mutation-verified: deleting the excluded_dirs filter fails 7 tests,
+
+deleting the rules_files filter fails 5, and rel_parts[:-1] -> rel_parts fails 1.
+
+Closes #66
+
+- **gaps**: Cover the parameters the frozen oracle never exercises
+  ([#84](https://github.com/cdcoonce/graphmark/pull/84),
+  [`5924e96`](https://github.com/cdcoonce/graphmark/commit/5924e966f83861ff1e724ff238aa39d940a99554))
+
+The gaps/ fixture pins the ranking algorithm end-to-end but always calls gaps() the same way: no
+  note=, no targets=, no exclude_prefixes, no self-pairs, and fixture scores that never sit exactly
+  on the threshold or max_score bound (0.55-0.95 vs bounds 0.6/0.92). Every one of those was a
+  mutation the suite could not kill.
+
+Add 18 tests using an in-memory graph and a recording Similarity stub, so each knob is isolated and
+  the scan itself is observable: inclusive score boundaries, note=/targets= scoping (asserted via
+  which rel_paths the similarity source was actually asked about), exclude_prefixes on both the
+  source and candidate side, the self-pair skip, already-linked suppression through a back-link, and
+  k pass-through.
+
+Mutation-verified: threshold < -> <=, max_score > -> >=, dropping the self-pair skip, dropping
+  either exclude_prefixes filter, and ignoring note= scoping each fail 1-2 tests.
+
+Closes #67
+
+
 ## v0.2.0 (2026-07-25)
 
 ### Bug Fixes
