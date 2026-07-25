@@ -19,7 +19,7 @@ import unicodedata
 from pathlib import Path
 
 from graphmark.config import VaultConfig
-from graphmark.graph import NormalizeResolver, VaultGraph, _normalize
+from graphmark.graph import NormalizeResolver, VaultGraph, _fold_case, _normalize
 from graphmark.parse import WikilinkExtractor
 
 NFC = "Café"
@@ -94,8 +94,9 @@ class TestUnaffected:
         assert _normalize("Jordan Ellis") == "jordan ellis"
         assert _normalize("oura-pipeline") == "oura pipeline"
 
-    def test_a_character_with_no_decomposition_is_untouched(self):
+    def test_a_character_with_no_decomposition_is_untouched_by_composition(self):
         # The reference vault's only non-ASCII filenames are em-dashes, which have no
-        # decomposition — which is exactly why this defect stayed invisible there.
-        assert _normalize("Q1 — Review") == _normalize("Q1 — Review")
-        assert "—" in _normalize("Q1 — Review")
+        # decomposition — which is exactly why this defect stayed invisible there. Asserted on
+        # _fold_case, the composition step: #139 later folds the em-dash away as punctuation, and
+        # asserting on _normalize would conflate the two.
+        assert _fold_case("Q1 — Review") == "q1 — review"
