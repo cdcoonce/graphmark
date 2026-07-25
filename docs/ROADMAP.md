@@ -144,6 +144,29 @@ calibration gate #112 used).
 Track F's own success measure is not slices merged: it is **bugs found by machinery rather than by
 a human reading link lists.** #126's catch rate is the evidence.
 
+_Interim result (2026-07-25, after #124–#126 shipped):_ four more defects — #136, #137, #138, #139 —
+found in one pass, none of them by reading link lists and **none of them by the property generator
+either**. The method that worked was adversarial reading of the resolver and parser against the
+question _"what input could this classify wrongly?"_, then a scripted probe to confirm. All four
+measure **0 occurrences on the reference vault**, which is the point: a single-vault count is not
+evidence of absence, and every one of them is ordinary on some other vault.
+
+Two things this says about the track:
+
+- **The counts alone would not have surfaced these.** #136 fabricates an edge to the wrong note and
+  is filed `resolved`; #138 hides a genuine break inside `non-note-file`. The distribution looks
+  healthy in both cases. Auditable accounting makes _mis-bucketing between reported buckets_
+  visible; it does not make a wrong answer _inside_ a bucket visible. That is a real limit of the
+  Track F thesis, not a gap in its execution.
+- **#126's generator is under-powered where it matters.** It generates vaults from names the
+  resolver already handles. The defect classes live in the input space it does not reach: folder
+  names that are suffixes of other folder names, BOMs, numeric title suffixes, non-ASCII
+  punctuation. Widening the generator's _alphabet_ — not its vault count — is the follow-on.
+
+Audited alongside: the reference vault's two suppressed buckets, by hand — 17 `non-note-file` (all
+genuine `.base`/`.png`) and 40 `intra-note` (all genuine heading refs), 0 false suppressions. A
+suppressed bucket is only trustworthy once someone has read it.
+
 _Deliberately deferred behind this:_ the Track D GitHub Action. It is an adoption play, and adoption
 is not this repo's game; more to the point, shipping a gate that fails other people's builds while
 the tool's own accounting is unauditable is backwards ordering. Generality work (Windows paths,
