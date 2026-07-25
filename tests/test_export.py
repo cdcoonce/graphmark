@@ -78,3 +78,22 @@ class TestToDot:
         edge_count = result.count(" -> ")
         expected = sum(len(targets) for targets in simple_graph.out_links.values())
         assert edge_count == expected
+
+    def test_escapes_quotes_and_backslashes(self):
+        # Node names containing " and \ must be escaped so Graphviz accepts the output.
+        src = r'a"b.md'
+        dst = r"c\d.md"
+        graph = VaultGraph(
+            nodes={src: None, dst: None},
+            out_links={src: {dst}, dst: set()},
+            back_links={dst: {src}, src: set()},
+        )
+        result = to_dot(graph)
+        expected = (
+            "digraph G {\n"
+            r'    "a\"b.md";' + "\n"
+            r'    "c\\d.md";' + "\n"
+            r'    "a\"b.md" -> "c\\d.md";' + "\n"
+            "}"
+        )
+        assert result == expected
