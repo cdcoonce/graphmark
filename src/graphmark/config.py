@@ -44,6 +44,9 @@ class VaultConfig:
     excluded_dirs: list[str] = field(default_factory=list)
     rules_files: list[str] = field(default_factory=lambda: ["CLAUDE.md", "CLAUDE.local.md"])
     transient_prefixes: tuple[str, ...] = ()
+    # Obsidian's `aliases:` property names a note, so links written against one resolve by
+    # default. Set False for strict basename-only resolution.
+    resolve_aliases: bool = True
     check: CheckPolicy = field(default_factory=CheckPolicy)
 
     def __post_init__(self) -> None:
@@ -118,5 +121,6 @@ def load_config(path: str | Path, *, root_override: str | Path | None = None) ->
         excluded_dirs=data.get("excluded_dirs", []),
         rules_files=data.get("rules_files", ["CLAUDE.md", "CLAUDE.local.md"]),
         transient_prefixes=tuple(data.get("transient_prefixes", [])),
+        resolve_aliases=bool(data.get("resolve_aliases", True)),
         check=_parse_check(data, path),
     )
