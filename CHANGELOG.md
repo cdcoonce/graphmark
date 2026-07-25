@@ -1,6 +1,167 @@
 # CHANGELOG
 
 
+## v0.7.0 (2026-07-25)
+
+### Documentation
+
+- Record the nine-vault corpus study ([#134](https://github.com/cdcoonce/graphmark/pull/134),
+  [`7495934`](https://github.com/cdcoonce/graphmark/commit/749593468e3d57913d89fc00942179786f5f5128))
+
+graphmark has had exactly one real vault, and a coverage run showed the problem is worse than n=1:
+  that vault now has zero broken links, so it never executes the error handling at all —
+  suggest_notes entirely, the ambiguous / missing / out-of-scope verdicts, unresolved recording, and
+  diagnose(). 54% of the package is unexercised by it. The healthier it gets, the less it validates.
+
+Nine third-party vaults, zero crashes — the first evidence for the README's 'any Obsidian-family
+  vault' claim. kepano's vault is 74% .base links, which independently justifies #101 and shows the
+  reference vault understated that class by 7x. Third-party vaults sit at 1.8-27% missing against
+  the reference vault's 0%.
+
+That range confirms #127's closure against real data rather than argument: the largest
+  false-positive class this package has had moved missing by 0.4%, which no threshold can separate
+  from ordinary variation.
+
+No new defects. Two suspicious distributions were both graphmark being right, and the second was my
+  own scoping error — I excluded English template directory names but not the Spanish 'Plantillas',
+  which is the methodological lesson worth recording for anyone repeating this.
+
+- **roadmap**: Close Track E, open Track F — auditable link accounting
+  ([#128](https://github.com/cdcoonce/graphmark/pull/128),
+  [`4ca84de`](https://github.com/cdcoonce/graphmark/commit/4ca84de110dd288cd2778ccdc48a3b558367b269))
+
+* docs(roadmap): close Track E, open Track F — auditable link accounting (#124-#127)
+
+afk-driver --expand reads this file verbatim, so it has to describe where the work actually is.
+  Track E is closed at 0.6.0 (aliases were its last piece), and the baseline line still claimed
+  0.3.4.
+
+Track F names the real problem, which is not any individual bug but how bugs get found: all seven
+  correctness defects in this package's history came from a human reading link lists on the single
+  reference vault, six of them in one day. The frozen oracle is a ratchet, not a detector — it has
+  never surfaced anything new — and the one consumer's seam actively conceals package defects,
+  having hidden a 23-link alias error for six releases.
+
+The mechanism of the hiding is that the buckets are silent: build sorts every display into one of
+  six reasons and reports one of them, and six of the seven bugs were mis-bucketing. Printing the
+  distribution would have made the alias gap obvious at a glance — zero alias-resolved beside 23
+  unresolved is visibly wrong.
+
+So the epic is to make the package's own answers auditable: every display in exactly one named
+  bucket, counted, reported, and bound by a property-tested conservation law. Sliced #124-#127, with
+  the detector (#126) as the point of the exercise and its catch rate as the evidence.
+
+Records what is deliberately deferred behind it and why: the Track D GitHub Action is an adoption
+  play this repo has already decided against, and shipping a gate that fails other people's builds
+  while our own accounting is unauditable is backwards ordering. Generality work is real but is a
+  feature list, not an epic — and Track F is what will say which parts of it matter.
+
+* docs(roadmap): truth up Track D — seven classes, and the Action waits on Track F
+
+Track D still read '0.3.4' and 'four false-positive classes', and promised the GitHub Action as the
+  next step, which now contradicts Track F's deliberate deferral. afk reads this file verbatim, so a
+  contradiction in it is a contradiction injected into the expander's prompt.
+
+### Features
+
+- **cli**: Graphmark links — surface the classification distribution (#125)
+  ([#131](https://github.com/cdcoonce/graphmark/pull/131),
+  [`3ccf11c`](https://github.com/cdcoonce/graphmark/commit/3ccf11c26028c03739cfa88e67119c230645a22e))
+
+Track F slice 2. Slice 1 made the classification countable; this makes it readable. Counts sitting
+  in a Python object are worthless to a vault owner, and that gap is not cosmetic: the six-release
+  frontmatter-alias defect was legible in this distribution the whole time — 23 links reported
+  broken beside zero resolved via alias — and nobody saw it because no surface printed it.
+
+`graphmark links` emits the block as JSON on stdout with a one-line summary on stderr, so stdout
+  stays pipeable. `check`'s report carries the same block under `links`, appended after `checks` so
+  consumers already parsing that report keep working, and provably unable to change the verdict — a
+  test pins that a passing and a breaching run produce identical `links`.
+
+The byte-stability oracle in test_check.py is updated rather than sidestepped, and now pins a
+  cross-check worth having: max_unresolved_links' actual equals counts.missing, so the gate's
+  flagship number and the distribution behind it cannot silently disagree.
+
+Filed #130 along the way: every CLI example in the README fails. --config and --root live on the
+  parent parser, so argparse only accepts them before the subcommand, while the README documents the
+  opposite in all ten examples. It survived because the suite exclusively uses the working form, so
+  nothing exercised the documented one — the same shape as the rest of Track F, and the reason
+  #130's acceptance criteria require every README example to be executed by a test.
+
+Mutation testing caught that the report's zero-fill was untested: build() seeds all six keys, so
+  only a directly constructed graph exercises it. Covered now.
+
+- **graph**: Per-reason link counts and the conservation law (#124)
+  ([#129](https://github.com/cdcoonce/graphmark/pull/129),
+  [`4ba2ab6`](https://github.com/cdcoonce/graphmark/commit/4ba2ab65b32654af98f3987f2688c18af23c7f02))
+
+Track F slice 1. build sorted every extracted display into one of the six DIAGNOSIS_REASONS and then
+  kept exactly one bucket plus the edges. The other outcomes were decided and discarded, and that
+  silence is why six of the seven correctness bugs in this package's history went unnoticed: each
+  was a mis-bucketing, and nothing in the output made an implausible distribution visible.
+
+graph.link_counts accounts for every display, one bucket each, with all six keys always present in
+  DIAGNOSIS_REASONS order — a zero is a finding, so it must be reported rather than absent.
+  graph.alias_resolved counts resolutions reached through an alias, which is not a DIAGNOSIS_REASONS
+  value but is the distinction that would have made #119 visible.
+
+LinkDiagnosis gains `via` ("stem" or "alias") so the counter reads the classifier's own verdict
+  instead of re-deriving it. Re-deriving is how the two would eventually disagree, which is the
+  failure this repo has spent Track E removing.
+
+The conservation law — sum(link_counts.values()) equals the extractor's total — is asserted on a
+  vault exercising all six outcomes, on the frozen fixtures, and against the pre-existing surface
+  (unresolved occurrences == ambiguous + missing), so the new tally cannot drift from the old one.
+
+On the live 521-note vault the payoff is legible in one line. Healthy: missing 0, alias-resolved 23.
+  The same vault with aliases disabled, which is what the six-release defect actually looked like:
+  missing 23, alias-resolved 0. Same 6226 total either way — nothing vanished, 23 links were in the
+  wrong bucket, and now you can see that.
+
+Purely additive: no metric changes, frozen fixtures byte-identical.
+
+### Testing
+
+- Property-based vault generation — Track F's detector (#126)
+  ([#132](https://github.com/cdcoonce/graphmark/pull/132),
+  [`cd76410`](https://github.com/cdcoonce/graphmark/commit/cd76410087157677f6f6515c94d11057060063eb))
+
+The frozen oracle prevents regression and has never surfaced anything new, because fixtures only
+  encode shapes somebody already thought of, and all seven historical bugs were shapes nobody
+  thought of. This generates vaults nobody designed and asserts what must hold for any content at
+  all.
+
+Two layers, and the second is the one that matters.
+
+STRUCTURAL invariants over generated vaults: conservation (every extracted display lands in a
+  bucket), edges name real notes and never exceed the resolved count, self-links never become edges,
+  back_links mirror out_links, unresolved is exactly ambiguous+missing, aliases never shadow a real
+  note name, and build is deterministic — the headline claim of this package, asserted nowhere until
+  now.
+
+Those all passed on first run, which was the finding. Every one of the seven bugs kept conservation
+  intact; each merely filed a link in the WRONG bucket. So the structural layer would have caught
+  none of them, and shipping only that would have been a detector that cannot see the thing it
+  exists for.
+
+METAMORPHIC relations close that gap. Obsidian treats [[X]], [[X|alias]], [[X#Section]] and [[X.md]]
+  as the same link, so each rewrite must leave the counts and edges identical. Re-injecting the real
+  defects confirms the layer works: #104 (.md), #98 (intra-note), #101 (non-note file), #119
+  (aliases) and the path-qualified whitespace bug each fail a property.
+
+Two of those properties were over-specified on first write — they compared `unresolved`, which
+  echoes the RAW display, so a rewrite legitimately changes it. Comparing it asserts a rewrite does
+  not rewrite anything. They now compare counts and edges, with the reason documented at the helper.
+
+The whitespace property also had to be sharpened: normalization collapses whitespace on its own, so
+  a padded BARE display resolves either way and cannot detect the defect. Only the path-suffix
+  branch is sensitive, which is exactly where the 13 live links were reported broken while pointing
+  at real notes.
+
+hypothesis is a dev dependency only; the shipped runtime dep is still networkx alone. Bounded and
+  derandomized so CI stays fast and failures reproduce.
+
+
 ## v0.6.0 (2026-07-25)
 
 ### Bug Fixes
