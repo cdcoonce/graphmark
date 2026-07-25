@@ -2,6 +2,8 @@ name: CI
 
 # Mirrors the afk gate exactly (see .afk/config.toml). The macOS leg exists because the afk
 # executor gates on Linux only — OS-specific escapes must surface here, not at release time.
+# The python leg covers every version the pyproject classifiers advertise, so the claim
+# "supports 3.11/3.12/3.13" is tested rather than asserted.
 
 on:
   push:
@@ -14,11 +16,15 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+        python: ["3.11", "3.12", "3.13"]
     runs-on: ${{ matrix.os }}
+    name: gate (${{ matrix.os }}, py${{ matrix.python }})
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python }}
       - name: Lint
         run: uv run --extra dev ruff check .
       - name: Format check

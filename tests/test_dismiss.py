@@ -70,3 +70,49 @@ class TestCorruptStore:
         store.write_text('["a", "b"]')  # valid JSON, wrong shape
         assert dismiss.load_dismissed(tmp_path) == {}
         assert dismiss.active_dismissed_sigs(tmp_path) == set()
+
+
+class TestSigRoundTrip:
+    """gaps() emits sigs, callers persist them via record_dismissal, and feed
+    active_dismissed_sigs back in as dismissed=. One definition must serve all three."""
+
+    def test_gaps_sig_matches_weaklink_sig(self):
+        from graphmark.dismiss import weaklink_sig
+        from graphmark.graph import VaultGraph
+        from graphmark.metrics import gaps
+
+        graph = VaultGraph(
+            nodes={"a/one.md": None, "b/two.md": None},
+            out_links={"a/one.md": set(), "b/two.md": set()},
+            back_links={"a/one.md": set(), "b/two.md": set()},
+        )
+        result = gaps(graph, lambda _rel, _k: [("b/two.md", 0.8)])
+        assert len(result) == 1
+        assert result[0]["sig"] == weaklink_sig("a/one.md", "b/two.md")
+
+    def test_dismissing_a_gaps_suggestion_suppresses_it_on_the_next_run(self, tmp_path):
+        """The full loop: suggest -> record -> re-run -> suppressed."""
+        from graphmark import dismiss
+        from graphmark.graph import VaultGraph
+        from graphmark.metrics import gaps
+
+        (tmp_path / "one.md").write_text("first")
+        (tmp_path / "two.md").write_text("second")
+        graph = VaultGraph(
+            nodes={"one.md": None, "two.md": None},
+            out_links={"one.md": set(), "two.md": set()},
+            back_links={"one.md": set(), "two.md": set()},
+        )
+
+        def similar(rel, k):
+            return [("two.md", 0.8)] if rel == "one.md" else []
+
+        first = gaps(graph, similar)
+        assert len(first) == 1
+        sig = first[0]["sig"]
+
+        dismiss.record_dismissal(tmp_path, "one.md", "two.md")
+        active = dismiss.active_dismissed_sigs(tmp_path)
+        # The sig gaps() emitted is exactly the one the store now holds.
+        assert sig in active
+        assert gaps(graph, similar, dismissed=active) == []

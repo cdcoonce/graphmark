@@ -6,11 +6,20 @@ ordering, and tie-breaking are pinned by tests/fixtures/simple/expected.json.
 
 from __future__ import annotations
 
+from collections.abc import Collection, Sequence
+
 import networkx as nx
 
 from graphmark.config import VaultConfig
+
+# weaklink_sig is a pure string helper (no IO, no extra deps), imported so the gaps -> dismiss
+# round-trip has ONE definition of the signature format instead of two that must agree.
+from graphmark.dismiss import weaklink_sig
 from graphmark.graph import VaultGraph
 from graphmark.interfaces import Similarity
+
+# Power-iteration cap for pagerank; matches networkx's default max_iter.
+_MAX_ITER = 100
 
 # Validated gaps banding policy — the band proven in daily /connect + /garden use on the owner's
 # live vault (~340 notes). Ships in-package so any consumer gets the tuned band instead of
@@ -20,6 +29,14 @@ GAPS_DEFAULT_THRESHOLD = 0.6
 GAPS_DEFAULT_MAX_SCORE = 0.92
 GAPS_DEFAULT_K = 8
 GAPS_DEFAULT_HUB_DEGREE = 40
+
+# The same band as one keyword bundle: gaps(graph, fn, **GAPS_DEFAULT_BAND).
+GAPS_DEFAULT_BAND: dict[str, float | int] = {
+    "threshold": GAPS_DEFAULT_THRESHOLD,
+    "max_score": GAPS_DEFAULT_MAX_SCORE,
+    "k": GAPS_DEFAULT_K,
+    "hub_degree": GAPS_DEFAULT_HUB_DEGREE,
+}
 
 
 def _undirected(graph: VaultGraph) -> nx.Graph:
@@ -112,7 +129,15 @@ def pagerank(graph: VaultGraph, n: int = 10, alpha: float = 0.85) -> list[list]:
 
     Dangling nodes (no out-edges) redistribute mass uniformly across all nodes.
     Returns top-n [path, score] pairs sorted score-desc then path-asc.
+
+    ``alpha`` is the damping factor and must lie in (0, 1); anything else is not a PageRank and
+    raises ``ValueError``. Matching networkx, failing to reach tolerance within ``_MAX_ITER``
+    iterations raises ``networkx.PowerIterationFailedConvergence`` rather than returning the
+    unconverged vector as if it were a result.
     """
+    if not 0.0 < alpha < 1.0:
+        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+
     nodes = list(graph.nodes.keys())
     N = len(nodes)
     if N == 0:
@@ -124,7 +149,7 @@ def pagerank(graph: VaultGraph, n: int = 10, alpha: float = 0.85) -> list[list]:
 
     x: dict[str, float] = {node: 1.0 / N for node in nodes}
 
-    for _ in range(100):
+    for _ in range(_MAX_ITER):
         xlast = x
         x = dict.fromkeys(xlast, 0.0)
         danglesum = alpha * sum(xlast[node] for node in dangling)
@@ -142,6 +167,10 @@ def pagerank(graph: VaultGraph, n: int = 10, alpha: float = 0.85) -> list[list]:
         err = sum(abs(x[node] - xlast[node]) for node in nodes)
         if err < N * 1e-6:
             break
+    else:
+        # Never reached tolerance — networkx raises here, and returning the unconverged
+        # vector would present meaningless numbers as scores.
+        raise nx.PowerIterationFailedConvergence(_MAX_ITER)
 
     pairs = sorted(x.items(), key=lambda kv: (-kv[1], kv[0]))
     return [[path, score] for path, score in pairs[:n]]
@@ -153,17 +182,24 @@ def gaps(
     threshold: float = 0.0,
     k: int = 5,
     note: str | None = None,
-    dismissed: set | frozenset = frozenset(),
-    exclude_prefixes: tuple = (),
+    dismissed: Collection[str] = frozenset(),
+    exclude_prefixes: tuple[str, ...] = (),
     max_score: float | None = None,
     hub_degree: int | None = None,
-    targets: list | None = None,
+    targets: Sequence[str] | None = None,
 ) -> list[dict]:
     """Return link-gap suggestions ranked by novelty (non-hub, cross-folder, score-desc).
 
     ``similar_fn`` is the injected similarity source (see ``interfaces.Similarity``): given a
     ``rel_path`` and ``k`` it returns up to ``k`` ``(other_rel_path, score)`` pairs. graphmark
     owns all deterministic ranking/filtering; the similarity source is the caller's.
+
+    ``threshold`` and ``max_score`` are inclusive bounds — a candidate scoring exactly on either
+    is kept. For the band validated on the owner's live vault, splat ``GAPS_DEFAULT_BAND``.
+
+    Scope: ``note`` restricts the scan to a single note, ``targets`` to a list. **``note`` wins
+    when both are given** (most specific scope), and passing both is legitimate — a caller may
+    compute ``targets`` unconditionally while ``note`` stays optional.
     """
     if note is not None:
         target_list = [note]
@@ -197,7 +233,7 @@ def gaps(
             if max_score is not None and score > max_score:
                 continue
 
-            sig = "weaklink|" + "|".join(sorted([rel, other]))
+            sig = weaklink_sig(rel, other)
             if sig in dismissed:
                 continue
 
