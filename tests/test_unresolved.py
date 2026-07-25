@@ -130,3 +130,48 @@ class TestUnresolvedIntegration:
         assert isinstance(graph.unresolved, dict)
         # stats is untouched by this addition — the oracle still governs it.
         assert set(stats(graph)) == {"notes", "edges", "orphans", "clusters", "density"}
+
+
+class TestIntraNoteAnchorLinks:
+    """[[#Heading]] is a same-note reference, not a link to another note.
+
+    It is neither an edge nor a broken link, so counting it as unresolved inflates the
+    check gate's max_unresolved_links threshold (measured: 19% of a real vault's total).
+    """
+
+    def test_anchor_only_link_is_not_unresolved(self, tmp_path):
+        _write(tmp_path, "a.md", "# Top\n\nJump to [[#Section]].\n\n## Section\n")
+        graph = _build(tmp_path)
+        assert graph.unresolved == {}
+
+    def test_anchor_only_link_with_alias_is_not_unresolved(self, tmp_path):
+        _write(tmp_path, "a.md", "See [[#Design cruxes|crux 2]].\n")
+        assert _build(tmp_path).unresolved == {}
+
+    def test_block_reference_is_not_unresolved(self, tmp_path):
+        _write(tmp_path, "a.md", "See [[#^abc123]].\n")
+        assert _build(tmp_path).unresolved == {}
+
+    def test_anchor_only_link_creates_no_edge(self, tmp_path):
+        _write(tmp_path, "a.md", "Jump to [[#Section]].\n")
+        graph = _build(tmp_path)
+        assert graph.out_links["a.md"] == set()
+
+    def test_whitespace_only_display_is_ignored(self, tmp_path):
+        _write(tmp_path, "a.md", "Odd [[   ]] link.\n")
+        assert _build(tmp_path).unresolved == {}
+
+    def test_cross_note_anchor_still_resolves(self, tmp_path):
+        _write(tmp_path, "a.md", "See [[b#Section]].\n")
+        _write(tmp_path, "b.md", "# B\n\n## Section\n")
+        graph = _build(tmp_path)
+        assert graph.unresolved == {}
+        assert graph.out_links["a.md"] == {"b.md"}
+
+    def test_cross_note_anchor_to_a_missing_note_is_still_unresolved(self, tmp_path):
+        _write(tmp_path, "a.md", "See [[Nowhere#Section]].\n")
+        assert _build(tmp_path).unresolved == {"a.md": ["Nowhere#Section"]}
+
+    def test_mixed_note_keeps_only_the_real_break(self, tmp_path):
+        _write(tmp_path, "a.md", "[[#Local]] and [[Missing]] and [[#Other|x]].\n")
+        assert _build(tmp_path).unresolved == {"a.md": ["Missing"]}
