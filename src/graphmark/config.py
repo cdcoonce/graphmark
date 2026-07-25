@@ -46,6 +46,12 @@ class VaultConfig:
     transient_prefixes: tuple[str, ...] = ()
     check: CheckPolicy = field(default_factory=CheckPolicy)
 
+    def __post_init__(self) -> None:
+        # A string root would otherwise survive construction and fail much later with an
+        # obscure AttributeError on the first Path operation.
+        if not isinstance(self.root, Path):
+            self.root = Path(self.root)
+
 
 def _parse_check(data: dict, path: Path) -> CheckPolicy:
     """Parse the optional [check] table.
@@ -79,7 +85,7 @@ def _parse_check(data: dict, path: Path) -> CheckPolicy:
     return CheckPolicy(**values)
 
 
-def load_config(path: Path, *, root_override: Path | None = None) -> VaultConfig:
+def load_config(path: str | Path, *, root_override: str | Path | None = None) -> VaultConfig:
     """Load a VaultConfig from a TOML file.
 
     ``root`` is the only required key (resolved relative to the TOML's directory). Every other
@@ -95,11 +101,12 @@ def load_config(path: Path, *, root_override: Path | None = None) -> VaultConfig
     When given it wins over any ``root`` key and makes that key optional, so a policy-only config
     — such as the shipped ``configs/my-brain.toml`` — can be paired with an explicit root.
     """
+    path = Path(path)
     with open(path, "rb") as f:
         data = tomllib.load(f)
 
     if root_override is not None:
-        root = root_override
+        root = Path(root_override)
     elif "root" in data:
         root = path.parent / data["root"]
     else:
