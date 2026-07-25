@@ -8,7 +8,10 @@ from pathlib import Path
 
 from graphmark.model import Document
 
-_FM_RE = re.compile(r"^---\n(.+?\n)---\n", re.DOTALL)
+# Frontmatter delimiters tolerate CRLF (Windows / git-autocrlf vaults) and a closing `---` that
+# sits at EOF with no trailing newline (a frontmatter-only note). A block that fails to split
+# would stay in the body, turning frontmatter wikilinks into phantom graph edges.
+_FM_RE = re.compile(r"^---\r?\n(.+?\r?\n)---(?:\r?\n|\Z)", re.DOTALL)
 _WIKILINK_RE = re.compile(r"\[\[(.+?)\]\]")
 _INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
 _FENCE_OPEN_RE = re.compile(r"^(`{3,}|~{3,})")
