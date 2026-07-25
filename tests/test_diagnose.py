@@ -41,12 +41,12 @@ class TestResolved:
         assert d == LinkDiagnosis(display="b", target="b.md", reason="resolved", candidates=())
 
     def test_the_target_carries_the_canonical_title(self, tmp_path):
-        # The repair the gardener needs: [[ethan courtman]] → [[Ethan Courtman]]. The caller
+        # The repair the gardener needs: [[jordan ellis]] → [[Jordan Ellis]]. The caller
         # recovers the title from the target's stem, so no separate title field is needed.
-        _write(tmp_path, "people/Ethan Courtman.md")
-        d = diagnose(_build(tmp_path), "ethan courtman")
+        _write(tmp_path, "people/Jordan Ellis.md")
+        d = diagnose(_build(tmp_path), "jordan ellis")
         assert d.reason == "resolved"
-        assert Path(d.target).stem == "Ethan Courtman"
+        assert Path(d.target).stem == "Jordan Ellis"
 
     def test_path_qualified_link_resolves(self, tmp_path):
         _write(tmp_path, "docs/deep/note.md")

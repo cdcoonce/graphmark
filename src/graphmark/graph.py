@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import string
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from graphmark.config import VaultConfig
@@ -144,6 +144,90 @@ class NormalizeResolver:
         return paths[0]
 
 
+#: A display matching more than this many notes names a *topic*, not a mistyped note, and gets no
+#: suggestions at all. Calibrated, not chosen: on the reference vault ``[[AMRT]]`` matched 47 notes
+#: while ``[[Priya Raghavan]]`` needs a cap of at least 12 to survive (that token appears in 9 note
+#: stems), so 12 is the lowest value that keeps every human-confirmed useful suggestion.
+SUGGEST_MAX_MATCHES = 12
+
+#: When a candidate's name sits *inside* a longer display, the fraction of the display it must
+#: account for. ``[[fable-prompt-technique-reference]]`` → ``fable-prompt-technique`` covers 3 of 4
+#: tokens and is the answer; ``[[Dagster PJM InSchedules]]`` → ``Dagster`` covers 1 of 3 and is a
+#: real note that is not the target — the shape that made the old suggestions untrustworthy. 0.4 is
+#: the highest floor that keeps every useful suggestion in the annotated baseline.
+SUGGEST_MIN_COVERAGE = 0.4
+
+#: Note stems that name nothing — the note's identity lives in its parent folder instead. Kept
+#: deliberately short: ``index`` is NOT here, because a vault's ``personal/Index.md`` is a real,
+#: linkable note and re-keying it onto its folder would lose the actual answer.
+GENERIC_STEMS = frozenset({"skill", "readme"})
+
+
+def _content_tokens(text: str) -> frozenset[str]:
+    """Normalized tokens with pure-digit runs dropped.
+
+    Date prefixes are filing metadata, not content: ``2026-04-11-mood-tracker`` and
+    ``Mood Tracker`` are the same note to a human, and the dated twin is the single most common
+    near-miss shape in a journal-style vault.
+    """
+    return frozenset(t for t in _normalize(text).split() if not t.isdigit())
+
+
+def _suggestion_keys(catalog: dict[str, list[str]]) -> list[tuple[str, frozenset[str]]]:
+    """(rel_path, name tokens) for every note, keyed by folder where the stem is generic."""
+    keys: list[tuple[str, frozenset[str]]] = []
+    for paths in catalog.values():
+        for rel in paths:
+            path = Path(rel)
+            name = path.parent.name if path.stem.lower() in GENERIC_STEMS else path.stem
+            tokens = _content_tokens(name)
+            if tokens:
+                keys.append((rel, tokens))
+    return keys
+
+
+def suggest_notes(display: str, catalog: dict[str, list[str]], k: int) -> tuple[str, ...]:
+    """Up to ``k`` notes whose names are near-misses for ``display``, best first.
+
+    Matching is **directional**, which is what separates a suggestion from noise:
+
+    * the display's tokens inside a candidate's — the display abbreviates a longer title
+      (``[[Jordan]]`` → ``Jordan Ellis``). Always offered; a short display naturally names a
+      longer note.
+    * a candidate's tokens inside the display's — offered only when the candidate accounts for at
+      least ``SUGGEST_MIN_COVERAGE`` of the display. Dropping a suffix is a real answer; matching
+      one word out of five is a wrong answer that invites a wrong repair.
+    * neither — rejected. Partial overlap produced no useful suggestion anywhere in the annotated
+      baseline, and rejecting it is what holds the false-suggestion rate at zero.
+
+    Ranked by how much of the longer name the match accounts for, ties broken by rel_path so the
+    output is byte-stable.
+    """
+    display_tokens = _content_tokens(display)
+    if not display_tokens or k <= 0:
+        return ()
+
+    scored: list[tuple[float, str]] = []
+    for rel, name_tokens in _suggestion_keys(catalog):
+        if display_tokens <= name_tokens:
+            score = len(display_tokens) / len(name_tokens)
+        elif name_tokens <= display_tokens:
+            score = len(name_tokens) / len(display_tokens)
+            if score < SUGGEST_MIN_COVERAGE:
+                continue
+        else:
+            continue
+        scored.append((score, rel))
+
+    # A display that matches half the vault is a topic. Offering its "best" dozen would be
+    # confident nonsense, so it gets nothing.
+    if len(scored) > SUGGEST_MAX_MATCHES:
+        return ()
+
+    scored.sort(key=lambda pair: (-pair[0], pair[1]))
+    return tuple(rel for _, rel in scored[:k])
+
+
 #: Every value ``LinkDiagnosis.reason`` can take, in the order they are decided. A consumer
 #: switches on these strings, so the set is part of the public contract.
 DIAGNOSIS_REASONS = (
@@ -167,10 +251,11 @@ class LinkDiagnosis:
 
     ``target`` is the resolved rel_path, set only when ``reason == "resolved"``; the caller recovers
     the note's canonical title from its stem, which is what makes a case repair like
-    ``[[ethan courtman]]`` → ``[[Ethan Courtman]]`` possible.
+    ``[[jordan ellis]]`` → ``[[Jordan Ellis]]`` possible.
 
     ``candidates`` carries the rel_paths in play: the colliding notes for ``ambiguous``, the
-    unindexed markdown for ``out-of-scope-note``. Empty for every other reason.
+    unindexed markdown for ``out-of-scope-note``, and — only when ``diagnose`` is asked for them —
+    the near-miss suggestions for ``missing``. Empty for every other reason.
     """
 
     display: str
@@ -219,14 +304,24 @@ def _diagnose(
     return LinkDiagnosis(display=display, reason="missing")
 
 
-def diagnose(graph: VaultGraph, display: str) -> LinkDiagnosis:
+def diagnose(graph: VaultGraph, display: str, *, suggest: int = 0) -> LinkDiagnosis:
     """Explain what ``display`` names in ``graph`` — see :class:`LinkDiagnosis`.
 
     Uses the resolver the graph was built with, so a diagnosis can never contradict the graph it
     describes. A directly constructed ``VaultGraph`` with no resolver falls back to
     ``NormalizeResolver``.
+
+    ``suggest=k`` fills ``candidates`` with up to k near-miss notes — but only for a ``missing``
+    verdict, since every other reason either already carries the rel_paths in play or has nothing
+    to look for. The default of 0 does no extra work at all, keeping the vault-health gate's hot
+    path free of it.
     """
-    return _diagnose(display, graph.catalog, graph.out_of_scope, graph.resolver)
+    if suggest < 0:
+        raise ValueError(f"suggest must be >= 0, got {suggest}")
+    diagnosis = _diagnose(display, graph.catalog, graph.out_of_scope, graph.resolver)
+    if suggest and diagnosis.reason == "missing":
+        return replace(diagnosis, candidates=suggest_notes(display, graph.catalog, suggest))
+    return diagnosis
 
 
 class VaultGraph:
