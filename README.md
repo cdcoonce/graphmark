@@ -156,7 +156,45 @@ graphmark.siloed_notes(graph)                 # reachable only through a single 
 graphmark.neighborhood(graph, "a/b.md", depth=2)
 graphmark.to_dot(graph)                       # Graphviz DOT
 graph.unresolved                              # {rel_path: [broken link displays]}
+graph.catalog                                 # {normalized stem: [rel_paths]} — 2+ means ambiguous
+graph.out_of_scope                            # same, for markdown outside the configured scope
 ```
+
+`catalog` and `out_of_scope` are the resolution state the build consulted. They are what you need to
+explain a link rather than just resolve it — which notes a bare `[[link]]` collided with, or whether
+a link that failed to resolve points at a real file you deliberately excluded. Value lists are
+sorted by rel_path.
+
+## `diagnose` — why a link failed, not just that it did
+
+`graph.unresolved` conflates two different problems. A link that matched _nothing_ needs its target
+created or deleted; a link that matched _too much_ needs disambiguating against the notes it
+collided with. `diagnose` separates them, and names the three cases that are not broken at all.
+
+```python
+d = graphmark.diagnose(graph, "2026-W27-tasks|W27 tasks")
+
+d.reason      # 'ambiguous'
+d.candidates  # ('personal/archive/tasks/2026-W27-tasks.md', 'work/archive/2026/tasks/2026-W27-tasks.md')
+d.target      # None — set only when reason == 'resolved'
+d.display     # echoed verbatim: what a human has to go and fix
+```
+
+| `reason`            | meaning                                                        | `candidates`        |
+| ------------------- | -------------------------------------------------------------- | ------------------- |
+| `resolved`          | names exactly one note; `target` is its rel_path               | —                   |
+| `ambiguous`         | names several notes, so the resolver refused to pick           | the colliding notes |
+| `non-note-file`     | targets a `.canvas` / `.base` / image / PDF — not indexed here | —                   |
+| `out-of-scope-note` | targets real markdown outside the configured scope             | the unindexed paths |
+| `missing`           | names nothing that exists — a genuine broken link              | —                   |
+| `intra-note`        | `[[#Heading]]` / `[[#^block]]` — a same-note reference         | —                   |
+
+`DIAGNOSIS_REASONS` holds that set in decision order, so a consumer can switch on it exhaustively.
+Alias, anchor and `.md` forms all diagnose identically to the bare form.
+
+`VaultGraph.build` classifies its own links through this same function, so a diagnosis can never
+contradict the graph it describes: `unresolved` is exactly the displays diagnosing as `ambiguous` or
+`missing`, and the edges are exactly the `resolved` non-self targets.
 
 ## Configuration
 
