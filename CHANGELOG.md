@@ -1,6 +1,51 @@
 # CHANGELOG
 
 
+## v0.5.0 (2026-07-25)
+
+### Features
+
+- **graph**: Add calibrated near-miss suggestions (#112)
+  ([#116](https://github.com/cdcoonce/graphmark/pull/116),
+  [`db873b1`](https://github.com/cdcoonce/graphmark/commit/db873b1009bbef599e9eef035720306b62a548b8))
+
+Track E slice 3, and the last thing keeping a consumer's parallel resolver alive. diagnose(graph,
+  display, suggest=k) fills candidates with near-miss notes for a `missing` verdict only — every
+  other reason already carries the rel_paths in play — so the default of 0 leaves the check gate's
+  hot path untouched.
+
+The rule was calibrated, not invented. The prior art (bidirectional substring containment over
+  stems) was frozen over a real 521-note vault's broken links, giving 53 distinct displays, each
+  annotated by a human as useful / useless / missing / correct-none. Only then was an algorithm
+  chosen, and it is justified against that set: 27/27 useful kept — the non-negotiable — 7 of 8
+  useless dropped, 4 of 5 missing found, zero new false suggestions. Method and measured result in
+  tests/fixtures/suggest/README.md; the vault is private, so every shape is reproduced as a named
+  test with invented names rather than committing the rows.
+
+Matching is directional, which is what separates a suggestion from a wrong answer. A display inside
+  a candidate is an abbreviation and always offered ([[Jordan]] -> Jordan Ellis). A candidate inside
+  a display is offered only above SUGGEST_MIN_COVERAGE: dropping a "-reference" suffix is the
+  answer, matching one word out of five is a real note that is NOT the target, and that shape is
+  what made the old hints untrustworthy. Partial overlap in neither direction is rejected — it
+  carried no useful hint anywhere in the baseline, and rejecting it is what holds the
+  false-suggestion rate at zero.
+
+Two annotations were corrected mid-calibration and both changed the design: [[Work Tasks]] and
+  [[Personal Index]] looked useless only because the old rule printed bare stems, rendering four
+  distinct Index.md files as "Index, Index, Index, Index". Both are correct answers. Suggestions
+  therefore return rel_paths, and `index` is deliberately NOT a generic stem.
+
+Also scrubs real colleague names out of the package. They had been used as doc/test examples and one
+  shipped in a docstring in 0.4.0; all replaced with invented placeholders. Published history still
+  carries them.
+
+Both constants are pinned by the baseline: the cap is the lowest value that keeps every useful
+  suggestion, the floor the highest. Teeth-checked by mutation — disabling suppression fails 1,
+  dropping the coverage floor fails 3, dropping folder-keying fails 2, suggesting on every reason
+  fails 3, and dropping the digit filter initially survived until a ranking test was added to cover
+  it.
+
+
 ## v0.4.0 (2026-07-25)
 
 ### Features
