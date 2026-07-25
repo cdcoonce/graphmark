@@ -89,3 +89,23 @@ class TestParseDocument:
         doc = parse_document(note, tmp_path)
         assert doc.frontmatter == {}
         assert "[[link]]" in doc.text
+
+    def test_invalid_utf8_decodes_with_replacement_and_warns(self, tmp_path, capsys):
+        note = tmp_path / "bad.md"
+        # 0xff is not valid UTF-8; the rest is decodable.
+        note.write_bytes(b"# Bad\n\nSome [[link]] and a bad byte: \xff end.\n")
+        doc = parse_document(note, tmp_path)
+        assert isinstance(doc, Document)
+        assert doc.rel_path == "bad.md"
+        assert "[[link]]" in doc.text  # decodable content survives
+        captured = capsys.readouterr()
+        assert captured.out == ""  # never pollute stdout / the JSON surface
+        assert "bad.md" in captured.err
+        assert "invalid UTF-8" in captured.err
+
+    def test_valid_utf8_file_emits_no_warning(self, tmp_path, capsys):
+        note = tmp_path / "good.md"
+        note.write_text("# Good\n\nAll clean [[link]].\n", encoding="utf-8")
+        parse_document(note, tmp_path)
+        captured = capsys.readouterr()
+        assert captured.err == ""
