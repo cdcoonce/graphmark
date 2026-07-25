@@ -119,6 +119,15 @@ def parse_document(path: Path, root: Path) -> Document:
             f"graphmark: warning: {rel_path}: invalid UTF-8, decoded with replacement",
             file=sys.stderr,
         )
+    # A UTF-8 BOM sits ahead of the `---` and defeats _FM_RE's anchored match, so a BOM'd note
+    # would have no frontmatter at all: its aliases would never register (a phantom break) and its
+    # frontmatter wikilinks would stay in the body (a phantom edge — the very failure the regex
+    # above exists to prevent). Stripped here, on the decoded text, so the frontmatter split, the
+    # body and the extractor all see the same string on both decode paths. Leading only: elsewhere
+    # U+FEFF is a zero-width no-break space, which is legitimate content. lstrip rather than a
+    # single removal because double-encoding produces doubled BOMs, and one survivor still breaks
+    # the match.
+    raw = raw.lstrip("﻿")
     m = _FM_RE.match(raw)
     if m:
         frontmatter = _parse_frontmatter(m.group(1))
