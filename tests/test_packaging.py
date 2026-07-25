@@ -59,3 +59,19 @@ class TestTypedClassifier:
     def test_typing_typed_classifier_is_declared(self):
         data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
         assert "Typing :: Typed" in data["project"]["classifiers"]
+
+
+class TestSdistContents:
+    def test_sdist_includes_the_changelog(self, tmp_path):
+        # semantic-release maintains CHANGELOG.md on every release; sdist consumers
+        # (distro packagers) should get it too.
+        sdist = _build(tmp_path, "sdist")
+        with tarfile.open(sdist) as tar:
+            names = tar.getnames()
+        assert any(n.endswith("/CHANGELOG.md") for n in names), names[:20]
+
+    def test_sdist_includes_the_tests(self, tmp_path):
+        sdist = _build(tmp_path, "sdist")
+        with tarfile.open(sdist) as tar:
+            names = tar.getnames()
+        assert any(n.endswith("/tests/test_smoke.py") for n in names)
