@@ -1,6 +1,84 @@
 # CHANGELOG
 
 
+## v0.4.0 (2026-07-25)
+
+### Features
+
+- **graph**: Add diagnose() — why a link failed, not just that it did (#111)
+  ([#114](https://github.com/cdcoonce/graphmark/pull/114),
+  [`1d124a3`](https://github.com/cdcoonce/graphmark/commit/1d124a3423fc5a6f3c8a0a084e8d15927dd1d828))
+
+Track E slice 2. graph.unresolved conflates two problems needing opposite repairs: a link matching
+  NOTHING wants its target created or deleted, a link matching TOO MUCH wants disambiguating against
+  what it collided with. A consumer holding only unresolved cannot tell them apart, so it rebuilds
+  the resolver — the drift this track exists to end.
+
+diagnose(graph, display) returns a frozen LinkDiagnosis: display echoed verbatim, target when
+  resolved, one of the six DIAGNOSIS_REASONS, and the rel_paths in play (the colliding notes for
+  ambiguous, the unindexed markdown for out-of-scope-note). The reason set is exported as a tuple in
+  decision order so a consumer can switch on it exhaustively.
+
+build() now classifies through the same function rather than agreeing with it separately — two
+  classifiers in one package would recreate the drift inside the package. Two property tests pin
+  them together: unresolved is exactly the ambiguous+missing displays, edges are exactly the
+  resolved non-self targets.
+
+candidates_for() consolidates the two-branch matching that _targets_out_of_scope_note had duplicated
+  from the resolver. It reports matches only; deciding uniqueness stays the Resolver's job, so the
+  two cannot disagree about which notes were in play. The graph now also retains the resolver it was
+  built with, so a diagnosis can never contradict its own graph.
+
+Behavior is unchanged: on the live vault, 130 unresolved / 3582 edges both before and after, and all
+  six frozen fixtures byte-identical. What is new is the answer — 8 of those 130 are ambiguous
+  collisions ([[2026-W27-tasks]] existing under both personal/archive and work/archive,
+  [[RESOURCES]] under four learning folders), which the old surface reported as plain breaks.
+
+- **graph**: Retain catalog + out_of_scope on the built graph (#110)
+  ([#113](https://github.com/cdcoonce/graphmark/pull/113),
+  [`7f7a91c`](https://github.com/cdcoonce/graphmark/commit/7f7a91cae961a06155f565384a429c92356868fb))
+
+* docs(roadmap): close Tracks C and D, open Track E (#110-#112)
+
+afk-driver --expand reads this file verbatim, so a stale one makes the fleet propose already-built
+  work and pollutes the telemetry dataset. It still targeted "v0.2.0 — every error path tested"
+  while the package is 0.3.4 with Tracks C and D both fully shipped.
+
+Track C closed (every item landed at 0.2.0). Track D marked shipped at 0.3.0, with its real
+  remaining risk named: the credibility of its flagship number. Four false-positive classes have now
+  been found by triaging a live vault against max_unresolved_links — #98 anchors (19%), #101
+  non-markdown (10%), #104 the .md extension, #107 out-of-scope notes (7%) — so "keep truthing the
+  metric before shipping a GitHub Action that fails someone's build" is the direction, not more
+  surface.
+
+Track E opened: absorb the consumer's second link stack. graphmark says whether a link resolves; the
+  gardener needs to know why it failed and what to do about it, which is why it still carries its
+  own resolver and why #107 had to be fixed in two places. Sliced #110/#111/#112, with #112 flagged
+  not-autonomous-safe past freezing the baseline — its expected values are human judgment, not
+  oracle-derived.
+
+* feat(graph): retain catalog + out_of_scope on the built graph (#110)
+
+Track E slice 1. build() computed both mappings and threw both away, so a consumer that needs to say
+  anything about a link beyond "resolved / didn't" had to rebuild the entire parse/catalog/resolve
+  stack. the-vault's graph_gardener.py does exactly that, and the two stacks drift: #107 was the
+  fourth resolution fix that had to be applied in two places.
+
+graph.catalog is normalized stem → in-scope rel_paths; a key with two or more paths IS an ambiguity
+  set, which is what lets a consumer say WHICH notes a bare link collided with instead of only that
+  it failed. graph.out_of_scope is the same for markdown outside the configured scope, retained from
+  #107. Both are constructor-optional, so three-positional construction keeps working.
+
+Value lists are sorted by rel_path explicitly rather than inheriting the walk's order. Those
+  disagree: sorted(rglob) orders Path objects by parts tuple, yielding a/note.md before a-b/note.md,
+  while rel_path string order is the reverse ('-' < '/'). The first version of the ordering tests
+  used paths where the two agree, so deleting the sorts left the suite green — caught by mutation,
+  and the tests now use the discriminating case.
+
+No behavior change: nothing about what resolves or what an edge is moves, and every frozen fixture
+  is byte-identical.
+
+
 ## v0.3.4 (2026-07-25)
 
 ### Bug Fixes
