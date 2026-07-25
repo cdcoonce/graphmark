@@ -22,13 +22,14 @@ story** — the priority consumer is the owner's vault seam (`graph_cli.py`), no
 
 ## What's shipped (baseline — do not re-propose)
 
-- **The full engine, v0.3.4 on PyPI**: `parse.py` (wikilink extraction, code-span skipping),
-  `graph.py` (catalog + `NormalizeResolver` + `VaultGraph.build` + `unresolved`), `metrics.py`
-  (stats, orphans, hubs, clusters, bridges, siloed_notes, neighborhood, pure-python pagerank,
-  gaps), `check.py` (policy evaluation), `export.py` (JSON/DOT), `cli.py`, `config.py`
-  (`VaultConfig` + `CheckPolicy` + `load_config`), and `dismiss.py` (content-hash weaklink
-  dismissal store). Tracks A, C and D are all closed — read their sections before proposing
-  anything in those areas.
+- **The full engine, v0.6.0 on PyPI**: `parse.py` (wikilink extraction, code-span skipping,
+  frontmatter incl. block lists), `graph.py` (catalog + `NormalizeResolver` + `VaultGraph.build` +
+  `unresolved` + `diagnose`/`LinkDiagnosis` + frontmatter aliases), `metrics.py` (stats, orphans,
+  hubs, clusters, bridges, siloed_notes, neighborhood, pure-python pagerank, gaps), `check.py`
+  (policy evaluation), `export.py` (JSON/DOT), `cli.py`, `config.py` (`VaultConfig` +
+  `CheckPolicy` + `load_config`), and `dismiss.py` (content-hash weaklink dismissal store).
+  Tracks A, C, D and E are all closed — read their sections before proposing anything in those
+  areas.
 - **Six frozen differential fixtures** — simple, alt, scoped, selflink, gaps (+ out-of-graph),
   dismiss — plus live-vault parity diffs against the reference engine.
 - **`gaps()` with injected similarity** — graphmark owns the deterministic ranking/filtering
@@ -63,14 +64,17 @@ Shipped: `graph.unresolved`, the `[check]` policy block (`max_orphans` /
 reserved for breach and a byte-stable JSON report, `graphmark.build()` + curated top-level
 re-exports, and a README rewritten around the real surface.
 
-_Where we are (0.3.4):_ the gate works and the vault dogfoods it. The remaining risk is the
-**credibility of its flagship number**. Four false-positive classes have been found and fixed by
-triaging a real vault against the metric — same-note anchors (#98, 19% of the count),
-non-markdown targets (#101, 10%), the `.md` extension (#104), and links to notes that exist but
-are out of graph scope (#107, 7%). A threshold nobody trusts is not a gate.
+_Where we are (0.6.0):_ the gate works and the vault dogfoods it. The remaining risk is the
+**credibility of its flagship number**. Seven false-positive classes have been found and fixed —
+same-note anchors (#98, 19% of the count), non-markdown targets (#101, 10%), whitespace-padded
+displays, the `.md` extension (#104), out-of-scope notes (#107, 7%), frontmatter aliases (#119,
+**23 phantom breaks against an actual 0**), and Unicode NFD/NFC (#123). A threshold nobody trusts
+is not a gate.
 
-_Where we're going:_ keep truthing the metric against live vaults, then the thin GitHub Action
-wrapper — but only once the count is trustworthy enough to fail someone's build.
+_Where we're going:_ **Track F, not the GitHub Action.** Every one of those seven was found by a
+human reading link lists on one vault, which does not scale and has no reason to be finished. The
+Action ships once the accounting underneath it is auditable — see Track F for why that ordering is
+deliberate.
 
 ### Track E — One resolver: absorb the consumer's second link stack (feature track)
 
@@ -96,6 +100,55 @@ suggestions — **not autonomous-safe past freezing the baseline**; the human an
 point of it). The consumer-side deletion is hand-coded in the vault; the package side is afk-able.
 
 _Constraint:_ this is additive. Nothing here may change what resolves or what an edge is.
+
+**CLOSED at v0.6.0.** #110/#111/#112 shipped, and frontmatter aliases moved in-package (#119) —
+the last piece of the consumer's parallel stack. the-workshop#474 deletes the consumer side.
+
+### Track F — Auditable link accounting (the current epic)
+
+_The problem is not any individual bug; it is how they get found._ Every correctness bug in this
+package's history was found the same way: a human reading link lists from **one** vault. Seven so
+far — #98 same-note anchors, #101 non-markdown targets, #104 the `.md` extension, #107 out-of-scope
+notes, #119 frontmatter aliases, #123 Unicode NFD/NFC, plus the whitespace-padded displays fixed
+alongside #107. Six of those seven landed in a single day of hand-triage.
+
+The frozen differential oracle is a **ratchet, not a detector.** It prevents regression superbly and
+has never once surfaced something new. Worse, the single consumer's seam actively _conceals_
+package defects: its `AliasResolver` hid a 23-link error for six releases, because the only vault
+that could have exposed the gap had already patched around it.
+
+_Why the bugs hide:_ the buckets are silent. `build` sorts every extracted display into one of the
+six `DIAGNOSIS_REASONS`, then reports **one** of them. A vault owner sees `N unresolved` and nothing
+about what was suppressed — and six of the seven bugs were _mis-bucketing_, a link filed as
+`unresolved` that belonged in `resolved` or the reverse. Had graphmark printed
+
+```
+3677 edges · 23 unresolved · 0 alias-resolved · 12 out-of-scope · 8 non-note-file · 19 intra-note
+```
+
+the alias gap would have been obvious at a glance: zero alias-resolved beside 23 unresolved is
+visibly wrong. Nobody could see it, so nobody saw it for six releases.
+
+_Where we're going:_ **every extracted display lands in exactly one named bucket; the buckets are
+counted, reported, and bound by a property-tested conservation law.** The aim is not another metric
+— it is to make the package's own answers auditable, so an implausible distribution is visible to
+its owner without a day of triage. That is the mechanism that scales past one vault and one human,
+and it is the strongest possible expression of the "public correctness story" identity.
+
+Sliced as #124 (per-reason counts + the conservation law), #125 (`graphmark links` surfaces the
+distribution), #126 (property-based vault generation — **the detector**; expect it to fail on first
+run, and file what it finds), #127 (implausibility heuristics — advisory only, **not
+autonomous-safe past the exact checks**, since the statistical thresholds need the same human
+calibration gate #112 used).
+
+Track F's own success measure is not slices merged: it is **bugs found by machinery rather than by
+a human reading link lists.** #126's catch rate is the evidence.
+
+_Deliberately deferred behind this:_ the Track D GitHub Action. It is an adoption play, and adoption
+is not this repo's game; more to the point, shipping a gate that fails other people's builds while
+the tool's own accounting is unauditable is backwards ordering. Generality work (Windows paths,
+markdown-style `[text](note.md)` links for wikilink-disabled vaults, non-my-brain schemas) is real
+but is a feature list, not an epic — and this track is what will tell us which parts of it matter.
 
 ### Track B — Judgment the oracle can't cover (human-validated)
 
