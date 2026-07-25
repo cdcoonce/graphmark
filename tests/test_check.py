@@ -108,11 +108,17 @@ class TestThresholdSemantics:
 class TestByteStability:
     """The report must diff cleanly across runs — pinned against a literal."""
 
+    # The `links` block is appended after `checks`, so existing consumers keep parsing what they
+    # already parsed. Note the cross-check the literal now pins: max_unresolved_links' actual (1)
+    # equals counts.missing (1) — the gate's flagship number and the distribution behind it cannot
+    # silently disagree.
     EXPECTED = (
         '{"pass": false, "checks": ['
         '{"name": "max_orphans", "limit": 1, "actual": 2, "pass": false}, '
         '{"name": "max_unresolved_links", "limit": 0, "actual": 1, "pass": false}, '
-        '{"name": "max_siloed", "limit": 0, "actual": 0, "pass": true}]}'
+        '{"name": "max_siloed", "limit": 0, "actual": 0, "pass": true}], '
+        '"links": {"total": 7, "counts": {"resolved": 6, "ambiguous": 0, "non-note-file": 0, '
+        '"out-of-scope-note": 0, "missing": 1, "intra-note": 0}, "alias_resolved": 0}}'
     )
 
     def test_cli_report_is_byte_identical_to_the_oracle(self, tmp_path, capsys):

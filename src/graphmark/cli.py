@@ -10,7 +10,7 @@ from pathlib import Path
 import networkx as nx
 
 from graphmark import __version__, build
-from graphmark.check import breach_lines, run_check
+from graphmark.check import breach_lines, links_report, links_summary_line, run_check
 from graphmark.config import VaultConfig, load_config
 from graphmark.export import to_dot, to_json
 from graphmark.graph import VaultGraph
@@ -84,6 +84,11 @@ def main() -> None:
     sub.add_parser("gaps", help="Link-gap suggestions (library-only; see the README)")
 
     sub.add_parser(
+        "links",
+        help="How every wikilink was classified: counts per reason, plus alias resolutions",
+    )
+
+    sub.add_parser(
         "check",
         help="Gate vault health against the config's [check] thresholds (exit 1 on breach)",
     )
@@ -140,6 +145,11 @@ def main() -> None:
         print(to_json(result))
     elif args.command == "export" and args.format == "dot":
         print(to_dot(graph))
+    elif args.command == "links":
+        report = links_report(graph)
+        print(to_json(report))
+        # stdout stays pipeable JSON; the at-a-glance line goes to stderr, as breach_lines does.
+        print(links_summary_line(report), file=sys.stderr)
     elif args.command == "check":
         try:
             report = run_check(graph, config)

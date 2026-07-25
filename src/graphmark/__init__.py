@@ -17,7 +17,7 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from graphmark.check import run_check, unresolved_link_count
+from graphmark.check import links_report, run_check, unresolved_link_count
 from graphmark.config import CheckPolicy, VaultConfig, load_config
 from graphmark.dismiss import (
     active_dismissed_sigs,
@@ -128,6 +128,7 @@ __all__ = [
     "pagerank",
     "parse_document",
     "record_dismissal",
+    "links_report",
     "run_check",
     "siloed_notes",
     "stats",
