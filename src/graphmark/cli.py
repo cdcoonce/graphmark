@@ -9,6 +9,7 @@ from pathlib import Path
 
 import networkx as nx
 
+from graphmark import __version__
 from graphmark.config import VaultConfig, load_config
 from graphmark.export import to_dot, to_json
 from graphmark.graph import NormalizeResolver, VaultGraph
@@ -46,34 +47,45 @@ def _load(args: argparse.Namespace) -> tuple[VaultGraph, VaultConfig]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="graphmark")
+    parser = argparse.ArgumentParser(
+        prog="graphmark",
+        description=(
+            "Deterministic knowledge-graph analysis for markdown / [[wikilink]] vaults. "
+            "Each subcommand prints JSON to stdout; errors go to stderr."
+        ),
+    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--config", metavar="PATH", help="TOML config file")
     parser.add_argument("--root", metavar="PATH", help="Vault root (overrides --config root)")
 
-    sub = parser.add_subparsers(dest="command")
+    sub = parser.add_subparsers(dest="command", metavar="COMMAND")
 
-    sub.add_parser("stats")
-    sub.add_parser("orphans")
+    sub.add_parser("stats", help="Aggregate vault stats: notes, edges, orphans, clusters, density")
+    sub.add_parser("orphans", help="Notes with no links in or out (degree 0)")
 
-    hubs_p = sub.add_parser("hubs")
-    hubs_p.add_argument("--n", type=int, default=10)
+    hubs_p = sub.add_parser("hubs", help="Most-connected notes, by undirected degree")
+    hubs_p.add_argument("--n", type=int, default=10, help="How many hubs to return (default: 10)")
 
-    sub.add_parser("clusters")
-    sub.add_parser("bridges")
-    sub.add_parser("siloed")
+    sub.add_parser("clusters", help="Connected components of the link graph, largest first")
+    sub.add_parser("bridges", help="Articulation points: notes whose removal splits the graph")
+    sub.add_parser("siloed", help="Notes reachable from the mainland only through one bridge")
 
-    nb_p = sub.add_parser("neighborhood")
-    nb_p.add_argument("--note", required=True)
-    nb_p.add_argument("--depth", type=int, default=1)
+    nb_p = sub.add_parser("neighborhood", help="Links in and out of one note")
+    nb_p.add_argument("--note", required=True, help="Vault-relative path, e.g. brain/hub.md")
+    nb_p.add_argument(
+        "--depth", type=int, default=1, help="1 for direct links, 2 to add two-hop (default: 1)"
+    )
 
-    pr_p = sub.add_parser("pagerank")
-    pr_p.add_argument("--n", type=int, default=10)
-    pr_p.add_argument("--alpha", type=float, default=0.85)
+    pr_p = sub.add_parser("pagerank", help="PageRank importance ranking over the link graph")
+    pr_p.add_argument("--n", type=int, default=10, help="How many notes to return (default: 10)")
+    pr_p.add_argument(
+        "--alpha", type=float, default=0.85, help="Damping factor in (0, 1) (default: 0.85)"
+    )
 
-    exp_p = sub.add_parser("export")
-    exp_p.add_argument("format", choices=["dot"])
+    exp_p = sub.add_parser("export", help="Export the graph in another format")
+    exp_p.add_argument("format", choices=["dot"], help="Output format")
 
-    sub.add_parser("gaps")
+    sub.add_parser("gaps", help="Link-gap suggestions (library-only; see the README)")
 
     args = parser.parse_args()
 
