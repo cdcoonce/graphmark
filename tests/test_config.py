@@ -85,6 +85,20 @@ class TestLoadConfig:
         assert cfg.root == tmp_path / "vault"
         assert cfg.scoped_folders == ["brain"]
 
+    def test_accepts_a_string_path(self):
+        # build() takes str; load_config must too, or the documented pairing is a landmine.
+        cfg = load_config(str(SIMPLE_DIR / "config.toml"))
+        assert cfg.root == SIMPLE_DIR / "vault"
+
+    def test_accepts_a_string_root_override(self, tmp_path):
+        cfg = load_config(str(SIMPLE_DIR / "config.toml"), root_override=str(tmp_path))
+        assert cfg.root == tmp_path
+
+    def test_vault_config_coerces_a_string_root_to_path(self):
+        cfg = VaultConfig(root=str(SIMPLE_DIR / "vault"))
+        assert isinstance(cfg.root, Path)
+        assert cfg.root == SIMPLE_DIR / "vault"
+
     def test_transient_prefixes_loaded_as_tuple(self):
         cfg = load_config(ALT_DIR / "config.toml")
         assert isinstance(cfg.transient_prefixes, tuple)

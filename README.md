@@ -1,12 +1,17 @@
 # graphmark
 
+[![PyPI](https://img.shields.io/pypi/v/graphmark.svg)](https://pypi.org/project/graphmark/)
+[![Python versions](https://img.shields.io/pypi/pyversions/graphmark.svg)](https://pypi.org/project/graphmark/)
+[![License](https://img.shields.io/pypi/l/graphmark.svg)](https://github.com/cdcoonce/graphmark/blob/main/LICENSE)
+
 Deterministic knowledge-graph analysis for markdown / `[[wikilink]]` vaults — orphans, hubs,
 clusters, bridges, siloed notes, neighborhoods, PageRank, and link-gap suggestions over your notes,
 driven by a small config so it works on any Obsidian-family vault.
 
-> Status: **v0.1.1 on PyPI.** The engine is complete and pinned by a frozen differential oracle —
-> structural outputs reproduce a proven reference implementation exactly (shape, ordering,
-> tie-breaking). See `CLAUDE.md` for the architecture and the reference-parity contract.
+Structural outputs are pinned by a frozen differential oracle: they reproduce a proven reference
+implementation exactly, down to ordering and tie-breaking. See
+[CLAUDE.md](https://github.com/cdcoonce/graphmark/blob/main/CLAUDE.md) for the architecture and the
+reference-parity contract.
 
 ## Install
 
@@ -14,26 +19,37 @@ driven by a small config so it works on any Obsidian-family vault.
 pip install graphmark        # or: uv pip install graphmark
 ```
 
-Dev setup:
+Runtime dependency: `networkx` only. The package ships a `py.typed` marker, so mypy and pyright
+see its annotations.
 
-```bash
-uv pip install -e ".[dev]"
+## Quickstart
+
+```python
+import graphmark
+
+graph = graphmark.build("/path/to/vault")
+
+print(graphmark.stats(graph))            # {'notes': 6, 'edges': 5, 'orphans': 2, ...}
+print(graphmark.hubs(graph, n=10))       # [['brain/hub.md', 3], ...]
+print(graphmark.orphans(graph, graphmark.VaultConfig(root="/path/to/vault")))
 ```
 
-## Test
+`build()` accepts a vault root (`str` or `Path`) or a fully configured `VaultConfig`. To drive it
+from a TOML file, pair it with `load_config`:
 
-```bash
-uv run --extra dev ruff check . && uv run --extra dev ruff format --check . && uv run --extra dev pytest -q
+```python
+graph = graphmark.build(graphmark.load_config("vault.toml"))
 ```
 
 ## CLI
 
 Every command takes `--config PATH` (TOML) and/or `--root PATH` (vault root; overrides the config's
-root). Output is deterministic JSON (DOT for `export dot`).
+root). Output is deterministic JSON on stdout (DOT for `export dot`); errors and warnings go to
+stderr, so stdout is always safe to pipe.
 
 ```bash
 graphmark stats                          --root /path/to/vault
-graphmark orphans                        --config configs/my-brain.toml
+graphmark orphans                        --config vault.toml
 graphmark hubs --n 10                    --root /path/to/vault
 graphmark clusters                       --root /path/to/vault
 graphmark bridges                        --root /path/to/vault
@@ -41,42 +57,129 @@ graphmark siloed                         --root /path/to/vault
 graphmark neighborhood --note a/b.md --depth 2  --root /path/to/vault
 graphmark pagerank --n 10 --alpha 0.85   --root /path/to/vault
 graphmark export dot                     --root /path/to/vault > graph.dot
-graphmark gaps                           --root /path/to/vault
+graphmark check                          --config vault.toml
 ```
 
-Note: `gaps` is a **library-first** metric — it ranks and filters link-gap candidates over a
-similarity function you inject (`metrics.gaps(graph, similar_fn, ...)`); the package itself ships no
-embeddings. The CLI subcommand has no similarity source to inject, so `graphmark gaps` prints
-guidance to stderr and exits 2 rather than silently returning `[]`; use the library API (below).
+Exit codes: `0` success, `1` a `check` threshold breach, `2` a usage or config error. Nothing else
+uses `1`, so CI can trust it.
 
-## Library
+## `graphmark check` — vault health as a CI gate
+
+Declare thresholds in the config's `[check]` table, then run `graphmark check` as a build step. It
+exits non-zero when the vault drifts past them.
+
+```toml
+root = "."
+
+[check]
+max_orphans = 10
+max_unresolved_links = 0
+max_siloed = 3
+```
+
+```console
+$ graphmark check --config vault.toml
+max_orphans: 14 exceeds limit 10
+{"pass": false, "checks": [{"name": "max_orphans", "limit": 10, "actual": 14, "pass": false}, {"name": "max_unresolved_links", "limit": 0, "actual": 0, "pass": true}]}
+$ echo $?
+1
+```
+
+The JSON report is byte-stable — key order is fixed and checks appear in policy-declaration order —
+so two runs over an unchanged vault diff to nothing. Thresholds are inclusive (`actual == limit`
+passes), and only thresholds you set are reported.
+
+Unknown keys inside `[check]` are a hard error rather than being ignored, and a config with no
+thresholds at all exits `2` instead of reporting a meaningless green: a gate that can't fail is
+worse than no gate.
+
+## `gaps` — link suggestions with injected similarity
+
+`gaps` is **library-first**. graphmark owns the deterministic ranking and filtering — already-linked
+pairs, self-pairs, thresholds, prefix exclusions, dismissed pairs, reciprocal dedup, novelty-first
+ordering — while _you_ supply the similarity source. No embeddings ship in this package, and the
+test gate stays free of them.
 
 ```python
-from pathlib import Path
+import graphmark
 
-from graphmark.config import VaultConfig
-from graphmark.graph import NormalizeResolver, VaultGraph
-from graphmark.metrics import gaps, hubs, stats
-from graphmark.parse import WikilinkExtractor
+graph = graphmark.build("/path/to/vault")
 
-config = VaultConfig(root=Path("/path/to/vault"))
-graph = VaultGraph.build(config, WikilinkExtractor(), NormalizeResolver())
+def my_similarity(rel_path: str, k: int) -> list[tuple[str, float]]:
+    """Return up to k (rel_path, score) pairs. Any embedding backend you like."""
+    ...
 
-print(stats(graph))
-print(hubs(graph, n=10))
-
-# gaps: you supply similarity — graphmark owns the deterministic ranking/filtering.
-print(gaps(graph, similar_fn=my_similarity, threshold=0.6, k=8))
+# The band validated on a live ~340-note vault, as one keyword bundle.
+suggestions = graphmark.gaps(graph, my_similarity, **graphmark.GAPS_DEFAULT_BAND)
 ```
 
-`dismiss.py` provides a content-hash dismissal store for gap suggestions: a dismissed pair stays
-suppressed only while both notes exist with unchanged content.
+`GAPS_DEFAULT_BAND` bundles `threshold=0.6`, `max_score=0.92`, `k=8`, `hub_degree=40` (also
+available individually as `GAPS_DEFAULT_THRESHOLD` and friends). The `Similarity` protocol in
+`graphmark.interfaces` types the callable you inject.
+
+Because the CLI has no similarity source to inject, `graphmark gaps` prints guidance to stderr and
+exits `2` rather than silently returning `[]`.
+
+### Dismissing a suggestion
+
+`dismiss` is a content-hash store: a dismissed pair stays suppressed only while both notes still
+exist with unchanged content, so a rewrite re-opens the question.
+
+| Function                                    | Purpose                                                                               |
+| ------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `weaklink_sig(a, b)`                        | Stable, order-independent signature for a pair — the same one `gaps()` emits as `sig` |
+| `record_dismissal(root, a, b, *, path=...)` | Persist a dismissal, hashing both notes' current content                              |
+| `active_dismissed_sigs(root, *, path=...)`  | The signatures still valid (both notes present, unchanged)                            |
+| `load_dismissed(root, *, path=...)`         | Raw store contents; a corrupt store reads as empty, never raises                      |
+
+```python
+graphmark.record_dismissal(root, "a/one.md", "b/two.md")
+
+# Feed the live set back in, and that pair stops being suggested.
+suggestions = graphmark.gaps(
+    graph, my_similarity,
+    dismissed=graphmark.active_dismissed_sigs(root),
+    **graphmark.GAPS_DEFAULT_BAND,
+)
+```
+
+The store lives under the vault root at `.claude/data/connect-dismissed.json`; pass `path=` to put
+it elsewhere.
+
+## Other metrics
+
+```python
+graphmark.pagerank(graph, n=10, alpha=0.85)   # importance ranking; matches networkx
+graphmark.clusters(graph)                     # connected components, largest first
+graphmark.bridges(graph)                      # articulation points
+graphmark.siloed_notes(graph)                 # reachable only through a single bridge
+graphmark.neighborhood(graph, "a/b.md", depth=2)
+graphmark.to_dot(graph)                       # Graphviz DOT
+graph.unresolved                              # {rel_path: [broken link displays]}
+```
+
+## Configuration
+
+```toml
+root = "."                                    # required unless --root is passed
+scoped_folders = ["brain", "work"]            # limit the vault to these top-level folders
+excluded_dirs = [".git", "templates"]         # skip notes under these directories
+rules_files = ["CLAUDE.md", "CLAUDE.local.md"]  # agent-rules files, not vault content
+transient_prefixes = ["daily/"]               # excluded from orphan reports
+```
+
+Unknown top-level keys are ignored; unknown keys inside `[check]` are an error.
 
 ## Development & releases
 
 Two long-lived branches: **`dev`** is the integration branch (open PRs against it); **`main`** is
-the release branch. Both are gated by CI (`ruff check` + `ruff format --check` + `pytest -q` on
-Ubuntu and macOS).
+the release branch. Both are gated by CI — `ruff check` + `ruff format --check` + `pytest -q` on
+Ubuntu and macOS across Python 3.11, 3.12, and 3.13.
+
+```bash
+uv pip install -e ".[dev]"
+uv run --extra dev ruff check . && uv run --extra dev ruff format --check . && uv run --extra dev pytest -q
+```
 
 Releases are automated by conventional commits. When `dev` is promoted to `main`,
 `.github/workflows/release.yml` runs [python-semantic-release](https://python-semantic-release.readthedocs.io):
