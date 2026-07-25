@@ -44,6 +44,14 @@ class TestWikilinkExtractor:
     def test_link_before_code_span_not_excluded(self):
         assert self.extractor.extract("`code` and [[real]].") == ["real"]
 
+    def test_shorter_nested_fence_does_not_close_longer_outer_fence(self):
+        # A 4-backtick outer fence wrapping a 3-backtick example: the inner 3-backtick
+        # lines must NOT close the outer fence, so [[hidden]] stays inside code.
+        text = "````\n```\ninner [[hidden]]\n```\n````\nAfter [[real]].\n"
+        result = self.extractor.extract(text)
+        assert "hidden" not in result
+        assert result == ["real"]
+
     def test_hub_md_links(self):
         # Matches hub.md content exactly — the definitive integration test for the extractor
         text = (

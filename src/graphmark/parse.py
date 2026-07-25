@@ -15,21 +15,30 @@ _FENCE_OPEN_RE = re.compile(r"^(`{3,}|~{3,})")
 
 
 def _strip_fenced_blocks(text: str) -> str:
-    """Remove fenced code block contents so wikilinks inside them are ignored."""
+    """Remove fenced code block contents so wikilinks inside them are ignored.
+
+    Tracks the opening fence's character *and* length; a line only closes the fence when it is
+    the same character with length >= the opening length (CommonMark's fence-closing rule). This
+    stops a shorter nested fence of the same character from closing a longer outer fence early.
+    """
     lines = text.splitlines(keepends=True)
     out: list[str] = []
     fence_char: str | None = None
+    fence_len = 0
     for line in lines:
         ls = line.lstrip()
         if fence_char is None:
             m = _FENCE_OPEN_RE.match(ls)
             if m:
                 fence_char = ls[0]
+                fence_len = len(m.group(1))
             else:
                 out.append(line)
         else:
-            if _FENCE_OPEN_RE.match(ls) and ls[0] == fence_char:
+            m = _FENCE_OPEN_RE.match(ls)
+            if m and ls[0] == fence_char and len(m.group(1)) >= fence_len:
                 fence_char = None
+                fence_len = 0
     return "".join(out)
 
 
