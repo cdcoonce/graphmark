@@ -63,6 +63,36 @@ def _run_cli_expect_exit(argv: list[str], capsys, code: int):
     return captured.out, captured.err
 
 
+class TestUsageErrorConvention:
+    """One rule: 0 = success, 2 = usage error. stdout is data only, never help text."""
+
+    def test_no_subcommand_exits_2_with_help_on_stderr(self, capsys):
+        from graphmark.cli import main
+
+        with patch.object(sys, "argv", ["graphmark"]), pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 2
+        captured = capsys.readouterr()
+        # Piping stdout must never capture help text as if it were data.
+        assert captured.out == ""
+        assert "usage: graphmark" in captured.err
+
+    def test_missing_config_and_root_exits_2(self, capsys):
+        out, err = _run_cli_expect_exit(["graphmark", "stats"], capsys, 2)
+        assert out == ""
+        assert "--config" in err and "--root" in err
+
+    def test_unknown_flag_exits_2(self, capsys):
+        _run_cli_expect_exit(["graphmark", "--nope", "stats"], capsys, 2)
+
+    def test_invalid_subcommand_exits_2(self, capsys):
+        _run_cli_expect_exit(["graphmark", "no-such-command"], capsys, 2)
+
+    def test_invalid_export_format_exits_2(self, capsys):
+        argv = ["graphmark", "--root", str(SIMPLE_VAULT), "export", "gml"]
+        _run_cli_expect_exit(argv, capsys, 2)
+
+
 class TestVersionAndHelp:
     """A published CLI must be self-documenting and able to report its own version."""
 

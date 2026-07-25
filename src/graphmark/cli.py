@@ -27,10 +27,6 @@ from graphmark.parse import WikilinkExtractor
 
 
 def _load(args: argparse.Namespace) -> tuple[VaultGraph, VaultConfig]:
-    if args.config is None and args.root is None:
-        print("error: --config or --root required", file=sys.stderr)
-        sys.exit(1)
-
     root = Path(args.root) if args.root is not None else None
     try:
         if args.config is not None:
@@ -89,9 +85,15 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    # Usage errors all exit 2, matching argparse's own convention (and leaving exit 1 free for
+    # future domain-level outcomes such as a `check` threshold breach). Help for a missing
+    # command goes to stderr so piping stdout never captures it as data.
     if args.command is None:
-        parser.print_help()
-        sys.exit(1)
+        parser.print_help(sys.stderr)
+        sys.exit(2)
+
+    if args.config is None and args.root is None:
+        parser.error("--config or --root required")
 
     if args.command == "gaps":
         # gaps needs a caller-injected similarity source the CLI can't supply; it is
