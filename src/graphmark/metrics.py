@@ -12,6 +12,15 @@ from graphmark.config import VaultConfig
 from graphmark.graph import VaultGraph
 from graphmark.interfaces import Similarity
 
+# Validated gaps banding policy — the band proven in daily /connect + /garden use on the owner's
+# live vault (~340 notes). Ships in-package so any consumer gets the tuned band instead of
+# re-deriving policy; consumers opt in by passing these to gaps(). gaps()'s own signature defaults
+# are intentionally left unchanged (non-breaking).
+GAPS_DEFAULT_THRESHOLD = 0.6
+GAPS_DEFAULT_MAX_SCORE = 0.92
+GAPS_DEFAULT_K = 8
+GAPS_DEFAULT_HUB_DEGREE = 40
+
 
 def _undirected(graph: VaultGraph) -> nx.Graph:
     G: nx.Graph = nx.Graph()
