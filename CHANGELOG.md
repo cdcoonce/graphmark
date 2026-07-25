@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v0.3.1 (2026-07-25)
+
+### Bug Fixes
+
+- **graph**: Stop counting same-note anchor links as unresolved
+  ([#99](https://github.com/cdcoonce/graphmark/pull/99),
+  [`a1d03f3`](https://github.com/cdcoonce/graphmark/commit/a1d03f3eb0e7b36b6d44d2a4eecfe8bb70da8d11))
+
+unresolved counted anchor-only wikilinks — [[#Heading]], [[#Heading|alias]], [[#^blockref]] — as
+  broken. Those are Obsidian same-note references: they target no note at all, so they are neither
+  an edge nor a broken link. Counting them corrupted the very metric Track D was built around,
+  max_unresolved_links.
+
+Measured on the owner's live 521-note vault: 40 of 213 reported unresolved links (19%) were
+  anchor-only, and the note reported as the worst offender earned that spot purely by navigating
+  itself heavily.
+
+build() now skips a display whose note part (before | and #) is empty. [[Note#Heading]] is
+  unaffected: it still resolves via Note, and still counts as unresolved when Note is missing.
+
+This refines the #75 semantics, which defined ambiguous-counts and self-link-doesn't but never
+  considered anchor-only links.
+
+Closes #98
+
+
 ## v0.3.0 (2026-07-25)
 
 ### Bug Fixes
