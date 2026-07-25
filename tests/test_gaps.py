@@ -7,6 +7,7 @@ from pathlib import Path
 
 from graphmark.config import load_config
 from graphmark.graph import NormalizeResolver, VaultGraph
+from graphmark.interfaces import Similarity
 from graphmark.metrics import gaps
 from graphmark.parse import WikilinkExtractor
 
@@ -40,3 +41,11 @@ def test_gaps_matches_frozen_oracle():
         dismissed=set(p["dismissed"]),
     )
     assert result == EXPECTED["gaps"]
+
+
+def test_plain_function_satisfies_similarity_protocol():
+    # A plain function with the (rel_path, k) -> list[(rel_path, score)] shape is a valid
+    # Similarity; assigning to the annotated type documents the seam and gaps() accepts it.
+    fn: Similarity = _similar_fn
+    result = gaps(_graph(), fn)
+    assert isinstance(result, list)
