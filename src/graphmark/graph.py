@@ -25,6 +25,19 @@ def _normalize(text: str) -> str:
 _FILE_SUFFIX_RE = re.compile(r"\.[A-Za-z0-9]{1,10}$")
 
 
+def _strip_display(display: str) -> str:
+    """Reduce a raw wikilink display to its note part: no alias, no anchor, no ``.md``.
+
+    Obsidian treats ``[[Note]]``, ``[[Note|alias]]``, ``[[Note#Section]]`` and ``[[Note.md]]`` as
+    the same link, so every place that asks "which note does this display name?" must strip the
+    same three things. Shared by the resolver and the out-of-scope check so they cannot drift.
+    """
+    target = display.split("|")[0].split("#")[0].strip()
+    if target.lower().endswith(".md"):
+        target = target[: -len(".md")]
+    return target
+
+
 def _targets_non_note_file(display: str) -> bool:
     """True for a link to a file graphmark does not index, e.g. ``[[Board.canvas]]``.
 
@@ -38,6 +51,28 @@ def _targets_non_note_file(display: str) -> bool:
     target = display.split("|")[0].split("#")[0].strip()
     match = _FILE_SUFFIX_RE.search(target)
     return bool(match) and match.group(0).lower() != ".md"
+
+
+def _targets_out_of_scope_note(display: str, out_of_scope: dict[str, list[str]]) -> bool:
+    """True for a link to a markdown note that exists but is outside the configured scope.
+
+    ``build`` drops unscoped folders, excluded dirs and rules files from the catalog, so links to
+    them fail the resolver — yet the link is correct, Obsidian follows it, and there is nothing for
+    anyone to fix. Reporting it as broken just fills the vault-health count with noise.
+
+    Only ever consulted after the resolver has already failed, so an in-graph note always wins over
+    an out-of-scope namesake. **Any** candidate suppresses: out-of-scope notes are never link
+    targets, so ambiguity among them says nothing about whether the in-graph link is broken.
+    """
+    target = _strip_display(display)
+    if not target:
+        return False
+    if "/" in target:
+        suffix = target.lower() + ".md"
+        return any(
+            path.lower().endswith(suffix) for paths in out_of_scope.values() for path in paths
+        )
+    return _normalize(target) in out_of_scope
 
 
 def _is_intra_note_reference(display: str) -> bool:
@@ -80,15 +115,10 @@ class NormalizeResolver:
         return self._flat_cache
 
     def resolve(self, display: str, catalog: dict[str, list[str]]) -> str | None:
-        # Strip alias: "Note|alias" → "Note"
-        display = display.split("|")[0]
-        # Strip anchor: "Note#Section" → "Note"
-        display = display.split("#")[0]
-        # Obsidian accepts an explicit extension, so "Note.md" is the same link as "Note".
-        # Stripped before both branches below: the path-suffix branch appends ".md" itself,
-        # and the bare branch would otherwise normalize to the key "note md".
-        if display.lower().endswith(".md"):
-            display = display[: -len(".md")]
+        # Alias ("Note|alias"), anchor ("Note#Section") and an explicit ".md" extension all name
+        # the same note. Stripped before both branches below: the path-suffix branch appends
+        # ".md" itself, and the bare branch would otherwise normalize to the key "note md".
+        display = _strip_display(display)
 
         if "/" in display:
             # Path-suffix resolution: find unique rel_path ending with "display.md"
@@ -142,13 +172,19 @@ class VaultGraph:
 
         scoped = set(config.scoped_folders)
         md_files: list[Path] = []
+        # Markdown that exists but is out of scope, normalized stem → rel_paths. Collected in
+        # this same walk (no extra I/O) so a link to one can be told apart from a link to a note
+        # that exists nowhere at all.
+        out_of_scope: dict[str, list[str]] = {}
         for path in sorted(root.rglob("*.md")):
-            rel_parts = path.relative_to(root).parts
-            if scoped and rel_parts[0] not in scoped:
-                continue
-            if any(p in excluded for p in rel_parts[:-1]):
-                continue
-            if path.name in rules:
+            rel = path.relative_to(root)
+            rel_parts = rel.parts
+            if (
+                (scoped and rel_parts[0] not in scoped)
+                or any(p in excluded for p in rel_parts[:-1])
+                or path.name in rules
+            ):
+                out_of_scope.setdefault(_normalize(path.stem), []).append(rel.as_posix())
                 continue
             md_files.append(path)
 
@@ -167,7 +203,9 @@ class VaultGraph:
                     continue
                 target = resolver.resolve(display, catalog)
                 if target is None:
-                    if _targets_non_note_file(display):
+                    if _targets_non_note_file(display) or _targets_out_of_scope_note(
+                        display, out_of_scope
+                    ):
                         continue  # out of scope, not a broken note link
                     # Unresolvable OR ambiguous — the Resolver protocol conflates the two, and
                     # both are equally broken from a vault-health view. Record the raw display
