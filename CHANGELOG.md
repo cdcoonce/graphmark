@@ -1,6 +1,40 @@
 # CHANGELOG
 
 
+## v0.3.4 (2026-07-25)
+
+### Bug Fixes
+
+- **graph**: Links to existing out-of-scope notes are not broken (#107)
+  ([#108](https://github.com/cdcoonce/graphmark/pull/108),
+  [`9e386f6`](https://github.com/cdcoonce/graphmark/commit/9e386f6df700b1d866b7d50854b0cc8734a08bf5))
+
+build() dropped unscoped folders, excluded dirs and rules files from the catalog and then forgot
+  they existed, so a link to one failed the resolver and landed in unresolved. The link is correct —
+  Obsidian follows it — it just points somewhere graphmark deliberately does not index, so there was
+  nothing for anyone to fix. On the live vault that was 11 of 155 reported breaks: 8 [[CLAUDE]], 1
+  [[AGENTS]], 2 into templates/.
+
+The same rglob that builds the catalog now records what it skipped, so no extra I/O buys the ability
+  to tell "exists but out of scope" apart from "exists nowhere". Consulted only AFTER the resolver
+  fails — mirroring _targets_non_note_file — so an in-graph note always wins over an out-of-scope
+  namesake and keeps its edge. Any candidate suppresses: out-of-scope notes are never link targets,
+  so ambiguity among them says nothing about whether the in-graph link is broken.
+
+Alias/anchor/.md stripping moved into a shared _strip_display so the resolver and the new check
+  cannot drift on what a display names. That refactor also strips surrounding whitespace, which the
+  resolver did not: 13 column-aligned links of the form [[folder/note | alias]] were reported broken
+  while pointing at real notes, and now resolve into edges (3570 → 3583 on the live vault). Covered
+  by its own test class.
+
+Fixtures are untouched: only the unresolved path changes shape, no expected.json carries an
+  unresolved key, and edges only grow via the whitespace fix. uv.lock catches up to the 0.3.3
+  release bump.
+
+Live vault: 155 → 130 unresolved (12 suppressed, 13 resolved), no genuine break lost — verified by
+  diffing the full before/after sets.
+
+
 ## v0.3.3 (2026-07-25)
 
 ### Bug Fixes
