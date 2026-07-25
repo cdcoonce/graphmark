@@ -11,16 +11,20 @@ from collections.abc import Collection, Sequence
 import networkx as nx
 
 from graphmark.config import VaultConfig
+
+# weaklink_sig is a pure string helper (no IO, no extra deps), imported so the gaps -> dismiss
+# round-trip has ONE definition of the signature format instead of two that must agree.
+from graphmark.dismiss import weaklink_sig
 from graphmark.graph import VaultGraph
 from graphmark.interfaces import Similarity
+
+# Power-iteration cap for pagerank; matches networkx's default max_iter.
+_MAX_ITER = 100
 
 # Validated gaps banding policy — the band proven in daily /connect + /garden use on the owner's
 # live vault (~340 notes). Ships in-package so any consumer gets the tuned band instead of
 # re-deriving policy; consumers opt in by passing these to gaps(). gaps()'s own signature defaults
 # are intentionally left unchanged (non-breaking).
-# Power-iteration cap for pagerank; matches networkx's default max_iter.
-_MAX_ITER = 100
-
 GAPS_DEFAULT_THRESHOLD = 0.6
 GAPS_DEFAULT_MAX_SCORE = 0.92
 GAPS_DEFAULT_K = 8
@@ -229,7 +233,7 @@ def gaps(
             if max_score is not None and score > max_score:
                 continue
 
-            sig = "weaklink|" + "|".join(sorted([rel, other]))
+            sig = weaklink_sig(rel, other)
             if sig in dismissed:
                 continue
 
