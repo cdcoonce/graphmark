@@ -54,6 +54,24 @@ def _targets_non_note_file(display: str) -> bool:
     return bool(match) and match.group(0).lower() != ".md"
 
 
+def _matches_path_suffix(rel_path: str, suffix: str) -> bool:
+    """True when ``rel_path`` ends with ``suffix`` **on a path-component boundary**.
+
+    ``suffix`` is a lowercased ``folder/note.md``. A raw ``str.endswith`` is not enough: it accepts
+    ``homework/Tasks.md`` for ``[[work/Tasks]]``, because nothing requires the character before the
+    match to be a separator. That produced an edge to the wrong note — silently, since the link then
+    counts as ``resolved`` — and, when the real folder also existed, a spurious second match that
+    made the resolver decline a correct link.
+
+    The match is legal only when it consumes the whole rel_path or is preceded by ``/``.
+    """
+    lowered = rel_path.lower()
+    if not lowered.endswith(suffix):
+        return False
+    rest = len(lowered) - len(suffix)
+    return rest == 0 or lowered[rest - 1] == "/"
+
+
 def candidates_for(display: str, catalog: dict[str, list[str]]) -> list[str]:
     """Every rel_path in ``catalog`` that ``display`` names, sorted; empty if it names none.
 
@@ -71,7 +89,10 @@ def candidates_for(display: str, catalog: dict[str, list[str]]) -> list[str]:
     if "/" in target:
         suffix = target.lower() + ".md"
         return sorted(
-            path for paths in catalog.values() for path in paths if path.lower().endswith(suffix)
+            path
+            for paths in catalog.values()
+            for path in paths
+            if _matches_path_suffix(path, suffix)
         )
     return list(catalog.get(_normalize(target), ()))
 
@@ -170,7 +191,7 @@ class NormalizeResolver:
             # Path-suffix resolution: find unique rel_path ending with "display.md"
             suffix = display.lower() + ".md"
             all_paths = self._flatten_paths(catalog)
-            matches = [p for p in all_paths if p.lower().endswith(suffix)]
+            matches = [p for p in all_paths if _matches_path_suffix(p, suffix)]
             return matches[0] if len(matches) == 1 else None
 
         # Bare-link resolution: normalize and look up in catalog
