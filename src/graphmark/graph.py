@@ -86,11 +86,19 @@ def _is_intra_note_reference(display: str) -> bool:
 
 
 def build_catalog(docs: list[Document]) -> dict[str, list[str]]:
-    """Map normalized stem → list of rel_paths (len > 1 means ambiguous)."""
+    """Map normalized stem → list of rel_paths (len > 1 means ambiguous).
+
+    Value lists are sorted by rel_path. ``build`` already walks in path order, but ``Path``
+    ordering and rel_path string ordering disagree where a separator meets punctuation
+    (``a-b/x.md`` vs ``a/b.md``), and this mapping is public state feeding byte-stable reports —
+    so the order is established here rather than inherited.
+    """
     catalog: dict[str, list[str]] = {}
     for doc in docs:
         key = _normalize(Path(doc.rel_path).stem)
         catalog.setdefault(key, []).append(doc.rel_path)
+    for paths in catalog.values():
+        paths.sort()
     return catalog
 
 
@@ -141,6 +149,13 @@ class VaultGraph:
     ``unresolved`` maps a rel_path to the raw link displays in it that resolved to nothing, in
     extraction order; notes with no such links are absent. It is the inspectable form of what
     build() would otherwise drop silently, and the source of the broken-link health count.
+
+    ``catalog`` and ``out_of_scope`` are the resolution state build() consulted, retained instead of
+    discarded: normalized stem → rel_paths, in path order, for in-scope notes and for markdown that
+    exists outside the configured scope respectively. A ``catalog`` key with two or more paths *is*
+    an ambiguity set. Consumers need both to say anything about a link beyond whether it resolved —
+    without them, the only way to explain a broken link is to rebuild the whole parse/catalog/
+    resolve stack, and a second stack drifts from this one.
     """
 
     def __init__(
@@ -149,11 +164,15 @@ class VaultGraph:
         out_links: dict[str, set[str]],
         back_links: dict[str, set[str]],
         unresolved: dict[str, list[str]] | None = None,
+        catalog: dict[str, list[str]] | None = None,
+        out_of_scope: dict[str, list[str]] | None = None,
     ) -> None:
         self.nodes = nodes
         self.out_links = out_links
         self.back_links = back_links
         self.unresolved = unresolved if unresolved is not None else {}
+        self.catalog = catalog if catalog is not None else {}
+        self.out_of_scope = out_of_scope if out_of_scope is not None else {}
 
     @classmethod
     def build(
@@ -188,6 +207,9 @@ class VaultGraph:
                 continue
             md_files.append(path)
 
+        for paths in out_of_scope.values():
+            paths.sort()  # same rel_path ordering guarantee as build_catalog
+
         docs = [parse_document(p, root) for p in md_files]
         nodes = {doc.rel_path: doc for doc in docs}
         catalog = build_catalog(docs)
@@ -218,4 +240,4 @@ class VaultGraph:
             for dst in targets:
                 back_links[dst].add(src)
 
-        return cls(nodes, out_links, back_links, unresolved)
+        return cls(nodes, out_links, back_links, unresolved, catalog, out_of_scope)

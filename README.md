@@ -156,7 +156,14 @@ graphmark.siloed_notes(graph)                 # reachable only through a single 
 graphmark.neighborhood(graph, "a/b.md", depth=2)
 graphmark.to_dot(graph)                       # Graphviz DOT
 graph.unresolved                              # {rel_path: [broken link displays]}
+graph.catalog                                 # {normalized stem: [rel_paths]} — 2+ means ambiguous
+graph.out_of_scope                            # same, for markdown outside the configured scope
 ```
+
+`catalog` and `out_of_scope` are the resolution state the build consulted. They are what you need to
+explain a link rather than just resolve it — which notes a bare `[[link]]` collided with, or whether
+a link that failed to resolve points at a real file you deliberately excluded. Value lists are
+sorted by rel_path.
 
 ## Configuration
 
