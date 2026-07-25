@@ -63,6 +63,47 @@ def _run_cli_expect_exit(argv: list[str], capsys, code: int):
     return captured.out, captured.err
 
 
+class TestVersionAndHelp:
+    """A published CLI must be self-documenting and able to report its own version."""
+
+    def test_version_flag_prints_the_package_version_and_exits_0(self, capsys):
+        from graphmark import __version__
+        from graphmark.cli import main
+
+        with patch.object(sys, "argv", ["graphmark", "--version"]), pytest.raises(SystemExit) as e:
+            main()
+        assert e.value.code == 0
+        assert __version__ in capsys.readouterr().out
+
+    def test_main_help_describes_every_subcommand(self, capsys):
+        from graphmark.cli import main
+
+        with patch.object(sys, "argv", ["graphmark", "--help"]), pytest.raises(SystemExit):
+            main()
+        out = capsys.readouterr().out
+        # Each subcommand carries a help string, so the command list is not a bare choices dump.
+        assert "Articulation points" in out
+        assert "degree 0" in out
+        assert "Aggregate vault stats" in out
+
+    @pytest.mark.parametrize(
+        "command,needle",
+        [
+            ("hubs", "How many hubs"),
+            ("neighborhood", "Vault-relative path"),
+            ("pagerank", "Damping factor"),
+            ("export", "Output format"),
+        ],
+    )
+    def test_subcommand_help_documents_its_flags(self, command, needle, capsys):
+        from graphmark.cli import main
+
+        argv = ["graphmark", command, "--help"]
+        with patch.object(sys, "argv", argv), pytest.raises(SystemExit):
+            main()
+        assert needle in capsys.readouterr().out
+
+
 class TestBadInputHandling:
     """A bad path or config must fail loudly with exit 2 — never silently-empty JSON."""
 
