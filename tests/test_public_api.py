@@ -113,6 +113,11 @@ class TestPublicSurface:
         # check
         "run_check",
         "unresolved_link_count",
+        # link diagnosis
+        "diagnose",
+        "LinkDiagnosis",
+        "DIAGNOSIS_REASONS",
+        "candidates_for",
         # dismissal store
         "weaklink_sig",
         "record_dismissal",
