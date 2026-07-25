@@ -1,6 +1,115 @@
 # CHANGELOG
 
 
+## v0.7.2 (2026-07-25)
+
+### Bug Fixes
+
+- **cli**: Accept --config/--root after the subcommand (#130)
+  ([#148](https://github.com/cdcoonce/graphmark/pull/148),
+  [`1a89e2e`](https://github.com/cdcoonce/graphmark/commit/1a89e2ef542581f076200a29ddd04e0773cbc2dd))
+
+Every CLI example in the README failed. `--config` and `--root` were defined on the parent parser
+  before `add_subparsers`, so argparse accepted them only BEFORE the subcommand, while all ten
+  examples in the CLI block — plus the `check` ones — are written the other way. The README is the
+  PyPI landing page, so the first thing a new user copies errored.
+
+Both options are now attached to every subparser too, under a separate dest, and reconciled after
+  parsing (argparse would otherwise let the subparser's default overwrite a value the top-level
+  parser had already read). Both collect with action="append", so a repeat within one position is
+  caught as well as one across the two: conflicting values are a usage error, not a silent
+  last-wins.
+
+The actual defect was that the docs and the parser had no shared test — the suite used the working
+  form exclusively. `tests/test_readme_examples.py` now extracts every `graphmark ...` invocation
+  from README.md and runs it, so an example that stops working fails the gate instead of shipping.
+
+- **graph**: Fold non-ASCII punctuation in _normalize (#139)
+  ([#145](https://github.com/cdcoonce/graphmark/pull/145),
+  [`cef4484`](https://github.com/cdcoonce/graphmark/commit/cef448405c1d59577c85ff4f8723299f3ee74dbc))
+
+`string.punctuation` is ASCII-only, so every non-ASCII mark survived normalization and then had to
+  be typed byte-for-byte: an em-dash title was unreachable from a typed hyphen, a curly apostrophe
+  from a straight one, `…` from `...`. The catalog key literally retained the mark while an
+  ASCII-typed display normalized it away, so the two could never meet — while Obsidian's own
+  switcher resolves it.
+
+`_fold_punctuation` folds by Unicode category (P* and S*) instead, a superset of the old ASCII
+  table, so pure-ASCII results are unchanged. The ASCII translate table stays the fast path; the
+  cached per-character category lookup runs only on strings that still hold non-ASCII after it.
+
+Builds on #123: NFC composition runs first, so a decomposed accent is a single letter rather than a
+  letter plus a combining mark this fold must not touch.
+
+Path-suffix matching deliberately still folds only case and form — a "/" is structural there and
+  punctuation folding needs the extension handled first. Follow-up filed.
+
+Reference vault: 531 notes, link counts identical, build 207 ms.
+
+- **graph**: Normalize Unicode form before comparing names (#123)
+  ([#144](https://github.com/cdcoonce/graphmark/pull/144),
+  [`9251554`](https://github.com/cdcoonce/graphmark/commit/9251554691723e7b6ca1d11bf0b7ddb1dffed002))
+
+macOS's HFS+/APFS store filenames decomposed (NFD: `é` is `e` + U+0301) while text typed in an
+  editor is composed (NFC: a single U+00E9). `_normalize` lowercased, folded punctuation and
+  collapsed whitespace but never normalized Unicode form, so the two strings never compared equal
+  and an accented note title was a phantom broken link. Obsidian resolves it fine.
+
+`_fold_case` does NFC-then-lowercase and is shared by `_normalize` and by path-suffix matching — the
+  one comparison that does not go through `_normalize` — so no comparison in the module can be left
+  in the wrong form. Note names, aliases and path-qualified links all fold identically as a result.
+
+Eighth false-positive class in `unresolved`. The reference vault is unaffected (its only non-ASCII
+  filenames are em-dashes, which have no decomposition — which is exactly why this stayed invisible
+  there); link counts byte-identical.
+
+- **graph**: Require a letter in a file extension (#138)
+  ([#147](https://github.com/cdcoonce/graphmark/pull/147),
+  [`4206cc5`](https://github.com/cdcoonce/graphmark/commit/4206cc5f941e5f0967202ac0b99390a55ab0393e))
+
+`_targets_non_note_file` treated any trailing `.` + 1-10 alphanumerics as an extension, so
+  `[[Meeting 3.5]]` with no such note was suppressed as a file instead of reported as broken. `.5`
+  satisfied the pattern as readily as `.md`.
+
+The first class found that DEFLATES `check`'s flagship number rather than inflating it, which is
+  strictly worse for a gate: an undercount is invisible by construction and reads as health. It hits
+  any vault that numbers its notes — phases, specs, chapters, versioned documents.
+
+The separating rule is that a real extension contains a letter; ".5" and ".61850" differ only in
+  length, so no length bound could tell them apart. The existing 10-character bound and the
+  space-after-the-dot rule are both preserved.
+
+Reference vault: 17 non-note-file suppressions before and after, all genuine .base/.png
+  (hand-audited).
+
+### Testing
+
+- **properties**: Add the known-name invariant and an oracle-backed generator (#133)
+  ([#149](https://github.com/cdcoonce/graphmark/pull/149),
+  [`4cd304f`](https://github.com/cdcoonce/graphmark/commit/4cd304f80da52f2941205986d3b4bb3de783fdab))
+
+Two things, one purpose: make Track F's detector actually detect.
+
+#133's invariant — no link reported `missing` may name a key the resolver already knows (catalog or
+  aliases). Under correct behavior that is impossible, so it is an internal-consistency assertion,
+  not a heuristic: no thresholds, no calibration, no false-positive mode. Asserted over generated
+  vaults, with resolve_aliases=False (where the alias half is vacuous rather than wrong), and with
+  teeth — breaking the lookup while the map is still built must fail it.
+
+The generator, measured. With the alphabet widened to today's four defect classes, reverting
+  #123/#136/#137/#138/#139 one at a time still left the suite GREEN: 0 of 4. Every existing property
+  is a conservation or self-consistency check, and each of those bugs is perfectly self-consistent —
+  #136's fabricated edge really is in the graph. Self-consistency cannot see a wrong answer.
+
+So the generator now carries an oracle: it builds a note, then writes the link FROM it through a
+  transformation Obsidian treats as identity-preserving, so the expected target is known by
+  construction. Plus a negative oracle over names known to be absent (the false-negative half, which
+  no conservation law can see), narrow per-vault name pools so collisions co-occur, and an assertion
+  that an `ambiguous` candidate set is minimal rather than merely non-empty.
+
+Catch rate on the same experiment: 6 of 6, adding #119.
+
+
 ## v0.7.1 (2026-07-25)
 
 ### Bug Fixes
