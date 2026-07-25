@@ -37,10 +37,19 @@ def record_dismissal(root: Path, a: str, b: str, *, path: str = _DEFAULT_PATH) -
 
 
 def load_dismissed(root: Path, *, path: str = _DEFAULT_PATH) -> dict:
+    """Load the dismissal store, treating a corrupt or unreadable store as empty.
+
+    Mirrors ``record_dismissal``'s guard: invalid JSON, an unreadable file, or a non-dict
+    payload all mean "no active dismissals", never a crash.
+    """
     dismissed_file = root / path
     if not dismissed_file.exists():
         return {}
-    return json.loads(dismissed_file.read_text())
+    try:
+        data = json.loads(dismissed_file.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def active_dismissed_sigs(root: Path, *, path: str = _DEFAULT_PATH) -> set[str]:
