@@ -196,3 +196,16 @@ class TestSiloedNotes:
     def test_no_duplicates(self, alt_graph):
         result = siloed_notes(alt_graph)
         assert len(result) == len(set(result))
+
+    def test_equal_size_components_tie_break_is_deterministic(self):
+        # center is the sole articulation point; removing it yields two size-1 components
+        # {a.md} and {b.md} that tie for largest. The tie-break makes the lexicographically
+        # smallest-membered component (a.md) the mainland, so b.md is the island — and the
+        # result is identical across repeated runs, not dependent on traversal order.
+        nodes = {"a.md": None, "b.md": None, "center.md": None}
+        out_links = {"center.md": {"a.md", "b.md"}, "a.md": set(), "b.md": set()}
+        back_links = {"a.md": {"center.md"}, "b.md": {"center.md"}, "center.md": set()}
+        g = VaultGraph(nodes=nodes, out_links=out_links, back_links=back_links)
+        first = siloed_notes(g)
+        assert first == ["b.md"]
+        assert siloed_notes(g) == first  # deterministic across runs
