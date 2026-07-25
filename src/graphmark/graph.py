@@ -84,6 +84,11 @@ class NormalizeResolver:
         display = display.split("|")[0]
         # Strip anchor: "Note#Section" → "Note"
         display = display.split("#")[0]
+        # Obsidian accepts an explicit extension, so "Note.md" is the same link as "Note".
+        # Stripped before both branches below: the path-suffix branch appends ".md" itself,
+        # and the bare branch would otherwise normalize to the key "note md".
+        if display.lower().endswith(".md"):
+            display = display[: -len(".md")]
 
         if "/" in display:
             # Path-suffix resolution: find unique rel_path ending with "display.md"
