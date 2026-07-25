@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v0.3.3 (2026-07-25)
+
+### Bug Fixes
+
+- **resolve**: [[note.md]] resolves like [[Note]]
+  ([#105](https://github.com/cdcoonce/graphmark/pull/105),
+  [`916da52`](https://github.com/cdcoonce/graphmark/commit/916da52465cc3c5295a9440ae86af1ee6065e1d5))
+
+Obsidian accepts an explicit .md extension, so [[Note.md]] and [[Note]] are the same link. graphmark
+  resolved only the second: the normalizer turned "Note.md" into the key "note md" while the file's
+  catalog key is "note", so the link never matched and was reported as broken. The path-suffix
+  branch was worse — it appends ".md" itself, so [[folder/note.md]] searched for folder/note.md.md.
+
+Strip a case-insensitive trailing ".md" after alias/anchor stripping and before both resolution
+  branches. A missing [[Nowhere.md]] stays unresolved and an ambiguous stem stays ambiguous; a title
+  merely ending in the word "MD" is untouched.
+
+Parity-safe: no frozen fixture uses a .md-style link, so every expected.json is unchanged (81 oracle
+  tests green). The change only adds resolutions that previously failed — it never removes one.
+
+Also updates the test added in #101 that documented this gap as current behavior; it now asserts the
+  fix.
+
+Closes #104
+
+
 ## v0.3.2 (2026-07-25)
 
 ### Bug Fixes
