@@ -69,17 +69,24 @@ class NormalizeResolver:
 
 
 class VaultGraph:
-    """Built graph: all nodes plus resolved out/back adjacency."""
+    """Built graph: all nodes plus resolved out/back adjacency.
+
+    ``unresolved`` maps a rel_path to the raw link displays in it that resolved to nothing, in
+    extraction order; notes with no such links are absent. It is the inspectable form of what
+    build() would otherwise drop silently, and the source of the broken-link health count.
+    """
 
     def __init__(
         self,
         nodes: dict[str, Document],
         out_links: dict[str, set[str]],
         back_links: dict[str, set[str]],
+        unresolved: dict[str, list[str]] | None = None,
     ) -> None:
         self.nodes = nodes
         self.out_links = out_links
         self.back_links = back_links
+        self.unresolved = unresolved if unresolved is not None else {}
 
     @classmethod
     def build(
@@ -115,14 +122,21 @@ class VaultGraph:
         out_links: dict[str, set[str]] = {rel: set() for rel in nodes}
         back_links: dict[str, set[str]] = {rel: set() for rel in nodes}
 
+        unresolved: dict[str, list[str]] = {}
+
         for doc in docs:
             for display in extractor.extract(doc.text):
                 target = resolver.resolve(display, catalog)
-                if target is not None and target != doc.rel_path:
+                if target is None:
+                    # Unresolvable OR ambiguous — the Resolver protocol conflates the two, and
+                    # both are equally broken from a vault-health view. Record the raw display
+                    # (what a human has to go fix) once per occurrence.
+                    unresolved.setdefault(doc.rel_path, []).append(display)
+                elif target != doc.rel_path:
                     out_links[doc.rel_path].add(target)
 
         for src, targets in out_links.items():
             for dst in targets:
                 back_links[dst].add(src)
 
-        return cls(nodes, out_links, back_links)
+        return cls(nodes, out_links, back_links, unresolved)
