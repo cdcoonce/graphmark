@@ -20,8 +20,6 @@ class VaultConfig:
     scoped_folders: list[str] = field(default_factory=list)
     excluded_dirs: list[str] = field(default_factory=list)
     rules_files: list[str] = field(default_factory=lambda: ["CLAUDE.md", "CLAUDE.local.md"])
-    wikilink_pattern: str = r"\[\[(.+?)\]\]"
-    orphan_min_chars: int = 300
     transient_prefixes: tuple[str, ...] = ()
 
 
@@ -29,8 +27,9 @@ def load_config(path: Path) -> VaultConfig:
     """Load a VaultConfig from a TOML file.
 
     ``root`` is the only required key (resolved relative to the TOML's directory). Every other
-    key is optional and falls back to the ``VaultConfig`` dataclass default. A TOML missing
-    ``root`` raises ``ValueError`` naming the file and the missing key.
+    key that maps to a ``VaultConfig`` field is optional and falls back to the dataclass default;
+    any other key in the TOML is silently ignored. A TOML missing ``root`` raises ``ValueError``
+    naming the file and the missing key.
     """
     with open(path, "rb") as f:
         data = tomllib.load(f)
@@ -46,7 +45,5 @@ def load_config(path: Path) -> VaultConfig:
         scoped_folders=data.get("scoped_folders", []),
         excluded_dirs=data.get("excluded_dirs", []),
         rules_files=data.get("rules_files", ["CLAUDE.md", "CLAUDE.local.md"]),
-        wikilink_pattern=data.get("wikilink_pattern", r"\[\[(.+?)\]\]"),
-        orphan_min_chars=data.get("orphan_min_chars", 300),
         transient_prefixes=tuple(data.get("transient_prefixes", [])),
     )
