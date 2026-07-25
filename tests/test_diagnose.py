@@ -38,7 +38,9 @@ class TestResolved:
     def test_a_resolvable_link_reports_its_target(self, tmp_path):
         _write(tmp_path, "b.md")
         d = diagnose(_build(tmp_path), "b")
-        assert d == LinkDiagnosis(display="b", target="b.md", reason="resolved", candidates=())
+        assert d == LinkDiagnosis(
+            display="b", target="b.md", reason="resolved", candidates=(), via="stem"
+        )
 
     def test_the_target_carries_the_canonical_title(self, tmp_path):
         # The repair the gardener needs: [[jordan ellis]] → [[Jordan Ellis]]. The caller

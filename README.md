@@ -159,7 +159,26 @@ graph.unresolved                              # {rel_path: [broken link displays
 graph.catalog                                 # {normalized stem: [rel_paths]} — 2+ means ambiguous
 graph.out_of_scope                            # same, for markdown outside the configured scope
 graph.aliases                                 # {normalized alias: rel_path} — frontmatter aliases
+graph.link_counts                             # {reason: occurrences} — every link, one bucket each
+graph.alias_resolved                          # how many resolutions came via an alias
 ```
+
+`link_counts` accounts for **every** display the extractor produced, one bucket each, and always
+carries all six `DIAGNOSIS_REASONS` — a zero is a finding, not a non-event. The buckets sum to the
+extraction count, so nothing is silently dropped. Reading the distribution is the fastest way to
+notice the tool is wrong about your vault:
+
+```
+resolved 6169 · ambiguous 0 · non-note-file 17 · out-of-scope-note 0 · missing 0 · intra-note 40 · alias-resolved 23
+```
+
+versus the same vault with alias resolution disabled — the shape of a real defect that once shipped:
+
+```
+resolved 6146 · ... · missing 23 · ... · alias-resolved 0
+```
+
+Same total, 23 links in the wrong bucket.
 
 `catalog` and `out_of_scope` are the resolution state the build consulted. They are what you need to
 explain a link rather than just resolve it — which notes a bare `[[link]]` collided with, or whether

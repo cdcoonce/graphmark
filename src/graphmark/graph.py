@@ -293,12 +293,20 @@ class LinkDiagnosis:
     ``candidates`` carries the rel_paths in play: the colliding notes for ``ambiguous``, the
     unindexed markdown for ``out-of-scope-note``, and — only when ``diagnose`` is asked for them —
     the near-miss suggestions for ``missing``. Empty for every other reason.
+
+    ``via`` distinguishes the two ways a link can resolve. That distinction is not cosmetic: an
+    alias resolution looked identical to a stem resolution, and a vault reporting many broken links
+    beside zero alias resolutions is the exact signature of the defect that hid for six releases.
     """
 
     display: str
     target: str | None = None
     reason: str = "missing"
     candidates: tuple[str, ...] = field(default=())
+    #: How a ``resolved`` verdict was reached — ``"stem"`` (catalog name or path suffix) or
+    #: ``"alias"`` (frontmatter ``aliases:``). ``None`` for every other reason. Recorded here
+    #: rather than re-derived by callers, so a counter can never disagree with the classifier.
+    via: str | None = None
 
 
 def _diagnose(
@@ -320,7 +328,7 @@ def _diagnose(
 
     target = resolver.resolve(display, catalog)
     if target is not None:
-        return LinkDiagnosis(display=display, target=target, reason="resolved")
+        return LinkDiagnosis(display=display, target=target, reason="resolved", via="stem")
 
     # The resolver runs first, so a real note named X always beats an alias X — otherwise renaming
     # a note could silently hijack live links. An alias hit is a genuine resolution, not a
@@ -336,7 +344,9 @@ def _diagnose(
         if stripped and "/" not in stripped:
             aliased = aliases.get(_normalize(stripped))
             if aliased is not None:
-                return LinkDiagnosis(display=display, target=aliased, reason="resolved")
+                return LinkDiagnosis(
+                    display=display, target=aliased, reason="resolved", via="alias"
+                )
 
     # The resolver declined. Whether it declined because nothing matched or because too much did
     # is the distinction consumers need, and only the catalog can answer it.
@@ -403,6 +413,8 @@ class VaultGraph:
         out_of_scope: dict[str, list[str]] | None = None,
         resolver: Resolver | None = None,
         aliases: dict[str, str] | None = None,
+        link_counts: dict[str, int] | None = None,
+        alias_resolved: int = 0,
     ) -> None:
         self.nodes = nodes
         self.out_links = out_links
@@ -411,6 +423,8 @@ class VaultGraph:
         self.catalog = catalog if catalog is not None else {}
         self.out_of_scope = out_of_scope if out_of_scope is not None else {}
         self.aliases = aliases if aliases is not None else {}
+        self.link_counts = link_counts if link_counts is not None else {}
+        self.alias_resolved = alias_resolved
         # Retained so diagnose() answers with the same resolver that built the graph; a
         # pluggable Resolver that disagreed with the graph it describes would be worse than none.
         self.resolver: Resolver = resolver if resolver is not None else NormalizeResolver()
@@ -466,9 +480,16 @@ class VaultGraph:
         # the raw display is recorded once per occurrence, since that is what a human goes and
         # fixes.
         broken = {"ambiguous", "missing"}
+        # Every extracted display lands in exactly one bucket. All six keys are seeded so a zero
+        # is reported rather than absent — "0 alias-resolved" is a finding, not a non-event.
+        link_counts: dict[str, int] = dict.fromkeys(DIAGNOSIS_REASONS, 0)
+        alias_resolved = 0
         for doc in docs:
             for display in extractor.extract(doc.text):
                 d = _diagnose(display, catalog, out_of_scope, resolver, aliases)
+                link_counts[d.reason] += 1
+                if d.via == "alias":
+                    alias_resolved += 1
                 if d.reason in broken:
                     unresolved.setdefault(doc.rel_path, []).append(display)
                 elif d.target is not None and d.target != doc.rel_path:
@@ -479,5 +500,14 @@ class VaultGraph:
                 back_links[dst].add(src)
 
         return cls(
-            nodes, out_links, back_links, unresolved, catalog, out_of_scope, resolver, aliases
+            nodes,
+            out_links,
+            back_links,
+            unresolved,
+            catalog,
+            out_of_scope,
+            resolver,
+            aliases,
+            link_counts,
+            alias_resolved,
         )
