@@ -111,6 +111,7 @@ class TestPublicSurface:
         "GAPS_DEFAULT_K",
         "GAPS_DEFAULT_HUB_DEGREE",
         # check
+        "links_report",
         "run_check",
         "unresolved_link_count",
         # link diagnosis

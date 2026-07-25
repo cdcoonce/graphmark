@@ -11,13 +11,39 @@ from __future__ import annotations
 from dataclasses import fields
 
 from graphmark.config import VaultConfig
-from graphmark.graph import VaultGraph
+from graphmark.graph import DIAGNOSIS_REASONS, VaultGraph
 from graphmark.metrics import orphans, siloed_notes
 
 
 def unresolved_link_count(graph: VaultGraph) -> int:
     """Total unresolved link OCCURRENCES across the vault (not distinct targets)."""
     return sum(len(displays) for displays in graph.unresolved.values())
+
+
+def links_report(graph: VaultGraph) -> dict:
+    """How every wikilink in the vault was classified, as a byte-stable block.
+
+    The counts exist on the graph after a build, but a vault owner cannot read a Python object.
+    That gap is not cosmetic: the six-release frontmatter-alias defect was legible in this
+    distribution the entire time — many links reported broken beside zero resolved via alias — and
+    nobody saw it because no surface printed it.
+
+    Key order is fixed here and reasons follow ``DIAGNOSIS_REASONS``, so two runs over an unchanged
+    vault diff to nothing, matching ``run_check``'s existing contract.
+    """
+    counts = {reason: graph.link_counts.get(reason, 0) for reason in DIAGNOSIS_REASONS}
+    return {
+        "total": sum(counts.values()),
+        "counts": counts,
+        "alias_resolved": graph.alias_resolved,
+    }
+
+
+def links_summary_line(report: dict) -> str:
+    """One human-readable line of the distribution, for stderr."""
+    parts = [f"{reason} {count}" for reason, count in report["counts"].items()]
+    parts.append(f"alias-resolved {report['alias_resolved']}")
+    return " · ".join(parts)
 
 
 def _actual(name: str, graph: VaultGraph, config: VaultConfig) -> int:
@@ -53,7 +79,13 @@ def run_check(graph: VaultGraph, config: VaultConfig) -> dict:
         # "max" is inclusive: exactly at the limit passes.
         checks.append({"name": f.name, "limit": limit, "actual": actual, "pass": actual <= limit})
 
-    return {"pass": all(c["pass"] for c in checks), "checks": checks}
+    # `links` is appended, never interleaved, so consumers already parsing this report keep
+    # working. It is context for reading the verdict and can never change it.
+    return {
+        "pass": all(c["pass"] for c in checks),
+        "checks": checks,
+        "links": links_report(graph),
+    }
 
 
 def breach_lines(report: dict) -> list[str]:

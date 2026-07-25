@@ -57,11 +57,31 @@ graphmark siloed                         --root /path/to/vault
 graphmark neighborhood --note a/b.md --depth 2  --root /path/to/vault
 graphmark pagerank --n 10 --alpha 0.85   --root /path/to/vault
 graphmark export dot                     --root /path/to/vault > graph.dot
+graphmark links                          --root /path/to/vault
 graphmark check                          --config vault.toml
 ```
 
 Exit codes: `0` success, `1` a `check` threshold breach, `2` a usage or config error. Nothing else
 uses `1`, so CI can trust it.
+
+## `graphmark links` — how every link was classified
+
+```console
+$ graphmark --root /path/to/vault links
+{"total": 6226, "counts": {"resolved": 6169, "ambiguous": 0, "non-note-file": 17, "out-of-scope-note": 0, "missing": 0, "intra-note": 40}, "alias_resolved": 23}
+resolved 6169 · ambiguous 0 · non-note-file 17 · out-of-scope-note 0 · missing 0 · intra-note 40 · alias-resolved 23
+```
+
+JSON on stdout, the one-line summary on stderr, so the output stays pipeable.
+
+Every wikilink lands in exactly one bucket and the buckets sum to `total` — nothing is silently
+dropped. All six reasons are always present, because a zero is a finding: the line above with
+`missing 23 · alias-resolved 0` instead is what a real defect looked like before frontmatter aliases
+resolved, on the same vault with the same 6226 total. Reading the distribution is the fastest way to
+notice the tool is wrong about your vault.
+
+The same block appears in `check`'s report under `links`, as context for the verdict. It never
+changes the verdict.
 
 ## `graphmark check` — vault health as a CI gate
 
