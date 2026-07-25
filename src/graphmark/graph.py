@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import string
+import unicodedata
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -15,9 +16,25 @@ from graphmark.parse import parse_document
 _PUNCT_TABLE = str.maketrans(string.punctuation, " " * len(string.punctuation))
 
 
+def _fold_case(text: str) -> str:
+    """Compose to NFC, then lowercase — the two form-flattening steps, in that order.
+
+    macOS's HFS+/APFS store filenames **decomposed** (NFD: ``é`` is ``e`` + U+0301) while text typed
+    in an editor is **composed** (NFC: a single U+00E9). Without this the two never compare equal
+    and an accented note title is a phantom broken link, which Obsidian resolves fine.
+
+    NFC rather than NFD because it is what editors emit and what the web standardized on; the
+    filesystem's NFD becomes an implementation detail that never escapes the catalog.
+
+    Shared by ``_normalize`` and by path-suffix matching — the one place that does *not* go through
+    ``_normalize`` — so no comparison in this module can be left in the wrong form.
+    """
+    return unicodedata.normalize("NFC", text).lower()
+
+
 def _normalize(text: str) -> str:
-    """Lowercase, replace punctuation with spaces, collapse whitespace."""
-    return " ".join(text.lower().translate(_PUNCT_TABLE).split())
+    """Compose to NFC, lowercase, replace punctuation with spaces, collapse whitespace."""
+    return " ".join(_fold_case(text).translate(_PUNCT_TABLE).split())
 
 
 # A trailing dot plus a short alphanumeric run — a plausible file extension. Deliberately
@@ -65,7 +82,7 @@ def _matches_path_suffix(rel_path: str, suffix: str) -> bool:
 
     The match is legal only when it consumes the whole rel_path or is preceded by ``/``.
     """
-    lowered = rel_path.lower()
+    lowered = _fold_case(rel_path)
     if not lowered.endswith(suffix):
         return False
     rest = len(lowered) - len(suffix)
@@ -87,7 +104,7 @@ def candidates_for(display: str, catalog: dict[str, list[str]]) -> list[str]:
     if not target:
         return []
     if "/" in target:
-        suffix = target.lower() + ".md"
+        suffix = _fold_case(target) + ".md"
         return sorted(
             path
             for paths in catalog.values()
@@ -189,7 +206,7 @@ class NormalizeResolver:
 
         if "/" in display:
             # Path-suffix resolution: find unique rel_path ending with "display.md"
-            suffix = display.lower() + ".md"
+            suffix = _fold_case(display) + ".md"
             all_paths = self._flatten_paths(catalog)
             matches = [p for p in all_paths if _matches_path_suffix(p, suffix)]
             return matches[0] if len(matches) == 1 else None
