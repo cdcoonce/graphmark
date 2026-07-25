@@ -30,6 +30,23 @@ def build_catalog(docs: list[Document]) -> dict[str, list[str]]:
 class NormalizeResolver:
     """Resolves wikilink displays via normalized basename, with path-suffix fallback."""
 
+    def __init__(self) -> None:
+        # Cache the flattened path list per catalog identity. catalog is invariant for a whole
+        # VaultGraph.build(), so folder-style links reuse one flatten instead of rebuilding it
+        # on every call. Keyed by id() and single-slot: a new catalog evicts the previous.
+        self._flat_cache_id: int | None = None
+        self._flat_cache: list[str] | None = None
+
+    @staticmethod
+    def _compute_flat(catalog: dict[str, list[str]]) -> list[str]:
+        return [p for paths in catalog.values() for p in paths]
+
+    def _flatten_paths(self, catalog: dict[str, list[str]]) -> list[str]:
+        if self._flat_cache_id != id(catalog) or self._flat_cache is None:
+            self._flat_cache = self._compute_flat(catalog)
+            self._flat_cache_id = id(catalog)
+        return self._flat_cache
+
     def resolve(self, display: str, catalog: dict[str, list[str]]) -> str | None:
         # Strip alias: "Note|alias" → "Note"
         display = display.split("|")[0]
@@ -39,7 +56,7 @@ class NormalizeResolver:
         if "/" in display:
             # Path-suffix resolution: find unique rel_path ending with "display.md"
             suffix = display.lower() + ".md"
-            all_paths = [p for paths in catalog.values() for p in paths]
+            all_paths = self._flatten_paths(catalog)
             matches = [p for p in all_paths if p.lower().endswith(suffix)]
             return matches[0] if len(matches) == 1 else None
 
