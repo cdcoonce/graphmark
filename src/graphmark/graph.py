@@ -18,6 +18,16 @@ def _normalize(text: str) -> str:
     return " ".join(text.lower().translate(_PUNCT_TABLE).split())
 
 
+def _is_intra_note_reference(display: str) -> bool:
+    """True for a link that targets no note, e.g. ``[[#Heading]]`` or ``[[#^block]]``.
+
+    Obsidian uses an empty note part to mean "somewhere in this same note". Such a link is
+    neither an edge nor a broken link, so it must not be recorded as unresolved — otherwise
+    a note that navigates itself heavily looks like the vault's worst offender.
+    """
+    return not display.split("|")[0].split("#")[0].strip()
+
+
 def build_catalog(docs: list[Document]) -> dict[str, list[str]]:
     """Map normalized stem → list of rel_paths (len > 1 means ambiguous)."""
     catalog: dict[str, list[str]] = {}
@@ -126,6 +136,8 @@ class VaultGraph:
 
         for doc in docs:
             for display in extractor.extract(doc.text):
+                if _is_intra_note_reference(display):
+                    continue
                 target = resolver.resolve(display, catalog)
                 if target is None:
                     # Unresolvable OR ambiguous — the Resolver protocol conflates the two, and
