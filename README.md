@@ -46,8 +46,8 @@ graphmark gaps                           --root /path/to/vault
 
 Note: `gaps` is a **library-first** metric — it ranks and filters link-gap candidates over a
 similarity function you inject (`metrics.gaps(graph, similar_fn, ...)`); the package itself ships no
-embeddings. The CLI subcommand currently runs with an empty similarity source and returns `[]`;
-wiring a real similarity provider into the CLI is planned for 0.2.
+embeddings. The CLI subcommand has no similarity source to inject, so `graphmark gaps` prints
+guidance to stderr and exits 2 rather than silently returning `[]`; use the library API (below).
 
 ## Library
 
