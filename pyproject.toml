@@ -57,7 +57,9 @@ testpaths = ["tests"]
 # commits since the last tag, decides the bump, updates the version below, writes CHANGELOG.md,
 # commits, tags v<version>, and cuts a GitHub release. The same workflow then publishes to PyPI.
 version_toml = ["pyproject.toml:project.version"]
-build_command = "uv build"
+# The semantic-release action runs in its own container without uv; leave the build to the
+# workflow's own uv-based publish step (release.yml), so this is intentionally empty.
+build_command = ""
 tag_format = "v{version}"
 commit_message = "chore(release): {version} [skip ci]"
 # Pre-1.0: a breaking change bumps the minor, not the major, until the API is declared stable.
