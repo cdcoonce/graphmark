@@ -1,6 +1,90 @@
 # CHANGELOG
 
 
+## v0.6.0 (2026-07-25)
+
+### Bug Fixes
+
+- **parse**: Parse block-style frontmatter lists (#118)
+  ([#120](https://github.com/cdcoonce/graphmark/pull/120),
+  [`723c517`](https://github.com/cdcoonce/graphmark/commit/723c517d30732286fd0e6005996fb36d577042f5))
+
+* chore(release): 0.3.4 [skip ci]
+
+* chore(release): 0.4.0 [skip ci]
+
+* chore(release): 0.5.0 [skip ci]
+
+* fix(parse): parse block-style frontmatter lists (#118)
+
+_parse_frontmatter handled scalars, quoted strings and inline lists, but a block list's item lines
+  contain no colon, so the loop skipped them and the bare `key:` line stored "". Every block-style
+  property in a real vault — aliases:, tags: — silently became an empty string instead of a list.
+
+Block form is what Obsidian's own Properties UI writes, so this is the common case, not the edge
+  case, and Document.frontmatter is public: a consumer reading doc.frontmatter["tags"] got "" rather
+  than a list. Not an error, just quietly wrong data.
+
+Item lines are matched on the leading dash BEFORE the key/value split, so an item containing a colon
+  ("- Note: A Subtitle") stays an item. A block closes at the next key rather than merely pausing —
+  without that, a stray indented line later in a malformed note would silently grow the earlier
+  list, which is misattribution rather than the promised fail-soft drop. That distinction survived
+  the first four mutations and now has its own test.
+
+A `key:` with no items still reads as "" — an empty value, not an empty list — so nothing that
+  parsed before changes shape.
+
+Parity: fixture notes use inline or scalar frontmatter only, so no expected.json can move. A test
+  asserts that property directly rather than leaving it as a claim in the commit message.
+
+Still a targeted scan, not a YAML dependency: this runs over every note in a vault and a note
+  someone is mid-edit must not take the graph down.
+
+---------
+
+Co-authored-by: semantic-release <semantic-release>
+
+### Features
+
+- **graph**: Resolve frontmatter aliases in-package (#119)
+  ([#121](https://github.com/cdcoonce/graphmark/pull/121),
+  [`05bb6ce`](https://github.com/cdcoonce/graphmark/commit/05bb6ced17656a3fb3d1d1798068763b26b68588))
+
+graphmark never read frontmatter during resolution, so every link written against an Obsidian
+  `aliases:` entry was reported broken. Measured on a real 521-note vault: stock graphmark reported
+  23 broken links where the actual count was 0, and dropped 17 edges with them. A 100%
+  false-positive rate in max_unresolved_links — the flagship threshold of graphmark check, the one
+  product this repo offers outward. Larger than the four false-positive classes already fixed
+  (#98/#101/#104/#107) combined.
+
+This reverses a documented decision. the-vault's AliasResolver says "naming policy belongs to the
+  seam, so the fallback lives here rather than in the graph algorithm". That holds for idiosyncratic
+  conventions; aliases: is core Obsidian, and this package claims to work on any Obsidian-family
+  vault. Human-triaged: move it in-package, on by default, since a default that silently produces
+  wrong answers is not fixed by a knob nobody knows to flip. resolve_aliases = false restores the
+  old behavior.
+
+That AliasResolver is the oracle, and the live-vault differential is exact: stock graphmark now
+  reports the same broken-link set as the reference implementation, note for note — 0 and 0, from a
+  51-entry alias map.
+
+Its conservative rules are preserved. An alias colliding with any real note name is dropped at index
+  time, not merely outranked, so a note's own title can never be hijacked and an already-ambiguous
+  basename can't be rescued into resolving. An alias claimed by two notes resolves to nothing. A
+  slash-bearing alias is refused when the map is built, because normalization turns "/" into a space
+  and would otherwise make it reachable from a slash-free display — the lookup-side guard alone does
+  not cover that, which mutation testing caught.
+
+One honest note: rule 1 (resolver before alias) is structurally unreachable given the other two
+  rules — no display can match both a catalog key and an alias key — so mutating the order leaves
+  the suite green. It is kept as insurance against a future relaxation and is documented as untested
+  rather than dressed up as covered.
+
+Parity: this changes what resolves, so it is the most parity-sensitive change since extraction. It
+  is safe only because no frozen fixture declares aliases; a test asserts that property directly so
+  it cannot go stale.
+
+
 ## v0.5.0 (2026-07-25)
 
 ### Features
