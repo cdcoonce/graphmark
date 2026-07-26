@@ -1,6 +1,34 @@
 # CHANGELOG
 
 
+## v0.8.1 (2026-07-26)
+
+### Performance Improvements
+
+- **graph**: Index path resolution by filename instead of scanning (#157)
+  ([#160](https://github.com/cdcoonce/graphmark/pull/160),
+  [`84cdd29`](https://github.com/cdcoonce/graphmark/commit/84cdd297a665d93ffa3cbb988c18550ea57f5c94))
+
+Every path-qualified display flattened the catalog and compared against every rel_path. That ceiling
+  was documented and accepted while the branch was rare — most wikilink displays are bare names
+  hitting a dict — but #152 made it the only branch, since every markdown link is path-qualified by
+  construction. blue-book (1120 notes, 10,149 markdown links) took 2.7 s against 0.25 s for the same
+  vault read as wikilinks.
+
+A legal suffix match must consume whole path components, so a candidate's last component always
+  equals the display's last plus ".md". Bucketing by that filename is exactly equivalent to scanning
+  — same matches, same order, same verdicts.
+
+The first attempt was no faster, and profiling rather than guessing found why: `_diagnose` consults
+  the in-scope catalog AND the out-of-scope one for the same display, so a single-slot cache
+  alternated and missed every time — 29,265 index rebuilds for 10,149 links. The cache is now
+  bounded-multi-slot, and it holds each catalog rather than just its id(), so a freed dict cannot
+  have its address reused under a stale index.
+
+blue-book markdown: 2718 ms -> 267 ms (10.2x), now level with wikilink mode. Reference vault 195 ->
+  181 ms. All link counts byte-identical in every mode.
+
+
 ## v0.8.0 (2026-07-26)
 
 ### Documentation
