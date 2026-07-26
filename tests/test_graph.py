@@ -91,19 +91,15 @@ class TestNormalizeResolver:
         assert self.resolver.resolve("brain/alpha", catalog) == "brain/alpha.md"
         assert self.resolver.resolve("work/gamma", catalog) == "work/gamma.md"
 
-    def test_flatten_runs_once_per_catalog(self, monkeypatch):
+    def test_the_path_index_is_built_once_per_catalog(self):
+        # Was written against the flatten this replaced (#157); the property is the same one and
+        # still worth holding — the O(n) precompute must not run per link.
         catalog = self._catalog("brain/alpha.md", "personal/beta.md")
-        calls = {"n": 0}
-        real_compute = NormalizeResolver._compute_flat
-
-        def counting_compute(cat):
-            calls["n"] += 1
-            return real_compute(cat)
-
-        monkeypatch.setattr(self.resolver, "_compute_flat", counting_compute)
+        self.resolver.resolve("brain/alpha", catalog)
+        buckets = self.resolver._index.for_catalog(catalog)
         for _ in range(5):
             self.resolver.resolve("brain/alpha", catalog)
-        assert calls["n"] == 1  # the O(n) flatten runs once, reused for the rest
+        assert self.resolver._index.for_catalog(catalog) is buckets
 
     def test_new_catalog_triggers_reflatten(self):
         cat1 = self._catalog("brain/alpha.md")
