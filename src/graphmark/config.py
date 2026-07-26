@@ -11,6 +11,10 @@ import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
+#: Every value ``VaultConfig.link_syntax`` accepts. A consumer may switch on these, so the set is
+#: part of the config contract.
+LINK_SYNTAXES = frozenset({"wikilink", "markdown", "both"})
+
 
 @dataclass(frozen=True)
 class CheckPolicy:
@@ -47,6 +51,12 @@ class VaultConfig:
     # Obsidian's `aliases:` property names a note, so links written against one resolve by
     # default. Set False for strict basename-only resolution.
     resolve_aliases: bool = True
+    #: Which link syntax to read. ``"wikilink"`` (the default) is Obsidian's ``[[Note]]`` and is
+    #: what every frozen fixture encodes, so the default keeps existing behavior byte-identical.
+    #: ``"markdown"`` reads ``[text](note.md)``, the syntax non-Obsidian markdown vaults use — added
+    #: on demand after a corpus vault turned out to have 11,198 of them and zero extracted edges.
+    #: ``"both"`` reads each, which is what Obsidian itself accepts.
+    link_syntax: str = "wikilink"
     check: CheckPolicy = field(default_factory=CheckPolicy)
 
     def __post_init__(self) -> None:
@@ -54,6 +64,12 @@ class VaultConfig:
         # obscure AttributeError on the first Path operation.
         if not isinstance(self.root, Path):
             self.root = Path(self.root)
+        # Fail loudly rather than silently reading nothing: a typo here would produce an empty
+        # graph, which is exactly the failure #151 exists to make visible.
+        if self.link_syntax not in LINK_SYNTAXES:
+            raise ValueError(
+                f"link_syntax must be one of {sorted(LINK_SYNTAXES)}, got {self.link_syntax!r}"
+            )
 
 
 def _parse_check(data: dict, path: Path) -> CheckPolicy:
@@ -122,5 +138,6 @@ def load_config(path: str | Path, *, root_override: str | Path | None = None) ->
         rules_files=data.get("rules_files", ["CLAUDE.md", "CLAUDE.local.md"]),
         transient_prefixes=tuple(data.get("transient_prefixes", [])),
         resolve_aliases=bool(data.get("resolve_aliases", True)),
+        link_syntax=data.get("link_syntax", "wikilink"),
         check=_parse_check(data, path),
     )

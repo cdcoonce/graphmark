@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
+from urllib.parse import unquote
 
 from graphmark.model import Document
 
@@ -93,6 +94,33 @@ def _parse_frontmatter(raw: str) -> dict:
     return result
 
 
+#: A markdown-style link to a local markdown file: ``[text](note.md)`` or
+#: ``[text](../a/b.md#Anchor)``.
+#: Not an image (``![...]``) and not an absolute URL — a link to somebody's README on the web is not
+#: a link into this vault. Deliberately narrow: this counts a *signal*, so a false positive here
+#: would produce a warning about nothing.
+_MD_LINK_RE = re.compile(r"(?<!!)\[[^\]]*\]\((?!\w+:)([^)\s]+?\.md)(?:#[^)]*)?\)")
+
+
+def count_markdown_links(text: str) -> int:
+    """How many ``[text](note.md)`` links the text holds — a syntax graphmark does not read.
+
+    graphmark extracts ``[[wikilinks]]`` only, so a vault written in markdown link syntax produces
+    an empty graph with no indication that anything was missed: every note an orphan, no clusters,
+    and a `check` that looks healthy because links which were never extracted are not *unresolved*.
+
+    The conservation law in ``VaultGraph.build`` cannot see this — it sums over what the extractor
+    produced, so a syntax the extractor does not know sits outside the universe being counted. This
+    function exists to make that universe's edge visible; it feeds a warning and nothing else.
+
+    Code spans and fenced blocks are skipped, exactly as wikilink extraction skips them: a
+    documented example is not a link.
+    """
+    text = _strip_fenced_blocks(text)
+    text = _INLINE_CODE_RE.sub("", text)
+    return len(_MD_LINK_RE.findall(text))
+
+
 class WikilinkExtractor:
     """Extracts raw wikilink displays from note text, excluding code spans."""
 
@@ -100,6 +128,27 @@ class WikilinkExtractor:
         text = _strip_fenced_blocks(text)
         text = _INLINE_CODE_RE.sub("", text)
         return _WIKILINK_RE.findall(text)
+
+
+class MarkdownLinkExtractor:
+    """Extracts ``[text](note.md)`` targets — the syntax non-Obsidian markdown vaults use.
+
+    Returns the **target**, not the display text, and without its anchor: unlike a wikilink, where
+    the visible text names the note, here the parenthesized path is the only thing that identifies
+    it. The display text is prose and never resolves to anything.
+
+    Percent-encoding is decoded, because markdown encodes spaces (``my%20note.md``) while the vault
+    stores them literally — a link no editor would consider broken.
+
+    The returned target is **relative to the linking note**, which callers must resolve; this class
+    cannot, since ``extract`` sees text and never learns which note it came from. See
+    ``VaultGraph.build``.
+    """
+
+    def extract(self, text: str) -> list[str]:
+        text = _strip_fenced_blocks(text)
+        text = _INLINE_CODE_RE.sub("", text)
+        return [unquote(target) for target in _MD_LINK_RE.findall(text)]
 
 
 def parse_document(path: Path, root: Path) -> Document:

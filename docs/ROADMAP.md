@@ -185,6 +185,19 @@ The generalizable lesson, and the one to carry into future test design here: **a
 generated input still needs a correct answer to compare against.** Invariants prove the package is
 consistent with itself, which is exactly the thing a systematically wrong resolver also is.
 
+_Second corpus run, same day (see `docs/corpus-study.md`):_ a **third** named limit, and a null
+result. The null result first — the five fixes above moved **no** third-party number; the two vaults
+overlapping the first run reproduce it to the decimal. They are correct and pinned, but against real
+data they are theoretical, joining #123 there.
+
+The limit: `lyz-code/blue-book` (1120 notes) carries **11,198 markdown-style `[text](note.md)` links,
+99% of them targeting a real note**, and graphmark extracts **zero**. Every note an orphan, and
+`check` looks nearly healthy because those links were never extracted and so are not *unresolved*.
+The conservation law sums over what the **extractor** produced — so a link syntax the extractor does
+not know is invisible to it by construction. **The accounting is auditable only within the universe
+the extractor defines.** Filed as #151 (warn) and #152 (the markdown-syntax decision — the "on
+demand" trigger the non-goals list reserved).
+
 Audited alongside: the reference vault's two suppressed buckets, by hand — 17 `non-note-file` (all
 genuine `.base`/`.png`) and 40 `intra-note` (all genuine heading refs), 0 false suppressions. A
 suppressed bucket is only trustworthy once someone has read it.
@@ -224,8 +237,13 @@ Evaluated against the ecosystem and dropped for zero consumer pull; do not re-li
 - Betweenness centrality, Louvain/Leiden community detection.
 - CSV/GML/Cypher export; incremental/cached builds; any LLM "propose" pass.
 - MCP server or retrieval/search surface.
-- Alternate link-syntax adapters (Logseq, `[](.)` markdown) — the pluggable interfaces exist so
-  these _can_ be added on demand; do not build them speculatively.
+- Alternate link-syntax adapters (Logseq) — the pluggable interfaces exist so these _can_ be added
+  on demand; do not build them speculatively. **Markdown `[text](note.md)` links SHIPPED 2026-07-25**
+  (#152) — the second corpus run supplied the demand this clause reserved: a 1120-note vault with
+  10,149 of them and zero extracted edges. Config-gated (`link_syntax`), default unchanged,
+  `Resolver` untouched. Note what it did *not* do: blue-book resolves 5.8% by strict relative path
+  and 92.7% by basename-anywhere (it runs `mkdocs-autolinks`), and no fallback was slipped in —
+  silently trying a second rule when the first fails is the shape of #136. The dialect is #156.
 - Re-platforming (no swapping networkx; no async/parallel rewrites).
 - Performance work without a benchmark showing pain (the live consumer is a ~340-note vault). The
   known ceilings — O(L·N) path-suffix resolution, O(A·(V+E)) `siloed_notes`, per-metric graph

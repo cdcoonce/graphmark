@@ -44,14 +44,21 @@ def _readme_commands() -> list[str]:
     # non-greedy match begin at a *closing* fence and swallow prose between blocks, which silently
     # yields zero commands — caught by the guard test below rather than shipping a vacuous suite.
     blocks = re.findall(
-        r"^```(?:bash|console|sh)\n(.*?)^```", README.read_text(), re.DOTALL | re.MULTILINE
+        r"^```(bash|console|sh)\n(.*?)^```", README.read_text(), re.DOTALL | re.MULTILINE
     )
     commands = []
-    for block in blocks:
+    for lang, block in blocks:
         for line in block.splitlines():
-            line = line.removeprefix("$ ").strip()
-            if line.startswith("graphmark "):
-                commands.append(line)
+            # In a `console` block, `$ ` marks input and everything else is *output* — which is why
+            # the prefix is required there. Without that rule a wrapped warning line beginning
+            # "graphmark only reads ..." is collected as a command and run, which is exactly what
+            # happened when the link-syntax section was added.
+            if lang == "console":
+                if not line.startswith("$ "):
+                    continue
+                line = line.removeprefix("$ ")
+            if line.strip().startswith("graphmark "):
+                commands.append(line.strip())
     return commands
 
 
