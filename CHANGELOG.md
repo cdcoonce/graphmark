@@ -1,6 +1,44 @@
 # CHANGELOG
 
 
+## v0.9.1 (2026-07-26)
+
+### Bug Fixes
+
+- **release**: Relock uv.lock during the version bump
+  ([#166](https://github.com/cdcoonce/graphmark/pull/166),
+  [`0d43fe4`](https://github.com/cdcoonce/graphmark/commit/0d43fe431d528d5f1397795bdf2ffa63bc2008a0))
+
+python-semantic-release bumped pyproject.toml but never re-locked, so uv.lock fell a version behind
+  on every release. The next local uv invocation regenerated it, dirtying the working tree and
+  aborting the nightly cycle's clean-tree preflight. The drift had run four releases deep (lock said
+  0.5.0 against a 0.9.0 project) because nothing failed loudly.
+
+build_command now installs uv, relocks, and stages the result. It runs after the version is stamped
+  but before the commit and tag, so the relocked file lands in the release commit itself. The action
+  is Docker-based and ships without uv, which is why the step installs it from the new build extra.
+
+--upgrade-package restricts the relock to this project's own version entry; a bare uv lock could
+  bump transitive dependencies at release time, turning a version bump into an unreviewed dependency
+  change.
+
+Three tests. Version agreement between lock and pyproject is the outcome; the build_command
+  assertion is the mechanism, because outcome alone stays green for a whole cycle after the relock
+  step is removed. The third pins the hardcoded package name to project.name: uv does not error on
+  an unknown package (verified — a typo'd name exits 0 and changes nothing), so a rename would
+  silently disable the relock and the drift would resurface a release later looking like a new bug.
+
+### Chores
+
+- Relock uv.lock to the released 0.9.0 version
+  ([`a7f5ac6`](https://github.com/cdcoonce/graphmark/commit/a7f5ac6e9426cc844b410dee3c3e9be34d01fd70))
+
+The lockfile's root-package version had drifted since 0.5.0: semantic-release bumps pyproject.toml
+  and CHANGELOG.md but never re-runs 'uv lock', so every release left uv.lock one version further
+  behind. Any local 'uv' invocation then regenerated it and dirtied the tree, which aborted the
+  nightly afk cycle on a preflight dirty-tree check.
+
+
 ## v0.9.0 (2026-07-26)
 
 ### Bug Fixes
