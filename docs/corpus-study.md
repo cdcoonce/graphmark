@@ -71,6 +71,56 @@ That is a real methodological lesson for any repeat: **scope configuration is la
 convention-specific, and naive defaults produce meaningless distributions.** Per-vault scoping is
 required for the numbers to mean anything.
 
+## Second run — 2026-07-25, after five fixes
+
+Repeated the same day, after #123/#136/#137/#138/#139 shipped, to answer two questions the first run
+could not: did those fixes move any real number, and is there demand for the link-syntax work the
+roadmap defers. Six vaults resolved (several URLs from the first run are dead); two overlap.
+
+| vault | notes | links | resolved | missing | non-note-file | md-style `.md` links | BOMs |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| arkalim/obsidian-vault | 160 | 551 | 61.7% | 1.8% | 34.8% | 0 | 0 |
+| kepano-obsidian | 51 | 54 | 5.6% | 20.4% | 74.1% | 0 | 0 |
+| jackyzha0/quartz | 113 | 411 | 92.0% | 1.9% | 3.9% | 0 | 0 |
+| bramses-highly-opinionated-vault | 59 | 78 | 65.4% | 11.5% | 3.8% | 0 | 0 |
+| DashboardPlusPlus | 34 | 29 | 100% | 0% | 0% | 0 | 0 |
+| **lyz-code/blue-book** | **1120** | **39** | **0%** | **97.4%** | 2.6% | **11,198** | 0 |
+| _the reference vault_ | _531_ | _6226_ | _99.1%_ | _0%_ | _0.3%_ | _17_ | _0_ |
+
+### The null result, stated plainly
+
+**The five fixes moved nothing.** arkalim and kepano reproduce the first run's percentages to the
+decimal — 61.7/1.8/34.8 and 5.6/20.4/74.1, unchanged. No vault in the corpus contains an NFD
+filename, a BOM, a numeric title suffix read as an extension, or a folder pair one of whose names
+ends with the other's.
+
+That is worth recording rather than burying. Those five were found by reading the code, are correct,
+and are pinned by tests — but against real data they remain **theoretical**, joining #123 in that
+category. The honest prioritization reading: correctness-by-inspection has now outrun what this
+corpus can corroborate, and further defect-hunting of that kind has diminishing evidence behind it.
+
+### The finding that was not theoretical
+
+`lyz-code/blue-book` — 1120 notes, **11,198 markdown-style `[text](note.md)` links, 11,048 of them
+(99%) targeting a note that exists** — extracts to **zero** edges. Every note an orphan; no clusters,
+no hubs, no bridges; uniform PageRank. And `check` looks nearly healthy, because
+`max_unresolved_links` sees 38: the 11,198 links it cannot see were never extracted, so they are not
+*unresolved*.
+
+This is a named limit of the Track F thesis and belongs beside the other one. The conservation law
+added in #124 sums over what the **extractor** produced, so a link syntax the extractor does not know
+is invisible to it by construction — the buckets balance perfectly at 39 while 11,198 links sit
+outside the universe being counted. **The accounting is auditable only within the universe the
+extractor defines.**
+
+Filed as [#151](https://github.com/cdcoonce/graphmark/issues/151) (warn rather than report an empty
+graph — cheap, no interface change) and [#152](https://github.com/cdcoonce/graphmark/issues/152)
+(the markdown-syntax decision, Track B, explicitly the "on demand" trigger the roadmap's non-goal
+reserved).
+
+blue-book is an mkdocs garden, not an Obsidian vault, so it is arguably out of contract — but nothing
+tells the user that, which is the whole point of #151.
+
 ## Repeating it
 
 The corpus is disposable — clone, measure, discard. What is worth keeping is this table, so future

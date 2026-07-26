@@ -185,6 +185,19 @@ The generalizable lesson, and the one to carry into future test design here: **a
 generated input still needs a correct answer to compare against.** Invariants prove the package is
 consistent with itself, which is exactly the thing a systematically wrong resolver also is.
 
+_Second corpus run, same day (see `docs/corpus-study.md`):_ a **third** named limit, and a null
+result. The null result first — the five fixes above moved **no** third-party number; the two vaults
+overlapping the first run reproduce it to the decimal. They are correct and pinned, but against real
+data they are theoretical, joining #123 there.
+
+The limit: `lyz-code/blue-book` (1120 notes) carries **11,198 markdown-style `[text](note.md)` links,
+99% of them targeting a real note**, and graphmark extracts **zero**. Every note an orphan, and
+`check` looks nearly healthy because those links were never extracted and so are not *unresolved*.
+The conservation law sums over what the **extractor** produced — so a link syntax the extractor does
+not know is invisible to it by construction. **The accounting is auditable only within the universe
+the extractor defines.** Filed as #151 (warn) and #152 (the markdown-syntax decision — the "on
+demand" trigger the non-goals list reserved).
+
 Audited alongside: the reference vault's two suppressed buckets, by hand — 17 `non-note-file` (all
 genuine `.base`/`.png`) and 40 `intra-note` (all genuine heading refs), 0 false suppressions. A
 suppressed bucket is only trustworthy once someone has read it.
