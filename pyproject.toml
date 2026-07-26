@@ -28,6 +28,11 @@ Issues = "https://github.com/cdcoonce/graphmark/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.6", "hypothesis>=6.100"]
+# Installed by semantic_release.build_command, not by developers. The
+# python-semantic-release GitHub Action is Docker-based and ships without uv, so the
+# release's relock step has to install it itself. Declaring the pin here rather than
+# inline keeps it visible to Dependabot.
+build = ["uv>=0.7,<1.0"]
 
 [project.scripts]
 graphmark = "graphmark.cli:main"
@@ -66,9 +71,25 @@ testpaths = ["tests"]
 # commits since the last tag, decides the bump, updates the version below, writes CHANGELOG.md,
 # commits, tags v<version>, and cuts a GitHub release. The same workflow then publishes to PyPI.
 version_toml = ["pyproject.toml:project.version"]
-# The semantic-release action runs in its own container without uv; leave the build to the
-# workflow's own uv-based publish step (release.yml), so this is intentionally empty.
-build_command = ""
+# Runs after the version is stamped into pyproject.toml but before the bump is committed and
+# tagged, so `git add uv.lock` lands the relocked file in the release commit itself. Without
+# this the lockfile keeps the previous version, and the next local `uv` run dirties the tree —
+# which aborts the nightly cycle's clean-tree preflight (#166).
+#
+# The action is Docker-based and ships without uv, so the step installs it first (see the
+# `build` extra). `--upgrade-package graphmark` restricts the relock to this project's own
+# version entry: a bare `uv lock` could also bump transitive dependencies at release time,
+# turning a version bump into an unreviewed dependency change. The package name is written out
+# rather than read from an env var so the command does not depend on an undocumented one —
+# and note uv does NOT error on an unknown name, so a rename would silently disable this;
+# tests/test_lockfile_version.py pins the literal to project.name for exactly that reason.
+#
+# Building/publishing stays in the workflow's own uv-based step (release.yml).
+build_command = """
+    python -m pip install -e '.[build]'
+    uv lock --upgrade-package graphmark
+    git add uv.lock
+"""
 tag_format = "v{version}"
 commit_message = "chore(release): {version} [skip ci]"
 # Pre-1.0: a breaking change bumps the minor, not the major, until the API is declared stable.
