@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import string
+import sys
 import unicodedata
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
@@ -12,7 +13,7 @@ from pathlib import Path
 from graphmark.config import VaultConfig
 from graphmark.interfaces import LinkExtractor, Resolver
 from graphmark.model import Document
-from graphmark.parse import parse_document
+from graphmark.parse import count_markdown_links, parse_document
 
 _PUNCT_TABLE = str.maketrans(string.punctuation, " " * len(string.punctuation))
 
@@ -463,6 +464,37 @@ def diagnose(graph: VaultGraph, display: str, *, suggest: int = 0) -> LinkDiagno
     return diagnosis
 
 
+def _warn_if_unread_syntax_dominates(docs: list[Document], extracted: int) -> None:
+    """Warn once when the vault's links are mostly in a syntax graphmark does not read.
+
+    graphmark extracts ``[[wikilinks]]`` only. A vault written in markdown link syntax therefore
+    produces a confidently *empty* graph — every note an orphan, no clusters, no hubs, uniform
+    PageRank — with nothing to tell the user that none of their links were seen. Worse, ``check``
+    looks nearly healthy, because links that were never extracted are not ``unresolved``.
+
+    Measured on a real 1120-note vault: 11,198 markdown-style links, 99% of them targeting a note
+    that exists, and 0 extracted edges.
+
+    The test is **relational, not calibrated** — it fires only when the unread syntax strictly
+    outnumbers the read one. There is no threshold to tune and no false-positive mode; a vault with
+    a handful of stray markdown links among thousands of wikilinks (the reference vault: 17 against
+    6226) can never trip it. Same discipline as #133's assertion, and the reason this is a warning
+    rather than anything that touches a count or a verdict.
+
+    stderr only, so stdout stays pipeable JSON — as ``links_summary_line`` and ``breach_lines``
+    already do.
+    """
+    unread = sum(count_markdown_links(doc.text) for doc in docs)
+    if unread <= extracted:
+        return
+    print(
+        f"graphmark: warning: {extracted} wikilinks extracted but {unread} markdown-style "
+        f"[](.md) links found; graphmark only reads [[wikilinks]] — this graph is probably "
+        f"not your vault",
+        file=sys.stderr,
+    )
+
+
 class VaultGraph:
     """Built graph: all nodes plus resolved out/back adjacency.
 
@@ -569,6 +601,8 @@ class VaultGraph:
                     unresolved.setdefault(doc.rel_path, []).append(display)
                 elif d.target is not None and d.target != doc.rel_path:
                     out_links[doc.rel_path].add(d.target)
+
+        _warn_if_unread_syntax_dominates(docs, sum(link_counts.values()))
 
         for src, targets in out_links.items():
             for dst in targets:
