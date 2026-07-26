@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
+import posixpath
 import re
 import string
 import sys
 import unicodedata
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from graphmark.config import VaultConfig
 from graphmark.interfaces import LinkExtractor, Resolver
 from graphmark.model import Document
-from graphmark.parse import count_markdown_links, parse_document
+from graphmark.parse import MarkdownLinkExtractor, count_markdown_links, parse_document
 
 _PUNCT_TABLE = str.maketrans(string.punctuation, " " * len(string.punctuation))
 
@@ -464,6 +465,37 @@ def diagnose(graph: VaultGraph, display: str, *, suggest: int = 0) -> LinkDiagno
     return diagnosis
 
 
+def resolve_relative_target(target: str, source_rel_path: str) -> str | None:
+    """Turn a markdown link's relative target into a vault-relative path, or ``None``.
+
+    A markdown target is a **path**, not a name: ``[x](../other/b.md)`` means "the file at that
+    location relative to me". That is the first resolution rule in this package that depends on
+    *where the link is* — information the ``Resolver`` protocol never receives, and which the
+    roadmap forbids adding by redesigning that boundary.
+
+    So the dependence is resolved here instead, before diagnosis: the target is normalized against
+    the linking note's folder into a full vault-relative path, and the existing path branch of the
+    resolver then matches it exactly. ``Resolver`` is untouched and still answers "what does this
+    name?" with no notion of a source.
+
+    Relative is the **default markdown semantics** (CommonMark, mkdocs, GitHub) and deliberately
+    not the wikilink rule. Measured on `lyz-code/blue-book`: 5.8% of its links resolve this way
+    against 92.7% by basename-anywhere, because it runs the `mkdocs-autolinks` plugin. That dialect
+    is a separate decision, not a fallback to slip in here — silently trying a second rule when the
+    first fails is how a link resolves to the wrong note.
+
+    ``None`` for a target that escapes the vault root. That is not an error and not a resolution —
+    a link out of the vault names no note in the graph, so it is reported ``missing`` like any other
+    target that is not there.
+    """
+    combined = PurePosixPath(source_rel_path).parent / target
+    normalized = posixpath.normpath(str(combined))
+    # normpath leaves leading "..", which is the only way to express "above the root".
+    if normalized == ".." or normalized.startswith("../"):
+        return None
+    return normalized
+
+
 def _warn_if_unread_syntax_dominates(docs: list[Document], extracted: int) -> None:
     """Warn once when the vault's links are mostly in a syntax graphmark does not read.
 
@@ -591,8 +623,24 @@ class VaultGraph:
         # is reported rather than absent — "0 alias-resolved" is a finding, not a non-event.
         link_counts: dict[str, int] = dict.fromkeys(DIAGNOSIS_REASONS, 0)
         alias_resolved = 0
+        # Which syntaxes to read. Composed rather than swapped, because the two need different
+        # pre-processing: a wikilink display is a *name*, a markdown target is a *path relative to
+        # the linking note*, and only the latter can be normalized once the source note is known.
+        read_wikilinks = config.link_syntax in ("wikilink", "both")
+        read_markdown = config.link_syntax in ("markdown", "both")
+        md_extractor = MarkdownLinkExtractor() if read_markdown else None
+
         for doc in docs:
-            for display in extractor.extract(doc.text):
+            displays = list(extractor.extract(doc.text)) if read_wikilinks else []
+            if md_extractor is not None:
+                for target in md_extractor.extract(doc.text):
+                    resolved = resolve_relative_target(target, doc.rel_path)
+                    # A target above the vault root names no note here. Kept in the stream as the
+                    # raw target so it is counted and reported `missing`, never silently dropped —
+                    # the conservation law holds for every syntax that is read.
+                    displays.append(resolved if resolved is not None else target)
+
+            for display in displays:
                 d = _diagnose(display, catalog, out_of_scope, resolver, aliases)
                 link_counts[d.reason] += 1
                 if d.via == "alias":
@@ -602,7 +650,8 @@ class VaultGraph:
                 elif d.target is not None and d.target != doc.rel_path:
                     out_links[doc.rel_path].add(d.target)
 
-        _warn_if_unread_syntax_dominates(docs, sum(link_counts.values()))
+        if not read_markdown:
+            _warn_if_unread_syntax_dominates(docs, sum(link_counts.values()))
 
         for src, targets in out_links.items():
             for dst in targets:

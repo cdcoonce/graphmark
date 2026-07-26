@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
+from urllib.parse import unquote
 
 from graphmark.model import Document
 
@@ -127,6 +128,27 @@ class WikilinkExtractor:
         text = _strip_fenced_blocks(text)
         text = _INLINE_CODE_RE.sub("", text)
         return _WIKILINK_RE.findall(text)
+
+
+class MarkdownLinkExtractor:
+    """Extracts ``[text](note.md)`` targets — the syntax non-Obsidian markdown vaults use.
+
+    Returns the **target**, not the display text, and without its anchor: unlike a wikilink, where
+    the visible text names the note, here the parenthesized path is the only thing that identifies
+    it. The display text is prose and never resolves to anything.
+
+    Percent-encoding is decoded, because markdown encodes spaces (``my%20note.md``) while the vault
+    stores them literally — a link no editor would consider broken.
+
+    The returned target is **relative to the linking note**, which callers must resolve; this class
+    cannot, since ``extract`` sees text and never learns which note it came from. See
+    ``VaultGraph.build``.
+    """
+
+    def extract(self, text: str) -> list[str]:
+        text = _strip_fenced_blocks(text)
+        text = _INLINE_CODE_RE.sub("", text)
+        return [unquote(target) for target in _MD_LINK_RE.findall(text)]
 
 
 def parse_document(path: Path, root: Path) -> Document:
