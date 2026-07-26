@@ -83,6 +83,32 @@ notice the tool is wrong about your vault.
 The same block appears in `check`'s report under `links`, as context for the verdict. It never
 changes the verdict.
 
+## Link syntax
+
+graphmark reads `[[wikilinks]]` by default. A vault written in markdown link syntax —
+`[text](note.md)`, what most non-Obsidian markdown gardens use — would otherwise produce an empty
+graph, so set `link_syntax`:
+
+```toml
+root = "."
+link_syntax = "both"   # "wikilink" (default) | "markdown" | "both"
+```
+
+The two resolve differently, and the difference is not cosmetic:
+
+- a **wikilink** names a note — `[[Note]]` finds `Note.md` anywhere in the vault, and two notes with
+  that name make it ambiguous;
+- a **markdown** link is a path **relative to the linking note** — `[x](../other/b.md)` means that
+  file and nothing else, so the same filename in two folders is not ambiguous at all.
+
+If your links are in a syntax graphmark is not reading, it says so on stderr rather than reporting a
+confidently empty graph:
+
+```console
+graphmark: warning: 39 wikilinks extracted but 10149 markdown-style [](.md) links found;
+graphmark only reads [[wikilinks]] — this graph is probably not your vault
+```
+
 ## `graphmark check` — vault health as a CI gate
 
 Declare thresholds in the config's `[check]` table, then run `graphmark check` as a build step. It

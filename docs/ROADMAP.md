@@ -237,8 +237,13 @@ Evaluated against the ecosystem and dropped for zero consumer pull; do not re-li
 - Betweenness centrality, Louvain/Leiden community detection.
 - CSV/GML/Cypher export; incremental/cached builds; any LLM "propose" pass.
 - MCP server or retrieval/search surface.
-- Alternate link-syntax adapters (Logseq, `[](.)` markdown) — the pluggable interfaces exist so
-  these _can_ be added on demand; do not build them speculatively.
+- Alternate link-syntax adapters (Logseq) — the pluggable interfaces exist so these _can_ be added
+  on demand; do not build them speculatively. **Markdown `[text](note.md)` links SHIPPED 2026-07-25**
+  (#152) — the second corpus run supplied the demand this clause reserved: a 1120-note vault with
+  10,149 of them and zero extracted edges. Config-gated (`link_syntax`), default unchanged,
+  `Resolver` untouched. Note what it did *not* do: blue-book resolves 5.8% by strict relative path
+  and 92.7% by basename-anywhere (it runs `mkdocs-autolinks`), and no fallback was slipped in —
+  silently trying a second rule when the first fails is the shape of #136. The dialect is #156.
 - Re-platforming (no swapping networkx; no async/parallel rewrites).
 - Performance work without a benchmark showing pain (the live consumer is a ~340-note vault). The
   known ceilings — O(L·N) path-suffix resolution, O(A·(V+E)) `siloed_notes`, per-metric graph
