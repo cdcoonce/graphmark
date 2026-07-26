@@ -1,6 +1,107 @@
 # CHANGELOG
 
 
+## v0.8.0 (2026-07-26)
+
+### Documentation
+
+- Document link_syntax and close the markdown non-goal
+  ([#158](https://github.com/cdcoonce/graphmark/pull/158),
+  [`5523fe3`](https://github.com/cdcoonce/graphmark/commit/5523fe31b548eb5e94001515ab8e8adb7c084849))
+
+* docs: document link_syntax and close the markdown non-goal
+
+README gains a Link syntax section — the config key, the warning, and the one thing a user must
+  understand: a wikilink NAMES a note (ambiguous when two share it) while a markdown link is a PATH
+  RELATIVE TO THE LINKING NOTE (never ambiguous for the same reason). Different resolution regimes,
+  not two spellings.
+
+Roadmap's non-goal narrowed to Logseq, recording that #152 was the "on demand" trigger the clause
+  reserved — and recording what it did not do: no basename fallback, because silently trying a
+  second rule when the first fails is the shape of #136. The dialect question is #156 with its
+  measurement.
+
+* fix(test): a console block's output is not a command
+
+The README-example extractor treated every line starting with "graphmark " as an invocation,
+  including output. Adding the link-syntax section wrapped the #151 warning onto a second line
+  beginning "graphmark only reads ..." — collected as a command and run.
+
+In a `console` block, `$ ` marks input and everything else is output, so the prefix is now required
+  there; `bash` blocks keep bare lines. Caught by the suite it belongs to, on its author's own
+  input.
+
+- Second corpus run — the null result and the extractor blind spot
+  ([#153](https://github.com/cdcoonce/graphmark/pull/153),
+  [`475b111`](https://github.com/cdcoonce/graphmark/commit/475b1112767bb9ca92d82cb0d391bf20543759c4))
+
+Repeated the corpus study after #123/#136/#137/#138/#139 shipped, to ask whether those fixes move
+  any real number and whether there is demand for the link-syntax work the roadmap defers. Six
+  vaults; two overlap the first run.
+
+The five fixes moved NOTHING — arkalim and kepano reproduce the first run's percentages to the
+  decimal. Recorded rather than buried: correctness-by-inspection has outrun what this corpus can
+  corroborate.
+
+The finding that was not theoretical: lyz-code/blue-book, 1120 notes, carries 11,198 markdown-style
+  [text](note.md) links (99% targeting a real note) and extracts to ZERO edges. Every note an
+  orphan, and `check` looks nearly healthy because those links were never extracted and so are not
+  unresolved.
+
+That is a third named limit of the Track F thesis: the conservation law sums over what the EXTRACTOR
+  produced, so a syntax it does not know is invisible to it by construction. The accounting is
+  auditable only within the universe the extractor defines. Filed as #151 (warn) and #152 (the
+  markdown-syntax decision).
+
+### Features
+
+- Read markdown-style [text](note.md) links, config-gated (#152)
+  ([#155](https://github.com/cdcoonce/graphmark/pull/155),
+  [`6716a38`](https://github.com/cdcoonce/graphmark/commit/6716a3845b15665190f03f1bce3605a2927322e2))
+
+The roadmap reserved alternate link-syntax adapters for "on demand"; the second corpus run supplied
+  the demand — lyz-code/blue-book, 1120 notes, 10,149 markdown-style links, zero extracted edges.
+
+Four decisions, all reversible in config:
+
+1. `link_syntax = "wikilink" | "markdown" | "both"`, defaulting to "wikilink", so every existing
+  vault, every frozen fixture and the reference vault stay byte-identical. An unknown value fails
+  loudly — a typo would otherwise produce an empty graph, the exact failure #151 exists to surface.
+  2. Resolution is RELATIVE TO THE LINKING NOTE, which is genuinely new: a markdown target is a
+  path, not a name. Rather than change the `Resolver` protocol — which never receives the source
+  note, and which the roadmap forbids redesigning — the target is normalized into a vault-relative
+  path before diagnosis, where the existing path branch resolves it exactly. 3. No new frozen
+  fixture: the oracle is wikilink-only and regenerating it is a human's call (Track B). Hand-written
+  assertions instead. 4. A target escaping the vault root is `missing` — not resolved, not an error.
+
+Relative is default markdown semantics (CommonMark, mkdocs, GitHub) and NOT the wikilink rule.
+  blue-book resolves 5.8% that way against 92.7% by basename-anywhere, because it runs the
+  mkdocs-autolinks plugin. That dialect is a separate decision, not a fallback slipped in here —
+  silently trying a second rule when the first fails is how a link resolves to the wrong note.
+
+The #151 warning is suppressed once markdown links are actually read.
+
+- **graph**: Warn when the vault's links are in a syntax graphmark cannot read (#151)
+  ([#154](https://github.com/cdcoonce/graphmark/pull/154),
+  [`d94ae63`](https://github.com/cdcoonce/graphmark/commit/d94ae63e7a789fabdb420423eaeaee8e771eb2a7))
+
+graphmark reported a confidently EMPTY graph for a densely linked vault, with nothing to say it had
+  seen none of the links. Measured on lyz-code/blue-book: 1120 notes, 11,198 markdown-style
+  [text](note.md) links (99% targeting a note that exists), 0 extracted edges. Every note an orphan,
+  no clusters, no hubs, uniform PageRank — and `check` looks nearly healthy, because links that were
+  never extracted are not `unresolved`.
+
+The conservation law from #124 cannot catch this: it sums over what the EXTRACTOR produced, so a
+  syntax the extractor does not know sits outside the universe being counted. The buckets balance
+  perfectly at 39 while 11,198 links go unseen.
+
+The test is relational, not calibrated — it fires only when the unread syntax strictly outnumbers
+  the read one. No threshold to tune, no false-positive mode, and the reference vault's
+  17-against-6226 can never trip it. Same discipline as #133's assertion.
+
+Warning only: stderr, one line, and it touches no count, no metric and no verdict.
+
+
 ## v0.7.2 (2026-07-25)
 
 ### Bug Fixes
