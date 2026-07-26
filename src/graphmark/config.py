@@ -13,7 +13,7 @@ from pathlib import Path
 
 #: Every value ``VaultConfig.link_syntax`` accepts. A consumer may switch on these, so the set is
 #: part of the config contract.
-LINK_SYNTAXES = frozenset({"wikilink", "markdown", "both"})
+LINK_SYNTAXES = frozenset({"wikilink", "markdown", "both", "markdown-autolinks"})
 
 
 @dataclass(frozen=True)
@@ -55,7 +55,10 @@ class VaultConfig:
     #: what every frozen fixture encodes, so the default keeps existing behavior byte-identical.
     #: ``"markdown"`` reads ``[text](note.md)``, the syntax non-Obsidian markdown vaults use — added
     #: on demand after a corpus vault turned out to have 11,198 of them and zero extracted edges.
-    #: ``"both"`` reads each, which is what Obsidian itself accepts.
+    #: ``"both"`` reads each, which is what Obsidian itself accepts. ``"markdown-autolinks"`` is
+    #: ``"markdown"`` with the widely-used mkdocs plugin's rule for **bare** targets: a filename
+    #: with no ``/`` names a note anywhere in the tree rather than a sibling file. Stated by the
+    #: vault owner, never guessed — see the note on ``_resolve_markdown_target``.
     link_syntax: str = "wikilink"
     check: CheckPolicy = field(default_factory=CheckPolicy)
 

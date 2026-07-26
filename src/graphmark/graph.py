@@ -533,8 +533,20 @@ def diagnose(graph: VaultGraph, display: str, *, suggest: int = 0) -> LinkDiagno
     return diagnosis
 
 
-def resolve_relative_target(target: str, source_rel_path: str) -> str | None:
-    """Turn a markdown link's relative target into a vault-relative path, or ``None``.
+def resolve_markdown_target(
+    target: str, source_rel_path: str, *, autolinks: bool = False
+) -> str | None:
+    """Turn a markdown link's target into something the resolver can match, or ``None``.
+
+    With ``autolinks``, a **bare** target — a filename with no ``/`` — is handed through unchanged
+    so the ordinary name-based rule finds it anywhere in the tree. That is the `mkdocs-autolinks`
+    plugin's behavior, and it is **opt-in rather than a fallback**: trying a second rule when the
+    first fails is the shape of #136, where a quiet extra rule produced an edge to a note the link
+    did not name. A target that *is* path-qualified keeps the relative rule even in this mode, so
+    a wrong qualified path is never rescued by a filename match elsewhere.
+
+    Measured on `lyz-code/blue-book`, which runs the plugin: 5.8% of its links resolve strictly,
+    92.7% by name, 1.5% by neither — so a fallback would not even have been complete.
 
     A markdown target is a **path**, not a name: ``[x](../other/b.md)`` means "the file at that
     location relative to me". That is the first resolution rule in this package that depends on
@@ -552,10 +564,13 @@ def resolve_relative_target(target: str, source_rel_path: str) -> str | None:
     is a separate decision, not a fallback to slip in here — silently trying a second rule when the
     first fails is how a link resolves to the wrong note.
 
-    ``None`` for a target that escapes the vault root. That is not an error and not a resolution —
+    Without ``autolinks``, or for any target containing ``/``: ``None`` when the target escapes the
+    vault root. That is not an error and not a resolution —
     a link out of the vault names no note in the graph, so it is reported ``missing`` like any other
     target that is not there.
     """
+    if autolinks and "/" not in target:
+        return target
     combined = PurePosixPath(source_rel_path).parent / target
     normalized = posixpath.normpath(str(combined))
     # normpath leaves leading "..", which is the only way to express "above the root".
@@ -695,14 +710,15 @@ class VaultGraph:
         # pre-processing: a wikilink display is a *name*, a markdown target is a *path relative to
         # the linking note*, and only the latter can be normalized once the source note is known.
         read_wikilinks = config.link_syntax in ("wikilink", "both")
-        read_markdown = config.link_syntax in ("markdown", "both")
+        read_markdown = config.link_syntax in ("markdown", "both", "markdown-autolinks")
+        autolinks = config.link_syntax == "markdown-autolinks"
         md_extractor = MarkdownLinkExtractor() if read_markdown else None
 
         for doc in docs:
             displays = list(extractor.extract(doc.text)) if read_wikilinks else []
             if md_extractor is not None:
                 for target in md_extractor.extract(doc.text):
-                    resolved = resolve_relative_target(target, doc.rel_path)
+                    resolved = resolve_markdown_target(target, doc.rel_path, autolinks=autolinks)
                     # A target above the vault root names no note here. Kept in the stream as the
                     # raw target so it is counted and reported `missing`, never silently dropped —
                     # the conservation law holds for every syntax that is read.

@@ -243,7 +243,7 @@ Evaluated against the ecosystem and dropped for zero consumer pull; do not re-li
   10,149 of them and zero extracted edges. Config-gated (`link_syntax`), default unchanged,
   `Resolver` untouched. Note what it did *not* do: blue-book resolves 5.8% by strict relative path
   and 92.7% by basename-anywhere (it runs `mkdocs-autolinks`), and no fallback was slipped in —
-  silently trying a second rule when the first fails is the shape of #136. The dialect is #156.
+  silently trying a second rule when the first fails is the shape of #136. The dialect shipped too (#156), as an explicit fourth value rather than a fallback: blue-book goes from 5.8% to **98.5%** resolved, 430 to 4878 edges, 790 to 106 orphans, with ambiguity still refused at 0.
 - Re-platforming (no swapping networkx; no async/parallel rewrites).
 - Performance work without a benchmark showing pain (the live consumer is a ~340-note vault). The
   known ceilings — O(L·N) path-suffix resolution, O(A·(V+E)) `siloed_notes`, per-metric graph
