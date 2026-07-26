@@ -144,12 +144,7 @@ def candidates_for(display: str, catalog: dict[str, list[str]]) -> list[str]:
         return []
     if "/" in target:
         suffix = _fold_case(target) + ".md"
-        return sorted(
-            path
-            for paths in catalog.values()
-            for path in paths
-            if _matches_path_suffix(path, suffix)
-        )
+        return sorted(_suffix_matches(suffix, catalog, _CANDIDATE_INDEX))
     return list(catalog.get(_normalize(target), ()))
 
 
@@ -217,25 +212,74 @@ def build_catalog(docs: list[Document]) -> dict[str, list[str]]:
     return catalog
 
 
+class _FilenameIndex:
+    """Catalog paths bucketed by folded filename, so a path-qualified link scans a bucket.
+
+    A legal suffix match must consume whole path components (see ``_matches_path_suffix``), so a
+    candidate's **last** component always equals the display's last component plus ``.md``.
+    Bucketing by that filename is therefore *exactly* equivalent to scanning every path — same
+    matches, same order — while turning an O(N) sweep into a dict lookup over a bucket that is
+    almost always one entry deep.
+
+    This mattered little while path-qualified links were rare: most wikilink displays are bare names
+    hitting the catalog dict directly, which is why the ``O(L·N)`` ceiling was documented and
+    accepted. #152 changed which branch is hot — every markdown link is path-qualified by
+    construction — and a 1120-note vault with 10,149 of them took 2.9 s against 0.3 s for the same
+    vault read as wikilinks.
+
+    Keyed by catalog identity, which is safe because a catalog is invariant for a whole
+    ``VaultGraph.build()``. Each catalog is **held**, not just its ``id()``: without a reference the
+    dict could be freed and a new one allocated at the same address, and the stale index would then
+    answer for it.
+
+    Several slots, not one, and that is load-bearing rather than defensive. ``_diagnose`` consults
+    two different mappings for the same display — the in-scope ``catalog`` and the ``out_of_scope``
+    one — so a single slot alternates between them and misses *every* time. Measured: a single-slot
+    version rebuilt the index 29,265 times for 10,149 links and was no faster than the scan it
+    replaced. The cap keeps this from growing without bound if a caller cycles through catalogs.
+    """
+
+    #: Enough for the two mappings a build alternates between, with room to spare. Small on purpose:
+    #: this holds catalogs alive, so it must not become an unbounded retainer.
+    _MAX_SLOTS = 4
+
+    def __init__(self) -> None:
+        # Insertion-ordered, so the oldest entry is the one evicted.
+        self._slots: dict[int, tuple[dict[str, list[str]], dict[str, list[str]]]] = {}
+
+    def for_catalog(self, catalog: dict[str, list[str]]) -> dict[str, list[str]]:
+        cached = self._slots.get(id(catalog))
+        if cached is not None and cached[0] is catalog:
+            return cached[1]
+
+        buckets: dict[str, list[str]] = {}
+        for paths in catalog.values():
+            for path in paths:
+                buckets.setdefault(_fold_case(path.rsplit("/", 1)[-1]), []).append(path)
+
+        if len(self._slots) >= self._MAX_SLOTS:
+            del self._slots[next(iter(self._slots))]
+        self._slots[id(catalog)] = (catalog, buckets)
+        return buckets
+
+
+def _suffix_matches(suffix: str, catalog: dict[str, list[str]], index: _FilenameIndex) -> list[str]:
+    """Every rel_path that ``suffix`` (a folded ``folder/note.md``) names, in flatten order."""
+    bucket = index.for_catalog(catalog).get(suffix.rsplit("/", 1)[-1], ())
+    return [path for path in bucket if _matches_path_suffix(path, suffix)]
+
+
+#: Shared by ``candidates_for``, which takes a catalog rather than a resolver and so cannot reach
+#: the resolver's own index. One index per process is enough — both callers see the same catalog
+#: object for the length of a build, and a different catalog simply re-keys it.
+_CANDIDATE_INDEX = _FilenameIndex()
+
+
 class NormalizeResolver:
     """Resolves wikilink displays via normalized basename, with path-suffix fallback."""
 
     def __init__(self) -> None:
-        # Cache the flattened path list per catalog identity. catalog is invariant for a whole
-        # VaultGraph.build(), so folder-style links reuse one flatten instead of rebuilding it
-        # on every call. Keyed by id() and single-slot: a new catalog evicts the previous.
-        self._flat_cache_id: int | None = None
-        self._flat_cache: list[str] | None = None
-
-    @staticmethod
-    def _compute_flat(catalog: dict[str, list[str]]) -> list[str]:
-        return [p for paths in catalog.values() for p in paths]
-
-    def _flatten_paths(self, catalog: dict[str, list[str]]) -> list[str]:
-        if self._flat_cache_id != id(catalog) or self._flat_cache is None:
-            self._flat_cache = self._compute_flat(catalog)
-            self._flat_cache_id = id(catalog)
-        return self._flat_cache
+        self._index = _FilenameIndex()
 
     def resolve(self, display: str, catalog: dict[str, list[str]]) -> str | None:
         # Alias ("Note|alias"), anchor ("Note#Section") and an explicit ".md" extension all name
@@ -244,10 +288,11 @@ class NormalizeResolver:
         display = _strip_display(display)
 
         if "/" in display:
-            # Path-suffix resolution: find unique rel_path ending with "display.md"
+            # Path-suffix resolution: find unique rel_path ending with "display.md". Note that an
+            # exact whole-path hit cannot short-circuit — "work/Tasks" names both "work/Tasks.md"
+            # and "a/work/Tasks.md", and the honest answer there is to decline.
             suffix = _fold_case(display) + ".md"
-            all_paths = self._flatten_paths(catalog)
-            matches = [p for p in all_paths if _matches_path_suffix(p, suffix)]
+            matches = _suffix_matches(suffix, catalog, self._index)
             return matches[0] if len(matches) == 1 else None
 
         # Bare-link resolution: normalize and look up in catalog
