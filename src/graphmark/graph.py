@@ -110,22 +110,36 @@ def _targets_non_note_file(display: str) -> bool:
     return bool(match) and match.group(0).lower() != ".md"
 
 
-def _matches_path_suffix(rel_path: str, suffix: str) -> bool:
-    """True when ``rel_path`` ends with ``suffix`` **on a path-component boundary**.
+def _path_components(name: str) -> tuple[str, ...]:
+    """A path split on ``/``, each component through ``_normalize``, ``.md`` dropped.
 
-    ``suffix`` is a lowercased ``folder/note.md``. A raw ``str.endswith`` is not enough: it accepts
-    ``homework/Tasks.md`` for ``[[work/Tasks]]``, because nothing requires the character before the
-    match to be a separator. That produced an edge to the wrong note — silently, since the link then
-    counts as ``resolved`` — and, when the real folder also existed, a spurious second match that
-    made the resolver decline a correct link.
+    This is what makes path-qualified links normalize like bare ones. They used to fold only case
+    and Unicode form, so ``[[Q1 - Review]]`` found ``Q1 — Review.md`` while
+    ``[[notes/Q1 - Review]]`` did not — the same title reachable or not depending on whether the
+    writer happened to qualify it with a folder.
 
-    The match is legal only when it consumes the whole rel_path or is preceded by ``/``.
+    Components are normalized **individually** and the separator is never one of them, which is what
+    keeps ``/`` structural: ``[[a/b]]`` yields ``("a", "b")`` and can never reach ``a-b.md``, whose
+    single component is ``"a b"``. That distinction is the whole reason this is a tuple rather than
+    a normalized string.
+
+    A component that normalizes to empty — a trailing slash, or pure punctuation — is kept as
+    ``""``. No real path component ever normalizes to empty, so such a display matches nothing,
+    which is the conservative answer.
     """
-    lowered = _fold_case(rel_path)
-    if not lowered.endswith(suffix):
-        return False
-    rest = len(lowered) - len(suffix)
-    return rest == 0 or lowered[rest - 1] == "/"
+    name = name[: -len(".md")] if name.lower().endswith(".md") else name
+    return tuple(_normalize(part) for part in name.split("/"))
+
+
+def _names_path(candidate: tuple[str, ...], display: tuple[str, ...]) -> bool:
+    """True when ``display``'s components are a suffix of ``candidate``'s.
+
+    Subsumes the boundary rule #136 added: a suffix over *lists* cannot match mid-component, so
+    ``[[work/Tasks]]`` cannot reach ``homework/Tasks.md`` — ``("homework", "tasks")`` does not end
+    with ``("work", "tasks")``. The string-suffix version accepted it, silently producing an edge
+    to the wrong note.
+    """
+    return bool(display) and "" not in display and candidate[-len(display) :] == display
 
 
 def candidates_for(display: str, catalog: dict[str, list[str]]) -> list[str]:
@@ -143,8 +157,7 @@ def candidates_for(display: str, catalog: dict[str, list[str]]) -> list[str]:
     if not target:
         return []
     if "/" in target:
-        suffix = _fold_case(target) + ".md"
-        return sorted(_suffix_matches(suffix, catalog, _CANDIDATE_INDEX))
+        return sorted(_path_matches(target, catalog, _CANDIDATE_INDEX))
     return list(catalog.get(_normalize(target), ()))
 
 
@@ -212,14 +225,21 @@ def build_catalog(docs: list[Document]) -> dict[str, list[str]]:
     return catalog
 
 
-class _FilenameIndex:
-    """Catalog paths bucketed by folded filename, so a path-qualified link scans a bucket.
+#: A normalized final component → the paths ending with it, each paired with its precomputed
+#: components. Precomputing means the per-component normalization runs once per note, not per link.
+_Buckets = dict[str, list[tuple[str, tuple[str, ...]]]]
 
-    A legal suffix match must consume whole path components (see ``_matches_path_suffix``), so a
-    candidate's **last** component always equals the display's last component plus ``.md``.
-    Bucketing by that filename is therefore *exactly* equivalent to scanning every path — same
-    matches, same order — while turning an O(N) sweep into a dict lookup over a bucket that is
-    almost always one entry deep.
+
+class _FilenameIndex:
+    """Catalog paths bucketed by normalized final component, so a path link scans a bucket.
+
+    A match requires the display's components to be a suffix of the candidate's
+    (``_names_path``), so a candidate's **last** component always equals the display's last.
+    Bucketing by it is therefore *exactly* equivalent to scanning every path — same matches, same
+    order — while turning an O(N) sweep into a dict lookup over a bucket almost always one deep.
+
+    Components are cached alongside each path, so the per-component normalization happens once per
+    note rather than once per link.
 
     This mattered little while path-qualified links were rare: most wikilink displays are bare names
     hitting the catalog dict directly, which is why the ``O(L·N)`` ceiling was documented and
@@ -245,17 +265,18 @@ class _FilenameIndex:
 
     def __init__(self) -> None:
         # Insertion-ordered, so the oldest entry is the one evicted.
-        self._slots: dict[int, tuple[dict[str, list[str]], dict[str, list[str]]]] = {}
+        self._slots: dict[int, tuple[dict[str, list[str]], _Buckets]] = {}
 
-    def for_catalog(self, catalog: dict[str, list[str]]) -> dict[str, list[str]]:
+    def for_catalog(self, catalog: dict[str, list[str]]) -> _Buckets:
         cached = self._slots.get(id(catalog))
         if cached is not None and cached[0] is catalog:
             return cached[1]
 
-        buckets: dict[str, list[str]] = {}
+        buckets: _Buckets = {}
         for paths in catalog.values():
             for path in paths:
-                buckets.setdefault(_fold_case(path.rsplit("/", 1)[-1]), []).append(path)
+                components = _path_components(path)
+                buckets.setdefault(components[-1], []).append((path, components))
 
         if len(self._slots) >= self._MAX_SLOTS:
             del self._slots[next(iter(self._slots))]
@@ -263,10 +284,13 @@ class _FilenameIndex:
         return buckets
 
 
-def _suffix_matches(suffix: str, catalog: dict[str, list[str]], index: _FilenameIndex) -> list[str]:
-    """Every rel_path that ``suffix`` (a folded ``folder/note.md``) names, in flatten order."""
-    bucket = index.for_catalog(catalog).get(suffix.rsplit("/", 1)[-1], ())
-    return [path for path in bucket if _matches_path_suffix(path, suffix)]
+def _path_matches(target: str, catalog: dict[str, list[str]], index: _FilenameIndex) -> list[str]:
+    """Every rel_path that a path-qualified ``target`` names, in catalog order."""
+    display = _path_components(target)
+    if not display or "" in display:
+        return []
+    bucket = index.for_catalog(catalog).get(display[-1], ())
+    return [path for path, components in bucket if _names_path(components, display)]
 
 
 #: Shared by ``candidates_for``, which takes a catalog rather than a resolver and so cannot reach
@@ -291,8 +315,7 @@ class NormalizeResolver:
             # Path-suffix resolution: find unique rel_path ending with "display.md". Note that an
             # exact whole-path hit cannot short-circuit — "work/Tasks" names both "work/Tasks.md"
             # and "a/work/Tasks.md", and the honest answer there is to decline.
-            suffix = _fold_case(display) + ".md"
-            matches = _suffix_matches(suffix, catalog, self._index)
+            matches = _path_matches(display, catalog, self._index)
             return matches[0] if len(matches) == 1 else None
 
         # Bare-link resolution: normalize and look up in catalog
@@ -510,8 +533,20 @@ def diagnose(graph: VaultGraph, display: str, *, suggest: int = 0) -> LinkDiagno
     return diagnosis
 
 
-def resolve_relative_target(target: str, source_rel_path: str) -> str | None:
-    """Turn a markdown link's relative target into a vault-relative path, or ``None``.
+def resolve_markdown_target(
+    target: str, source_rel_path: str, *, autolinks: bool = False
+) -> str | None:
+    """Turn a markdown link's target into something the resolver can match, or ``None``.
+
+    With ``autolinks``, a **bare** target — a filename with no ``/`` — is handed through unchanged
+    so the ordinary name-based rule finds it anywhere in the tree. That is the `mkdocs-autolinks`
+    plugin's behavior, and it is **opt-in rather than a fallback**: trying a second rule when the
+    first fails is the shape of #136, where a quiet extra rule produced an edge to a note the link
+    did not name. A target that *is* path-qualified keeps the relative rule even in this mode, so
+    a wrong qualified path is never rescued by a filename match elsewhere.
+
+    Measured on `lyz-code/blue-book`, which runs the plugin: 5.8% of its links resolve strictly,
+    92.7% by name, 1.5% by neither — so a fallback would not even have been complete.
 
     A markdown target is a **path**, not a name: ``[x](../other/b.md)`` means "the file at that
     location relative to me". That is the first resolution rule in this package that depends on
@@ -529,10 +564,13 @@ def resolve_relative_target(target: str, source_rel_path: str) -> str | None:
     is a separate decision, not a fallback to slip in here — silently trying a second rule when the
     first fails is how a link resolves to the wrong note.
 
-    ``None`` for a target that escapes the vault root. That is not an error and not a resolution —
+    Without ``autolinks``, or for any target containing ``/``: ``None`` when the target escapes the
+    vault root. That is not an error and not a resolution —
     a link out of the vault names no note in the graph, so it is reported ``missing`` like any other
     target that is not there.
     """
+    if autolinks and "/" not in target:
+        return target
     combined = PurePosixPath(source_rel_path).parent / target
     normalized = posixpath.normpath(str(combined))
     # normpath leaves leading "..", which is the only way to express "above the root".
@@ -672,14 +710,15 @@ class VaultGraph:
         # pre-processing: a wikilink display is a *name*, a markdown target is a *path relative to
         # the linking note*, and only the latter can be normalized once the source note is known.
         read_wikilinks = config.link_syntax in ("wikilink", "both")
-        read_markdown = config.link_syntax in ("markdown", "both")
+        read_markdown = config.link_syntax in ("markdown", "both", "markdown-autolinks")
+        autolinks = config.link_syntax == "markdown-autolinks"
         md_extractor = MarkdownLinkExtractor() if read_markdown else None
 
         for doc in docs:
             displays = list(extractor.extract(doc.text)) if read_wikilinks else []
             if md_extractor is not None:
                 for target in md_extractor.extract(doc.text):
-                    resolved = resolve_relative_target(target, doc.rel_path)
+                    resolved = resolve_markdown_target(target, doc.rel_path, autolinks=autolinks)
                     # A target above the vault root names no note here. Kept in the stream as the
                     # raw target so it is counted and reported `missing`, never silently dropped —
                     # the conservation law holds for every syntax that is read.

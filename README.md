@@ -91,7 +91,7 @@ graph, so set `link_syntax`:
 
 ```toml
 root = "."
-link_syntax = "both"   # "wikilink" (default) | "markdown" | "both"
+link_syntax = "both"   # "wikilink" (default) | "markdown" | "both" | "markdown-autolinks"
 ```
 
 The two resolve differently, and the difference is not cosmetic:
@@ -100,6 +100,12 @@ The two resolve differently, and the difference is not cosmetic:
   that name make it ambiguous;
 - a **markdown** link is a path **relative to the linking note** — `[x](../other/b.md)` means that
   file and nothing else, so the same filename in two folders is not ambiguous at all.
+
+`markdown-autolinks` is `markdown` with the [mkdocs-autolinks](https://github.com/zachhannum/mkdocs-autolinks-plugin)
+plugin's rule for **bare** targets: `[tdd](tdd.md)` names a note anywhere in the tree, not a sibling
+file. Set it only if your site actually runs that plugin — it is never applied as a fallback, because
+a second rule tried after the first fails is how a link ends up pointing at a note it does not name.
+A target that contains `/` keeps the relative rule in this mode too.
 
 If your links are in a syntax graphmark is not reading, it says so on stderr rather than reporting a
 confidently empty graph:
