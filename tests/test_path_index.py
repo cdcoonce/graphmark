@@ -31,16 +31,23 @@ def _build(root: Path, **kw) -> VaultGraph:
 
 
 def _scan_resolve(display: str, catalog: dict[str, list[str]]) -> list[str]:
-    """The pre-#157 behavior, written out: compare against every path, in flatten order.
+    """The unindexed behavior, written out: compare against every path, in catalog order.
 
-    Kept as an independent reference rather than by calling the implementation, so the equivalence
-    tests below compare two things instead of one thing with itself.
+    An independent reference rather than a call into the implementation, so the equivalence tests
+    below compare two things instead of one thing with itself. Restated for #146, which made the
+    comparison component-wise: a display names a path when its normalized components are a suffix of
+    the path's.
     """
-    from graphmark.graph import _fold_case, _matches_path_suffix, _strip_display
+    from graphmark.graph import _normalize, _strip_display
 
-    target = _strip_display(display)
-    suffix = _fold_case(target) + ".md"
-    return [p for paths in catalog.values() for p in paths if _matches_path_suffix(p, suffix)]
+    def components(name: str) -> list[str]:
+        name = name[:-3] if name.lower().endswith(".md") else name
+        return [_normalize(part) for part in name.split("/")]
+
+    want = components(_strip_display(display))
+    if not want or "" in want:
+        return []
+    return [p for paths in catalog.values() for p in paths if components(p)[-len(want) :] == want]
 
 
 class TestEquivalence:
