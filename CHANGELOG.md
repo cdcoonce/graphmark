@@ -1,6 +1,61 @@
 # CHANGELOG
 
 
+## v0.9.0 (2026-07-26)
+
+### Bug Fixes
+
+- **graph**: Normalize path-qualified links component-wise (#146)
+  ([#162](https://github.com/cdcoonce/graphmark/pull/162),
+  [`a6cc158`](https://github.com/cdcoonce/graphmark/commit/a6cc1587cdbcf28a6b5360e2bec627a8df8f20c1))
+
+Bare resolution went through `_normalize` — NFC, lowercase, punctuation and symbols folded — while
+  path resolution went through `_fold_case`, which folds only case and Unicode form. So `[[Q1 -
+  Review]]` found `Q1 — Review.md` but `[[notes/Q1 - Review]]` did not: the same title reachable or
+  not depending on whether the writer happened to qualify the link with a folder.
+
+Both branches now compare **path components**, each through the one normalizer: the display's
+  components must be a suffix of the candidate's. That subsumes #136's boundary rule rather than
+  restating it — a suffix over lists cannot match mid-component — while letting every punctuation
+  equivalence `_normalize` already absorbs work in both branches.
+
+The trap: `/` is structural. `[[a/b]]` must never reach `a-b.md`, even though `a/b` and `a-b`
+  normalize alike once a separator is folded. Components are normalized individually and the
+  separator is never one of them. Tested in both directions, and those tests passed BEFORE the
+  change — they are the guard, not the feature.
+
+The index now buckets by normalized final component and caches each path's components, so
+  per-component normalization runs once per note rather than once per link.
+
+Reference vault A/B'd on one snapshot: byte-identical (6230 resolved, 3725 edges, 0 unresolved).
+  blue-book markdown counts identical; build 267 -> 393 ms, still 7x better than the 2718 ms this
+  session started from.
+
+### Features
+
+- **graph**: Add the markdown-autolinks dialect (#156)
+  ([#163](https://github.com/cdcoonce/graphmark/pull/163),
+  [`5ccf527`](https://github.com/cdcoonce/graphmark/commit/5ccf527576037915bd12485d205f2c7bf63b1c7f))
+
+A markdown link is a relative path, but the widely-used mkdocs-autolinks plugin resolves a BARE
+  filename anywhere in the tree. blue-book runs it: 5.8% of its links resolve strictly, 92.7% by
+  name, 1.5% by neither.
+
+Added as an explicit fourth `link_syntax` value, NOT a fallback. Trying a second rule when the first
+  fails is the shape of #136 — a quiet extra rule producing an edge to a note the link does not name
+  — and the 1.5% that match neither dialect show a fallback would not even have been complete. The
+  vault owner states which renderer they use, exactly as they already state their scope.
+
+Only BARE targets take the plugin's rule; a target containing "/" keeps the relative rule in this
+  mode too, so a wrong qualified path is never rescued by a filename match elsewhere. Bare names go
+  through the existing catalog lookup, so ambiguity is refused exactly as it always was — no dialect
+  may invent a resolution.
+
+blue-book, markdown -> markdown-autolinks: resolved 591 (5.8%) -> 10,001 (98.5%), edges 430 -> 4878,
+  orphans 790 -> 106, ambiguous 0, missing 9558 -> 148. Also faster (356 -> 234 ms): a bare name
+  hits the catalog dict instead of the path index.
+
+
 ## v0.8.1 (2026-07-26)
 
 ### Performance Improvements
