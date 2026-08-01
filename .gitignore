@@ -13,8 +13,13 @@ venv/
 .afk/transcripts/
 .afk/worktrees/
 
-# Per-slice telemetry appended by `--cycle`/`--execute` on this repo. Tracking it wedges the
-# nightly: the cycle writes rows, nothing commits them, and the next preflight aborts on a
-# dirty tree. afk-agent-system ignores its own for the same reason; afk-cockpit reads the
-# working-tree file, not git, so ignoring it costs the dashboard nothing.
+# Run artifacts the driver writes into this repo on every `--cycle`/`--execute`. Tracking any
+# of them wedges the nightly: the run writes, nothing commits, and the next preflight aborts on
+# a dirty tree. afk-agent-system ignores its own for the same reason, and afk-cockpit reads the
+# working-tree files rather than git, so ignoring them costs the dashboard nothing.
+#
+# `docs/dev-cycle/.gitignore` already contains `*`; these entries are documentation, since a
+# tracked file overrides gitignore and it was the tracking that caused the wedge.
 docs/dev-cycle/telemetry.jsonl
+docs/dev-cycle/last-run.md
+docs/dev-cycle/quarantine-log.md
