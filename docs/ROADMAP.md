@@ -22,14 +22,17 @@ story** — the priority consumer is the owner's vault seam (`graph_cli.py`), no
 
 ## What's shipped (baseline — do not re-propose)
 
-- **The full engine, v0.6.0 on PyPI**: `parse.py` (wikilink extraction, code-span skipping,
+- **The full engine, v0.9.1 on PyPI**: `parse.py` (wikilink extraction, code-span skipping,
   frontmatter incl. block lists), `graph.py` (catalog + `NormalizeResolver` + `VaultGraph.build` +
   `unresolved` + `diagnose`/`LinkDiagnosis` + frontmatter aliases), `metrics.py` (stats, orphans,
   hubs, clusters, bridges, siloed_notes, neighborhood, pure-python pagerank, gaps), `check.py`
   (policy evaluation), `export.py` (JSON/DOT), `cli.py`, `config.py` (`VaultConfig` +
   `CheckPolicy` + `load_config`), and `dismiss.py` (content-hash weaklink dismissal store).
-  Tracks A, C, D and E are all closed — read their sections before proposing anything in those
+  Tracks A, C, D, E and F are all closed — read their sections before proposing anything in those
   areas.
+- **Link syntaxes beyond wikilinks** — markdown-style `[text](note.md)` and the mkdocs-autolinks
+  dialect, both config-gated on `link_syntax` with the default unchanged and `Resolver` untouched
+  (#152, #156). No silent fallback between rules.
 - **Six frozen differential fixtures** — simple, alt, scoped, selflink, gaps (+ out-of-graph),
   dismiss — plus live-vault parity diffs against the reference engine.
 - **`gaps()` with injected similarity** — graphmark owns the deterministic ranking/filtering
@@ -104,7 +107,7 @@ _Constraint:_ this is additive. Nothing here may change what resolves or what an
 **CLOSED at v0.6.0.** #110/#111/#112 shipped, and frontmatter aliases moved in-package (#119) —
 the last piece of the consumer's parallel stack. the-workshop#474 deletes the consumer side.
 
-### Track F — Auditable link accounting (the current epic)
+### Track F — Auditable link accounting (CLOSED at v0.9.1 — do not re-propose)
 
 _The problem is not any individual bug; it is how they get found._ Every correctness bug in this
 package's history was found the same way: a human reading link lists from **one** vault. Seven so
@@ -192,7 +195,7 @@ data they are theoretical, joining #123 there.
 
 The limit: `lyz-code/blue-book` (1120 notes) carries **11,198 markdown-style `[text](note.md)` links,
 99% of them targeting a real note**, and graphmark extracts **zero**. Every note an orphan, and
-`check` looks nearly healthy because those links were never extracted and so are not *unresolved*.
+`check` looks nearly healthy because those links were never extracted and so are not _unresolved_.
 The conservation law sums over what the **extractor** produced — so a link syntax the extractor does
 not know is invisible to it by construction. **The accounting is auditable only within the universe
 the extractor defines.** Filed as #151 (warn) and #152 (the markdown-syntax decision — the "on
@@ -207,6 +210,44 @@ is not this repo's game; more to the point, shipping a gate that fails other peo
 the tool's own accounting is unauditable is backwards ordering. Generality work (Windows paths,
 markdown-style `[text](note.md)` links for wikilink-disabled vaults, non-my-brain schemas) is real
 but is a feature list, not an epic — and this track is what will tell us which parts of it matter.
+
+**CLOSED at v0.9.1.** #124–#127, #133, #136–#139, #146, #151, #152, #156, #157 all shipped. What it
+carries forward, and what Track G exists to answer: (a) auditable accounting makes _mis-bucketing
+between_ buckets visible but never a wrong answer _inside_ one; (b) the accounting is auditable only
+within the universe the extractor defines; (c) every one of the last nine defects was found by a
+human running a corpus sweep by hand.
+
+### Track G — The corpus harness: third-party vaults as a standing oracle (the current epic)
+
+_Track F set the success measure — bugs found by machinery rather than by a human reading link lists
+— and then met it with a human running a shell._ The corpus study (`docs/corpus-study.md`) is the
+single most productive bug-finding method this package has ever had: two hand runs produced #136,
+#137, #138, #139, #146, #151, #152, #156 and #157. It is also entirely manual. Nine vaults cloned by
+hand at unrecorded commits, the corpus uncommitted, "the table is the artifact" — so nothing detects
+that a resolver change moved a third-party number, and re-deriving the table costs a day.
+
+The same study established the sharper problem: **the reference vault leaves 54% of the package
+unexercised**, including 26% of `graph.py`, because it now has zero broken links. `suggest_notes`,
+the `ambiguous` / `missing` / `out-of-scope-note` verdicts, `unresolved` recording and `diagnose()`
+are all dark. Third-party vaults sit at 1.8%–27% missing. The error paths are only reachable from
+someone else's vault, and the healthier the reference vault gets, the less of graphmark it validates.
+
+_Where we're going:_ **the corpus run becomes a machine.** Corpora pinned by commit SHA in a
+manifest; a deterministic per-vault report; the resulting distributions frozen as committed expected
+tables and diffed on every run, so a moved third-party number is a failing check rather than a
+paragraph someone might write. Third-party content is never committed — only the manifest and the
+expected tables. The harness must run offline against a warm cache, so the gate never depends on
+nine remotes being reachable.
+
+_Success measure:_ a defect that changes any third-party vault's bucket distribution cannot merge
+silently, and the corpus run reaches the error paths the reference vault cannot.
+
+_Constraint:_ this is additive and observational. Nothing in this track may change what resolves,
+what an edge is, or what any bucket means. A drift the harness reports is a question for a human,
+not a fixture to update.
+
+_Not in this track:_ choosing which new corpora to add and vetting their licenses is Track B
+(judgment); scheduled CI wiring touches the deny surface and stays hand-landed.
 
 ### Track B — Judgment the oracle can't cover (human-validated)
 
@@ -241,7 +282,7 @@ Evaluated against the ecosystem and dropped for zero consumer pull; do not re-li
   on demand; do not build them speculatively. **Markdown `[text](note.md)` links SHIPPED 2026-07-25**
   (#152) — the second corpus run supplied the demand this clause reserved: a 1120-note vault with
   10,149 of them and zero extracted edges. Config-gated (`link_syntax`), default unchanged,
-  `Resolver` untouched. Note what it did *not* do: blue-book resolves 5.8% by strict relative path
+  `Resolver` untouched. Note what it did _not_ do: blue-book resolves 5.8% by strict relative path
   and 92.7% by basename-anywhere (it runs `mkdocs-autolinks`), and no fallback was slipped in —
   silently trying a second rule when the first fails is the shape of #136. The dialect shipped too (#156), as an explicit fourth value rather than a fallback: blue-book goes from 5.8% to **98.5%** resolved, 430 to 4878 edges, 790 to 106 orphans, with ambiguity still refused at 0.
 - Re-platforming (no swapping networkx; no async/parallel rewrites).
