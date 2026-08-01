@@ -2,6 +2,32 @@
 
 _2026-07-25. Method and results, so the numbers below can be cited instead of re-derived._
 
+> **Superseded as the oracle (2026-08-01, Track G / #176).** The machine-generated reports under
+> `docs/corpus/expected/` are now the frozen distribution. This page is retained for the analysis
+> it carries — the reasoning in "What it established" is unchanged and still cited — but its
+> tables are a hand-run snapshot and are **not** what a report is diffed against.
+>
+> The two disagree, deliberately. This run excluded a hand-picked template/meta directory per
+> vault; `docs/corpus/manifest.toml` excludes only `.git` / `.obsidian` / `.github`, mechanically
+> and identically for every vault. That was the decision: a per-vault exclusion list has no
+> derivable criterion — three of the four directories are named for templates, CyanVoxel's
+> `99 - Meta` is not — so it can only be transcribed, which is exactly the human step Track G
+> exists to remove.
+>
+> **The gap is one vault.** Under manifest semantics archvault, BugBountyKnowledgeBase and
+> Obsidian-Vault-Template change note count only; their link distributions are identical. The
+> four other vaults are unaffected entirely. Only kepano-obsidian moves, because its `Templates/`
+> is 52 of its 103 notes:
+>
+> | kepano-obsidian                   | notes | links | resolved | missing | non-note-file |
+> | --------------------------------- | ----: | ----: | -------: | ------: | ------------: |
+> | this page (template dir excluded) |    51 |    54 |     5.6% |   20.4% |         74.1% |
+> | manifest semantics (the oracle)   |   103 |    75 |     4.0% |   14.7% |     **81.3%** |
+>
+> No conclusion below changes. The #101 evidence — kepano's vault being dominated by `.base`
+> links — gets _stronger_ at 81.3%. The 1.8%–27% missing range is set by ArchVault (24.3%) and
+> Obsidian-Vault-Structure (27.4%), neither of which moves; kepano shifts inward.
+
 ## Why
 
 graphmark has had exactly **one** real vault. Every correctness bug in its history was found by a
@@ -22,19 +48,25 @@ chosen for variety of size, domain and language rather than popularity. `graphma
 excluded. The corpus is third-party content and is **not** committed here; the table is the
 artifact.
 
+The template-directory exclusions were per-vault and are recorded here so this run stays
+reproducible: `Templates` for kepano-obsidian and ArchVault, `_templates` for
+BugBountyKnowledgeBase, and `99 - Meta` for Obsidian-Vault-Template. Exclusions match on any
+path component, not just the first (`graph.py`), so nested `.obsidian` directories were already
+covered. The Track G harness does **not** apply these — see the note at the top.
+
 ## Results
 
-| vault | notes | links | resolved | missing | non-note-file | intra-note |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| arkalim/obsidian-vault | 160 | 551 | 61.7% | 1.8% | 34.8% | 0% |
-| obsidian_vault_template_for_researcher | 83 | 295 | 58.3% | 2.4% | 39.3% | 0% |
-| kepano-obsidian | 51 | 54 | 5.6% | 20.4% | **74.1%** | 0% |
-| Obsidian-Vault-Structure | 25 | 106 | 58.5% | 27.4% | 14.2% | 0% |
-| ArchVault | 79 | 37 | 73.0% | 24.3% | 2.7% | 0% |
-| BugBountyKnowledgeBase | 9 | 4 | 75.0% | 25.0% | 0% | 0% |
-| dusk-obsidian-vault | 7 | 3 | 0% | 100% | 0% | 0% |
-| Obsidian-Vault-Template | 9 | 0 | — | — | — | — |
-| _the reference vault_ | _521_ | _6226_ | _99.1%_ | _**0%**_ | _0.3%_ | _0.6%_ |
+| vault                                  | notes |  links | resolved |  missing | non-note-file | intra-note |
+| -------------------------------------- | ----: | -----: | -------: | -------: | ------------: | ---------: |
+| arkalim/obsidian-vault                 |   160 |    551 |    61.7% |     1.8% |         34.8% |         0% |
+| obsidian_vault_template_for_researcher |    83 |    295 |    58.3% |     2.4% |         39.3% |         0% |
+| kepano-obsidian                        |    51 |     54 |     5.6% |    20.4% |     **74.1%** |         0% |
+| Obsidian-Vault-Structure               |    25 |    106 |    58.5% |    27.4% |         14.2% |         0% |
+| ArchVault                              |    79 |     37 |    73.0% |    24.3% |          2.7% |         0% |
+| BugBountyKnowledgeBase                 |     9 |      4 |    75.0% |    25.0% |            0% |         0% |
+| dusk-obsidian-vault                    |     7 |      3 |       0% |     100% |            0% |         0% |
+| Obsidian-Vault-Template                |     9 |      0 |        — |        — |             — |          — |
+| _the reference vault_                  | _521_ | _6226_ |  _99.1%_ | _**0%**_ |        _0.3%_ |     _0.6%_ |
 
 ## What it established
 
@@ -77,15 +109,15 @@ Repeated the same day, after #123/#136/#137/#138/#139 shipped, to answer two que
 could not: did those fixes move any real number, and is there demand for the link-syntax work the
 roadmap defers. Six vaults resolved (several URLs from the first run are dead); two overlap.
 
-| vault | notes | links | resolved | missing | non-note-file | md-style `.md` links | BOMs |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| arkalim/obsidian-vault | 160 | 551 | 61.7% | 1.8% | 34.8% | 0 | 0 |
-| kepano-obsidian | 51 | 54 | 5.6% | 20.4% | 74.1% | 0 | 0 |
-| jackyzha0/quartz | 113 | 411 | 92.0% | 1.9% | 3.9% | 0 | 0 |
-| bramses-highly-opinionated-vault | 59 | 78 | 65.4% | 11.5% | 3.8% | 0 | 0 |
-| DashboardPlusPlus | 34 | 29 | 100% | 0% | 0% | 0 | 0 |
-| **lyz-code/blue-book** | **1120** | **39** | **0%** | **97.4%** | 2.6% | **11,198** | 0 |
-| _the reference vault_ | _531_ | _6226_ | _99.1%_ | _0%_ | _0.3%_ | _17_ | _0_ |
+| vault                            |    notes |  links | resolved |   missing | non-note-file | md-style `.md` links | BOMs |
+| -------------------------------- | -------: | -----: | -------: | --------: | ------------: | -------------------: | ---: |
+| arkalim/obsidian-vault           |      160 |    551 |    61.7% |      1.8% |         34.8% |                    0 |    0 |
+| kepano-obsidian                  |       51 |     54 |     5.6% |     20.4% |         74.1% |                    0 |    0 |
+| jackyzha0/quartz                 |      113 |    411 |    92.0% |      1.9% |          3.9% |                    0 |    0 |
+| bramses-highly-opinionated-vault |       59 |     78 |    65.4% |     11.5% |          3.8% |                    0 |    0 |
+| DashboardPlusPlus                |       34 |     29 |     100% |        0% |            0% |                    0 |    0 |
+| **lyz-code/blue-book**           | **1120** | **39** |   **0%** | **97.4%** |          2.6% |           **11,198** |    0 |
+| _the reference vault_            |    _531_ | _6226_ |  _99.1%_ |      _0%_ |        _0.3%_ |                 _17_ |  _0_ |
 
 ### The null result, stated plainly
 
@@ -105,7 +137,7 @@ corpus can corroborate, and further defect-hunting of that kind has diminishing 
 (99%) targeting a note that exists** — extracts to **zero** edges. Every note an orphan; no clusters,
 no hubs, no bridges; uniform PageRank. And `check` looks nearly healthy, because
 `max_unresolved_links` sees 38: the 11,198 links it cannot see were never extracted, so they are not
-*unresolved*.
+_unresolved_.
 
 This is a named limit of the Track F thesis and belongs beside the other one. The conservation law
 added in #124 sums over what the **extractor** produced, so a link syntax the extractor does not know
