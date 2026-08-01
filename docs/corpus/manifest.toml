@@ -1,0 +1,61 @@
+# Corpus manifest — pins the third-party vaults from docs/corpus-study.md's results table.
+#
+# Every clone_url, sha and license here was resolved by a human against the live remotes on
+# 2026-08-01 (`git ls-remote <url> HEAD`). Transcribed verbatim from GitHub issue #173 — do not
+# add, remove, substitute or re-derive an entry; choosing corpus vaults is Track B.
+
+[[vault]]
+name = "arkalim-obsidian-vault"
+clone_url = "https://github.com/arkalim/obsidian-vault"
+sha = "491bd8e0992f32ec976c50124a05a65d653d1eac"
+license = "unknown"
+excluded_dirs = [".git", ".obsidian", ".github"]
+
+[[vault]]
+name = "obsidian-vault-template-for-researcher"
+clone_url = "https://github.com/sheldonxxd/obsidian_vault_template_for_researcher"
+sha = "7d9d15d3b6c3990c0b756c68ed46b3657a616619"
+license = "GPL-3.0"
+excluded_dirs = [".git", ".obsidian", ".github"]
+
+[[vault]]
+name = "kepano-obsidian"
+clone_url = "https://github.com/kepano/kepano-obsidian"
+sha = "473697347a0eaac790a6596229c741b3915f3b77"
+license = "MIT"
+excluded_dirs = [".git", ".obsidian", ".github"]
+
+[[vault]]
+name = "obsidian-vault-structure"
+clone_url = "https://github.com/trustedsec/Obsidian-Vault-Structure"
+sha = "c408d4914a7bd98f1a5628e0067c84ab4b3a0a1a"
+license = "unknown"
+excluded_dirs = [".git", ".obsidian", ".github"]
+
+[[vault]]
+name = "archvault"
+clone_url = "https://github.com/futurearchitecture/ArchVault"
+sha = "fc749e16093a6a36fdfb9f7f53f0bcd7dc7d5580"
+license = "MIT"
+excluded_dirs = [".git", ".obsidian", ".github"]
+
+[[vault]]
+name = "bug-bounty-knowledge-base"
+clone_url = "https://github.com/InsiderPhD/BugBountyKnowledgeBase"
+sha = "40c4b94b3db3f7b5632ef4f064f099de8786ffee"
+license = "MIT"
+excluded_dirs = [".git", ".obsidian", ".github"]
+
+[[vault]]
+name = "dusk-obsidian-vault"
+clone_url = "https://github.com/DuskWasHere/dusk-obsidian-vault"
+sha = "69fd1e725e21557b9eb7d706ccaa0834288085cb"
+license = "MIT"
+excluded_dirs = [".git", ".obsidian", ".github"]
+
+[[vault]]
+name = "obsidian-vault-template"
+clone_url = "https://github.com/CyanVoxel/Obsidian-Vault-Template"
+sha = "9277193c6b5bc53f5e020fa2e947eda0be767dcf"
+license = "MIT"
+excluded_dirs = [".git", ".obsidian", ".github"]
