@@ -23,14 +23,23 @@ permission_mode = "acceptEdits"
 #    (cycle.py:311). This working copy must therefore sit on `dev`, not `main`. Leaving it on
 #    `main` wedges every nightly with "HEAD is 'main', not 'dev' — refusing to reset", which is
 #    exactly how the-workshop lost five consecutive runs.
-# 2. GitHub only auto-closes linked issues for commits reaching the DEFAULT branch, so a slice
-#    PR merged into `dev` does NOT close its issue. Whether the later `dev` → `main` promote
-#    closes it is UNVERIFIED here, and the only live datapoint says no: the-workshop runs this
-#    same posture and five shipped issues (#446, #455, #457, #458, #459) sat `afk:promoted`
-#    indefinitely until a human closed them. Since `Depends on #N` gating keys on closure, a
-#    stale label can stall the dependent queue on bookkeeping rather than on work — and a
-#    phantom-promoted backlog reads exactly like a blocked one. After each promote, check the
-#    issue's real state and close it by hand if needed; do not re-run the drain to unstick it.
+# 2. GitHub auto-closes a linked issue when its PR merges into the repo's DEFAULT branch. The
+#    predicate is the DEFAULT branch, not `trunk_branch` — and in THIS repo they are the same
+#    branch: `gh api repos/cdcoonce/graphmark --jq .default_branch` returns `dev`. So a slice
+#    PR merged into `dev` DOES close its issue, at slice-merge time, and `Depends on #N` gating
+#    unblocks there rather than at promote time. Verified 2026-08-01: #181 merged into `dev`
+#    and #173 closed COMPLETED in the same action, with no `main` promote in between.
+#    Do NOT generalize the-workshop's behavior onto this repo. It carries the same
+#    `trunk_branch = "dev"` but its default branch is `main`, so its dev-merges left five
+#    shipped issues (#446, #455, #457, #458, #459) sitting `afk:promoted` until a human closed
+#    them. The default-branch setting is what differs, not the trunk_branch posture.
+#    THE INVERSION TO WATCH: if graphmark's default branch is ever moved to `main`, this repo
+#    silently acquires that behavior — slices land, issues stay open, and a phantom-promoted
+#    backlog reads exactly like a blocked one. The tempting response is then the wrong one:
+#    check each shipped issue's real state and close by hand; do not re-run the drain.
+#    The local clone can lie about this. `refs/remotes/origin/HEAD` is written once at clone
+#    time and never refreshed, so `git branch -a` here may still print `origin/HEAD ->
+#    origin/main`. Ask the API, not the checkout.
 trunk_branch = "dev"
 
 # #1048: forwarded to the headless agent as `--allowedTools`. Load-bearing, not decoration.
