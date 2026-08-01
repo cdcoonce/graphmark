@@ -9,6 +9,10 @@ dist/
 venv/
 .DS_Store
 
+# Corpus vault checkouts populated by scripts/corpus/fetch.py — third-party content, pinned by
+# docs/corpus/manifest.toml and re-fetchable on demand, so it never belongs in this repo.
+.corpus-cache/
+
 # afk build artifacts (keep config.toml, ignore the noise)
 .afk/transcripts/
 .afk/worktrees/
