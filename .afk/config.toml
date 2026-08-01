@@ -10,6 +10,28 @@
 # `--extra dev` — a bare `uv run ruff` would not find them.
 test_command = "uv run --extra dev ruff check . && uv run --extra dev ruff format --check . && uv run --extra dev pytest -q"
 permission_mode = "acceptEdits"
+
+# #1048: forwarded to the headless agent as `--allowedTools`. Load-bearing, not decoration.
+# A slice runs in a fresh worktree, and Claude Code DISCARDS every `permissions.allow` entry
+# in a workspace it has not trusted — argv is the only grant channel that survives. Without
+# these, every Bash call parks on an approval prompt no one is present to answer, and the run
+# reports a blocked slice rather than a failing one. Measured here 2026-08-01: issue #173
+# parked after 2 attempts having been unable to run even `uv --version`, so the gate never
+# executed at all.
+#
+# Deliberately absent: anything that reaches the network (`git ls-remote`, `curl`, `gh`).
+# Egress is a security surface, and no slice in this repo needs it — work that requires a
+# remote gets its data transcribed into the issue body by a human instead.
+allowed_tools = [
+  "Bash(uv run --extra dev ruff:*)",
+  "Bash(uv run --extra dev pytest:*)",
+  "Bash(uv run --extra dev python:*)",
+  "Bash(uv run python:*)",
+  "Bash(uv --version:*)",
+  "Bash(uv pip list:*)",
+  "Bash(python3:*)",
+  "Bash(python:*)",
+]
 agent_prompt = """Implement the linked GitHub issue using test-driven development \
 (red-green-refactor). Assert behavior against the FROZEN fixtures in tests/fixtures/*/expected.json — \
 NEVER edit an expected.json to make a test pass; the oracle is the specification, and if you believe \
