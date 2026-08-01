@@ -11,6 +11,25 @@
 test_command = "uv run --extra dev ruff check . && uv run --extra dev ruff format --check . && uv run --extra dev pytest -q"
 permission_mode = "acceptEdits"
 
+# This repo's promotion policy is branch → PR into `dev` → promote `dev` → `main`; a feature
+# branch never lands on `main` directly. afk defaults `trunk_branch` to `main`, which made the
+# executor the one actor exempt from that policy: PR #181 was opened against `main` while every
+# human PR took two hops. afk#998 made it configurable, and this is the line that opts in — it
+# governs BOTH the branch a slice forks from and the branch its PR targets.
+#
+# TWO CONSEQUENCES, both load-bearing:
+#
+# 1. The `--cycle` preflight refuses to run unless local HEAD *is* trunk_branch
+#    (cycle.py:311). This working copy must therefore sit on `dev`, not `main`. Leaving it on
+#    `main` wedges every nightly with "HEAD is 'main', not 'dev' — refusing to reset", which is
+#    exactly how the-workshop lost five consecutive runs.
+# 2. GitHub only auto-closes linked issues for commits reaching the DEFAULT branch, so a slice
+#    PR merged into `dev` leaves its issue open until the `dev` → `main` promote carries the
+#    `Closes` clause across. Dependent slices (`Depends on #N`) therefore unblock at promote
+#    time, not at slice-merge time. That is the correct semantics here — a slice is not done
+#    until it is promoted — but it means an unpromoted `dev` stalls the queue behind it.
+trunk_branch = "dev"
+
 # #1048: forwarded to the headless agent as `--allowedTools`. Load-bearing, not decoration.
 # A slice runs in a fresh worktree, and Claude Code DISCARDS every `permissions.allow` entry
 # in a workspace it has not trusted — argv is the only grant channel that survives. Without
