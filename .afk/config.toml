@@ -24,10 +24,13 @@ permission_mode = "acceptEdits"
 #    `main` wedges every nightly with "HEAD is 'main', not 'dev' — refusing to reset", which is
 #    exactly how the-workshop lost five consecutive runs.
 # 2. GitHub only auto-closes linked issues for commits reaching the DEFAULT branch, so a slice
-#    PR merged into `dev` leaves its issue open until the `dev` → `main` promote carries the
-#    `Closes` clause across. Dependent slices (`Depends on #N`) therefore unblock at promote
-#    time, not at slice-merge time. That is the correct semantics here — a slice is not done
-#    until it is promoted — but it means an unpromoted `dev` stalls the queue behind it.
+#    PR merged into `dev` does NOT close its issue. Whether the later `dev` → `main` promote
+#    closes it is UNVERIFIED here, and the only live datapoint says no: the-workshop runs this
+#    same posture and five shipped issues (#446, #455, #457, #458, #459) sat `afk:promoted`
+#    indefinitely until a human closed them. Since `Depends on #N` gating keys on closure, a
+#    stale label can stall the dependent queue on bookkeeping rather than on work — and a
+#    phantom-promoted backlog reads exactly like a blocked one. After each promote, check the
+#    issue's real state and close it by hand if needed; do not re-run the drain to unstick it.
 trunk_branch = "dev"
 
 # #1048: forwarded to the headless agent as `--allowedTools`. Load-bearing, not decoration.
