@@ -16,6 +16,9 @@ venv/
 # afk build artifacts (keep config.toml, ignore the noise)
 .afk/transcripts/
 .afk/worktrees/
+# Shadow-parity ledgers (afk#1149/#1155): per-node legacy-vs-new decision records that
+# accumulate toward a LOCAL agreement bar. Machine-local by construction — never shared.
+.afk/parity/
 
 # Run artifacts the driver writes into this repo on every `--cycle`/`--execute`. Tracking any
 # of them wedges the nightly: the run writes, nothing commits, and the next preflight aborts on
