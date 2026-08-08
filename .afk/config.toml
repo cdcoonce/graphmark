@@ -42,24 +42,33 @@ permission_mode = "acceptEdits"
 #    origin/main`. Ask the API, not the checkout.
 trunk_branch = "dev"
 
-# CORRECTION 2026-08-08: the paragraph above is wrong where it says trunk_branch
-# "governs BOTH the branch a slice forks from and the branch its PR targets". It
-# does not govern the PR target. `integration_target` does, it defaults to
-# "main" (config.py: DEFAULT_INTEGRATION_TARGET), and this file never set it —
-# so `load_config` here resolved trunk_branch="dev" alongside
-# integration_target="main", and every slice PR was opened against `main`.
+# CORRECTION 2026-08-08, then RE-CORRECTED the same hour. The paragraph above is
+# wrong where it says trunk_branch "governs BOTH the branch a slice forks from and
+# the branch its PR targets" — it does not; `integration_target` governs the PR
+# base and defaults to "main". That much is real: PR #196 was opened against
+# `main` carrying `Closes #176`, which would have landed a slice on `main` AND
+# left #176 open (GitHub only auto-closes on a merge into the DEFAULT branch,
+# `dev` here).
 #
-# Not inferred: PR #196 (AFK recovery for #176) has base `main` and carries
-# `Closes #176`. Merging it would have (a) landed a slice on `main`, the one
-# thing the policy above forbids, and (b) NOT closed #176, because GitHub only
-# auto-closes on a merge into the DEFAULT branch and this repo's default is
-# `dev` — the phantom-promoted state the block above warns about, arrived at
-# from the opposite direction than it anticipated.
+# But `integration_target = "dev"` is NOT the fix, and was briefly set here before
+# being reverted. afk treats any non-"main" integration_target as a STAGING-MODE
+# SELECTOR, not as "which branch to target":
 #
-# The "Verified 2026-08-01: #181 merged into dev" note is not evidence against
-# this: a PR's base can be set by hand, and the default only shows up on the
-# ones nobody retargeted.
-integration_target = "dev"
+#   executor.py — `if config.integration_target == "main"` opens a draft PR;
+#                 otherwise the slice returns `kind="ready"`, commits only, opens
+#                 NO PR, and waits for the merge-queue to land the branch ref.
+#   cli.py      — a non-"main" target makes the drain build a Staging worktree on
+#                 that branch and call `freshen_from_main()` on it.
+#   substrate.py— force-updates are refused outside the `afk/` namespace.
+#
+# So setting it to "dev" would have flipped this repo into the F2 merge-queue path
+# with the repo's real trunk as the staging branch: no review PR, the merge queue
+# landing slices straight onto `dev`. Strictly worse than the bug it was meant to
+# fix. Tracked upstream as afk#1089.
+#
+# THE ACTUAL WORKAROUND until afk#1089 lands: before any `--execute` drain here,
+# `git branch -f main origin/main` (slices fork the LOCAL `main` ref), and retarget
+# each resulting PR with `gh pr edit --base dev`. #196 has already been retargeted.
 
 # #1048: forwarded to the headless agent as `--allowedTools`. Load-bearing, not decoration.
 # A slice runs in a fresh worktree, and Claude Code DISCARDS every `permissions.allow` entry
