@@ -42,6 +42,25 @@ permission_mode = "acceptEdits"
 #    origin/main`. Ask the API, not the checkout.
 trunk_branch = "dev"
 
+# CORRECTION 2026-08-08: the paragraph above is wrong where it says trunk_branch
+# "governs BOTH the branch a slice forks from and the branch its PR targets". It
+# does not govern the PR target. `integration_target` does, it defaults to
+# "main" (config.py: DEFAULT_INTEGRATION_TARGET), and this file never set it —
+# so `load_config` here resolved trunk_branch="dev" alongside
+# integration_target="main", and every slice PR was opened against `main`.
+#
+# Not inferred: PR #196 (AFK recovery for #176) has base `main` and carries
+# `Closes #176`. Merging it would have (a) landed a slice on `main`, the one
+# thing the policy above forbids, and (b) NOT closed #176, because GitHub only
+# auto-closes on a merge into the DEFAULT branch and this repo's default is
+# `dev` — the phantom-promoted state the block above warns about, arrived at
+# from the opposite direction than it anticipated.
+#
+# The "Verified 2026-08-01: #181 merged into dev" note is not evidence against
+# this: a PR's base can be set by hand, and the default only shows up on the
+# ones nobody retargeted.
+integration_target = "dev"
+
 # #1048: forwarded to the headless agent as `--allowedTools`. Load-bearing, not decoration.
 # A slice runs in a fresh worktree, and Claude Code DISCARDS every `permissions.allow` entry
 # in a workspace it has not trusted — argv is the only grant channel that survives. Without
