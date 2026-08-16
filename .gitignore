@@ -20,6 +20,19 @@ venv/
 # accumulate toward a LOCAL agreement bar. Machine-local by construction — never shared.
 .afk/parity/
 
+# Per-slice runtime state the executor writes and is meant to read-and-remove: the parked
+# question a slice files when it stops to ask a human, and its advisory sibling. afk's scope
+# gate exempts both by exact path (PARKED_QUESTION_PATH / ADVISORY_NOTES_PATH in
+# afk_driver/scope_scan.py) precisely because parking is a runtime decision an issue body
+# cannot name — so neither can ever be declared in scope, and neither should be committed.
+#
+# graphmark#196 is why these are here: the #176 slice committed its question.md, and the PR
+# would have landed 59 lines of stale, already-answered runtime state into dev as a tracked
+# file. notes.md is listed for the same reason rather than after the fact — scope_scan.py's
+# own comment notes its removal is a backstop "for the paths where that removal did not run."
+.afk/question.md
+.afk/notes.md
+
 # Run artifacts the driver writes into this repo on every `--cycle`/`--execute`. Tracking any
 # of them wedges the nightly: the run writes, nothing commits, and the next preflight aborts on
 # a dirty tree. afk-agent-system ignores its own for the same reason, and afk-cockpit reads the
