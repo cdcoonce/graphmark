@@ -112,7 +112,14 @@ cheap = "sonnet"
 frontier = "opus"
 default_tier = "cheap"
 
-# Scheduled --cycle: read-only producers (scout files proposals from docs/ROADMAP.md;
-# harvest mines merged-PR review comments for prompt-rules). Executor runs on promoted issues.
+# Scheduled --cycle: read-only producers (harvest mines merged-PR review comments
+# for prompt-rules). Executor runs on promoted issues.
+#
+# scout MUTED 2026-09-05. It filed at its ~5/day cap on 19 of 24 active days
+# regardless of drain throughput: 104 of the 105 open issues are producer-filed,
+# none older than 35 days, while the executor landed a handful in the same window.
+# It also re-proposed already-completed work (#276 and #283 verified done in the
+# tree). Re-enable once the open count is under the executor's actual weekly
+# throughput. harvest stays on — it is PR-review-derived and self-limiting.
 [cycle]
-producers = ["scout", "harvest"]
+producers = ["harvest"]
