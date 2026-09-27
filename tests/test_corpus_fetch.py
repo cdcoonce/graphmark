@@ -506,6 +506,47 @@ class TestSetUrlFailureWrapping:
         assert isinstance(excinfo.value.__cause__, subprocess.CalledProcessError)
 
 
+class TestSkipsFetchWhenTargetShaIsAlreadyLocal:
+    def test_correcting_to_a_locally_present_sha_issues_no_fetch(
+        self, tmp_path, monkeypatch, remote, first_sha, second_sha
+    ):
+        """Correcting to a SHA already reachable in the cache entry's local history (e.g. via the
+        initial full clone) must not touch the network -- only ``git checkout`` (and origin
+        reconciliation) is needed.
+
+        Checkout flags and whether an ``origin`` reconciliation call fires are owned by sibling
+        issues and may vary by build order, so this only asserts the absence of any ``git fetch``
+        call and the correct end-state SHA -- not the full call list.
+        """
+        cache_root = tmp_path / "cache"
+        vault_first = _vault(remote, first_sha)
+        fetch_vault(vault_first, cache_root)
+
+        target = cache_root / "example-vault"
+        assert _git(["rev-parse", "HEAD"], target) == first_sha
+        # The initial clone pulled full history, so second_sha is already a local object here.
+        probe = subprocess.run(
+            ["git", "cat-file", "-e", f"{second_sha}^{{commit}}"],
+            cwd=target,
+            capture_output=True,
+        )
+        assert probe.returncode == 0
+
+        calls: list[list[str]] = []
+        real_run = subprocess.run
+
+        def spy(args, *rest, **kwargs):
+            calls.append(list(args))
+            return real_run(args, *rest, **kwargs)
+
+        monkeypatch.setattr("scripts.corpus.fetch.subprocess.run", spy)
+        fetch_vault(_vault(remote, second_sha), cache_root)
+
+        assert not any(call[:2] == ["git", "fetch"] for call in calls)
+        assert _git(["rev-parse", "HEAD"], target) == second_sha
+        assert (target / "note.md").read_text(encoding="utf-8") == "# second\n"
+
+
 class TestFullFetchFallbackFailureWrapping:
     def test_failing_full_fetch_fallback_raises_value_error_naming_vault_and_chained(
         self, tmp_path, monkeypatch, remote, first_sha
