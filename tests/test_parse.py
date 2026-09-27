@@ -3,7 +3,12 @@
 from pathlib import Path
 
 from graphmark.model import Document
-from graphmark.parse import WikilinkExtractor, parse_document
+from graphmark.parse import (
+    MarkdownLinkExtractor,
+    WikilinkExtractor,
+    count_markdown_links,
+    parse_document,
+)
 
 FIXTURE_VAULT = Path(__file__).parent / "fixtures" / "simple" / "vault"
 
@@ -172,6 +177,83 @@ class TestParseDocument:
         parse_document(note, tmp_path)
         captured = capsys.readouterr()
         assert captured.err == ""
+
+    def test_unterminated_fence_warns_exactly_once(self, tmp_path, capsys):
+        note = tmp_path / "unterminated.md"
+        note.write_text(
+            "See [[before]].\n```\ncode line\n[[inside]]\nSee [[after]].\n",
+            encoding="utf-8",
+        )
+        doc = parse_document(note, tmp_path)
+        assert isinstance(doc, Document)
+        # Existing behavior unchanged: parse_document's own body is unaffected (fence stripping
+        # is the extractor's job, not parse_document's) -- content after the unclosed fence is
+        # still dropped only once an extractor runs, exactly as before this change.
+        assert "[[after]]" not in WikilinkExtractor().extract(doc.text)
+        captured = capsys.readouterr()
+        assert captured.out == ""  # never pollute stdout / the JSON surface
+        warning_lines = [line for line in captured.err.splitlines() if line]
+        assert len(warning_lines) == 1
+        assert warning_lines[0] == (
+            "graphmark: warning: unterminated.md: unterminated fenced code block, "
+            "trailing content dropped"
+        )
+
+    def test_closed_fence_emits_no_unterminated_fence_warning(self, tmp_path, capsys):
+        note = tmp_path / "closed.md"
+        note.write_text(
+            "See [[before]].\n```\ncode line\n```\nSee [[after]].\n",
+            encoding="utf-8",
+        )
+        doc = parse_document(note, tmp_path)
+        assert "[[after]]" in doc.text
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err == ""
+
+    def test_no_fence_at_all_emits_no_unterminated_fence_warning(self, tmp_path, capsys):
+        note = tmp_path / "plain.md"
+        note.write_text("Just prose with [[a-link]], no fences at all.\n", encoding="utf-8")
+        parse_document(note, tmp_path)
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    def test_unterminated_fence_warning_fires_once_under_default_link_syntax(
+        self, tmp_path, capsys
+    ):
+        # Simulates a real build under the default `link_syntax="wikilink"`: parse_document
+        # runs once, then WikilinkExtractor.extract and count_markdown_links each run over the
+        # same body (VaultGraph.build calls WikilinkExtractor per config, and
+        # _warn_if_unread_syntax_dominates calls count_markdown_links unconditionally). All
+        # three call `_strip_fenced_blocks` on the same unterminated-fence body, but only
+        # parse_document's own call may ever print the warning.
+        note = tmp_path / "unterminated.md"
+        body = "See [[before]].\n```\ncode line\n[[inside]]\nSee [[after]].\n"
+        note.write_text(body, encoding="utf-8")
+
+        doc = parse_document(note, tmp_path)
+        WikilinkExtractor().extract(doc.text)
+        count_markdown_links(doc.text)
+
+        captured = capsys.readouterr()
+        warning_lines = [line for line in captured.err.splitlines() if line]
+        assert len(warning_lines) == 1
+
+    def test_unterminated_fence_warning_fires_once_under_link_syntax_both(self, tmp_path, capsys):
+        # Same simulation, but for `link_syntax="both"`: MarkdownLinkExtractor also runs over
+        # the same body, for a third call into `_strip_fenced_blocks`.
+        note = tmp_path / "unterminated.md"
+        body = "See [[before]].\n```\ncode line\n[[inside]]\nSee [[after]].\n"
+        note.write_text(body, encoding="utf-8")
+
+        doc = parse_document(note, tmp_path)
+        WikilinkExtractor().extract(doc.text)
+        MarkdownLinkExtractor().extract(doc.text)
+        count_markdown_links(doc.text)
+
+        captured = capsys.readouterr()
+        warning_lines = [line for line in captured.err.splitlines() if line]
+        assert len(warning_lines) == 1
 
 
 class TestFrontmatterLineEndings:
