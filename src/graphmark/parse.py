@@ -140,7 +140,7 @@ def _parse_frontmatter(raw: str) -> dict:
 #: a link into this vault. Deliberately narrow: this counts a *signal*, so a false positive here
 #: would produce a warning about nothing.
 _MD_LINK_RE = re.compile(
-    r'(?<!!)\[[^\]]*\]\((?!\w+:)(<[^<>]+?\.md>|[^)\s<>]+?\.md)(?:#[^)\s]*)?(?:\s+"[^"]*")?\)'
+    r'(?<!!)\[[^\]]*\]\((?!\w+:)(<[^<>]+?\.md>|[^)\s<>]+?\.md)(?:#[^)"]*?)?(?:\s+"[^"]*")?\)'
 )
 
 

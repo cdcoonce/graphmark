@@ -76,6 +76,12 @@ class TestExtractor:
         # #239: angle-bracket target and title together.
         assert MarkdownLinkExtractor().extract('[text](<my note.md> "A Title")') == ["my note.md"]
 
+    def test_an_anchor_containing_spaces_still_extracts(self):
+        # Regression guard for #239: the pre-#239 pattern accepted any anchor text up to ")",
+        # spaces included, with or without a trailing title. Supporting titles must not drop it.
+        assert MarkdownLinkExtractor().extract("[text](note.md#My Section)") == ["note.md"]
+        assert MarkdownLinkExtractor().extract('[text](note.md#My Section "T")') == ["note.md"]
+
 
 class TestDefaultIsUnchanged:
     def test_markdown_links_are_ignored_by_default(self, tmp_path):
