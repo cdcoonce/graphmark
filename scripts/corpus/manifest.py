@@ -16,6 +16,7 @@ loader) for consistency.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass, fields
 from pathlib import Path
@@ -62,6 +63,18 @@ def load_manifest(path: Path) -> list[CorpusVault]:
             raise ValueError(
                 f"manifest {path}: vault entry has invalid vault name {name!r} "
                 "(must not contain '/', '\\', or '..', and must not be '.')"
+            )
+
+        if not re.fullmatch(r"[0-9a-f]{40}", entry["sha"]):
+            raise ValueError(
+                f"manifest {path}: vault entry has malformed sha '{entry['sha']}' "
+                "(expected 40 lowercase hex characters)"
+            )
+
+        if entry["clone_url"].startswith("-"):
+            raise ValueError(
+                f"manifest {path}: vault entry has clone_url starting with '-': "
+                f"'{entry['clone_url']}'"
             )
 
         if name in seen_names:
