@@ -7,6 +7,7 @@ may construct ``VaultConfig`` directly.
 
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -66,6 +67,8 @@ class VaultConfig:
         # A string root would otherwise survive construction and fail much later with an
         # obscure AttributeError on the first Path operation.
         if not isinstance(self.root, Path):
+            if not isinstance(self.root, (str, os.PathLike)):
+                raise ValueError(f"root must be a string, Path, or os.PathLike, got {self.root!r}")
             self.root = Path(self.root)
         # Fail loudly rather than silently reading nothing: a typo here would produce an empty
         # graph, which is exactly the failure #151 exists to make visible.
@@ -130,6 +133,8 @@ def load_config(path: str | Path, *, root_override: str | Path | None = None) ->
     if root_override is not None:
         root = Path(root_override)
     elif "root" in data:
+        if not isinstance(data["root"], str):
+            raise ValueError(f"config {path}: root must be a string, got {data['root']!r}")
         root = path.parent / data["root"]
     else:
         raise ValueError(f"config {path}: missing required key 'root'")
