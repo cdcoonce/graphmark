@@ -173,3 +173,5 @@ def test_report_json_is_byte_stable_across_subprocesses(tmp_path):
     )
 
     assert first.stdout == second.stdout
+    assert first.stdout == report_json(vault, tmp_path)
+    assert first.stdout != ""

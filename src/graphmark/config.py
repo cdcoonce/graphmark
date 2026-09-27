@@ -72,6 +72,10 @@ class VaultConfig:
     """All vault-specific behavior, parametrized."""
 
     root: Path
+    # Include-list of top-level folder names a note must live under to be in scope. Empty
+    # means no restriction (everything is in scope). A root-level note has no folder segment,
+    # so it can never match once this list is non-empty — it is always out-of-scope, with no
+    # way to opt in.
     scoped_folders: list[str] = field(default_factory=list)
     excluded_dirs: list[str] = field(default_factory=list)
     rules_files: list[str] = field(default_factory=lambda: ["CLAUDE.md", "CLAUDE.local.md"])
@@ -187,7 +191,9 @@ def load_config(path: str | Path, *, root_override: str | Path | None = None) ->
         root=root,
         scoped_folders=data.get("scoped_folders", []),
         excluded_dirs=data.get("excluded_dirs", []),
-        rules_files=data.get("rules_files", ["CLAUDE.md", "CLAUDE.local.md"]),
+        rules_files=data.get(
+            "rules_files", VaultConfig.__dataclass_fields__["rules_files"].default_factory()
+        ),
         transient_prefixes=tuple(data.get("transient_prefixes", [])),
         resolve_aliases=bool(data.get("resolve_aliases", True)),
         link_syntax=data.get("link_syntax", "wikilink"),

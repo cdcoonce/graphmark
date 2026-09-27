@@ -66,6 +66,19 @@ class TestStats:
         result = stats(graph)
         assert set(result.keys()) == {"notes", "edges", "orphans", "clusters", "density"}
 
+    def test_orphans_diverges_from_stats_when_transient_prefix_set(self, graph):
+        """Pins current, intentional behavior — not a claim that it is "correct" design.
+
+        stats() takes no VaultConfig and never consults transient_prefixes (its "orphans"
+        field is pinned to tests/fixtures/simple/expected.json), while orphans() filters
+        degree-0 nodes matching config.transient_prefixes. So the two can legitimately
+        disagree for the same graph once transient_prefixes is set: stats() still counts
+        every degree-0 node, but orphans() excludes the ones under "reference/".
+        """
+        cfg = VaultConfig(root=FIXTURE_VAULT, transient_prefixes=("reference/",))
+        assert stats(graph)["orphans"] == 2
+        assert orphans(graph, cfg) == []
+
 
 class TestOrphans:
     def test_matches_oracle(self, graph, config):
