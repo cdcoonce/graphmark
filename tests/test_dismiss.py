@@ -8,6 +8,7 @@ tests/fixtures/dismiss/ to make a test pass.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -351,3 +352,159 @@ class TestRecordDismissalMissingNote:
 
         assert not store.exists()
         assert not store.parent.exists()
+
+
+class TestRecordDismissalContainment:
+    """An `a`/`b` that resolves outside `root` (absolute path or `..` traversal) must be
+    rejected before any hashing, mkdir, or write (#291)."""
+
+    def test_rejects_absolute_a(self, tmp_path):
+        (tmp_path / "y.md").write_text("y content")
+        store = tmp_path / dismiss._DEFAULT_PATH
+
+        with pytest.raises(ValueError, match="resolves outside"):
+            dismiss.record_dismissal(tmp_path, "/etc/graphmark-291-does-not-exist", "y.md")
+
+        assert not store.exists()
+        assert not store.parent.exists()
+
+    def test_rejects_absolute_b(self, tmp_path):
+        (tmp_path / "x.md").write_text("x content")
+        store = tmp_path / dismiss._DEFAULT_PATH
+
+        with pytest.raises(ValueError, match="resolves outside"):
+            dismiss.record_dismissal(tmp_path, "x.md", "/etc/graphmark-291-does-not-exist")
+
+        assert not store.exists()
+        assert not store.parent.exists()
+
+    def test_rejects_traversal_a(self, tmp_path):
+        (tmp_path / "y.md").write_text("y content")
+        store = tmp_path / dismiss._DEFAULT_PATH
+        # Enough "../" segments to actually escape tmp_path's nested pytest directory.
+        traversal = os.path.join("..", "..", "graphmark-291-traversal-does-not-exist")
+
+        with pytest.raises(ValueError, match="resolves outside"):
+            dismiss.record_dismissal(tmp_path, traversal, "y.md")
+
+        assert not store.exists()
+        assert not store.parent.exists()
+
+    def test_rejects_traversal_b(self, tmp_path):
+        (tmp_path / "x.md").write_text("x content")
+        store = tmp_path / dismiss._DEFAULT_PATH
+        traversal = os.path.join("..", "..", "graphmark-291-traversal-does-not-exist")
+
+        with pytest.raises(ValueError, match="resolves outside"):
+            dismiss.record_dismissal(tmp_path, "x.md", traversal)
+
+        assert not store.exists()
+        assert not store.parent.exists()
+
+    def test_well_formed_record_still_succeeds(self, tmp_path):
+        """The containment guard must not reject ordinary in-vault paths (#291)."""
+        (tmp_path / "x.md").write_text("x content")
+        (tmp_path / "y.md").write_text("y content")
+
+        dismiss.record_dismissal(tmp_path, "x.md", "y.md")
+
+        sig = dismiss.weaklink_sig("x.md", "y.md")
+        assert sig in dismiss.load_dismissed(tmp_path)
+
+
+class TestActiveDismissedSigsContainment:
+    """A stored record whose `a`/`b` resolves outside `root` must be treated as inactive
+    (skipped, not raised), checked before `content_hash` is called on either path (#291).
+
+    Each escaped record's hash fields use the REAL sha1 content hash of the escaped file,
+    not a placeholder — otherwise the test can't tell the containment guard from an
+    incidental hash mismatch that would produce the same "inactive" result on its own.
+    """
+
+    def test_skips_absolute_record(self, tmp_path):
+        (tmp_path / "good.md").write_text("good content")
+        (tmp_path / "good2.md").write_text("good2 content")
+        (tmp_path / "otherb.md").write_text("otherb content")
+        escaped = tmp_path.parent / "graphmark-291-escaped-absolute.md"
+        escaped.write_text("real escaped content for absolute containment test")
+
+        good_sig = dismiss.weaklink_sig("good.md", "good2.md")
+        bad_sig = "weaklink|bad-absolute-a"
+        store = tmp_path / dismiss._DEFAULT_PATH
+        store.parent.mkdir(parents=True, exist_ok=True)
+        store.write_text(
+            json.dumps(
+                {
+                    good_sig: {
+                        "a": "good.md",
+                        "a_hash": dismiss.content_hash(tmp_path / "good.md"),
+                        "b": "good2.md",
+                        "b_hash": dismiss.content_hash(tmp_path / "good2.md"),
+                    },
+                    # "a" is an absolute path outside root; a_hash is the REAL hash of
+                    # that escaped file so the containment guard is what's under test,
+                    # not an incidental hash mismatch.
+                    bad_sig: {
+                        "a": str(escaped),
+                        "a_hash": dismiss.content_hash(escaped),
+                        "b": "otherb.md",
+                        "b_hash": dismiss.content_hash(tmp_path / "otherb.md"),
+                    },
+                }
+            )
+        )
+
+        try:
+            assert dismiss.active_dismissed_sigs(tmp_path) == {good_sig}
+        finally:
+            escaped.unlink()
+
+    def test_skips_traversal_record(self, tmp_path):
+        (tmp_path / "good.md").write_text("good content")
+        (tmp_path / "good2.md").write_text("good2 content")
+        (tmp_path / "otherb.md").write_text("otherb content")
+        # Two levels up: enough "../" segments to actually escape tmp_path, still inside
+        # pytest's own writable tmp tree.
+        escaped_dir = tmp_path.parent.parent
+        escaped = escaped_dir / "graphmark-291-escaped-traversal.md"
+        escaped.write_text("real escaped content for traversal containment test")
+        traversal_rel = os.path.relpath(escaped, tmp_path)
+
+        good_sig = dismiss.weaklink_sig("good.md", "good2.md")
+        bad_sig = "weaklink|bad-traversal-a"
+        store = tmp_path / dismiss._DEFAULT_PATH
+        store.parent.mkdir(parents=True, exist_ok=True)
+        store.write_text(
+            json.dumps(
+                {
+                    good_sig: {
+                        "a": "good.md",
+                        "a_hash": dismiss.content_hash(tmp_path / "good.md"),
+                        "b": "good2.md",
+                        "b_hash": dismiss.content_hash(tmp_path / "good2.md"),
+                    },
+                    # "a" is a `..`-escaping relative path; a_hash is the REAL hash of
+                    # that escaped file so the containment guard is what's under test.
+                    bad_sig: {
+                        "a": traversal_rel,
+                        "a_hash": dismiss.content_hash(escaped),
+                        "b": "otherb.md",
+                        "b_hash": dismiss.content_hash(tmp_path / "otherb.md"),
+                    },
+                }
+            )
+        )
+
+        try:
+            assert dismiss.active_dismissed_sigs(tmp_path) == {good_sig}
+        finally:
+            escaped.unlink()
+
+    def test_well_formed_records_still_active(self, tmp_path):
+        """The containment guard must not exclude ordinary in-vault records (#291)."""
+        (tmp_path / "x.md").write_text("x content")
+        (tmp_path / "y.md").write_text("y content")
+        dismiss.record_dismissal(tmp_path, "x.md", "y.md")
+
+        sig = dismiss.weaklink_sig("x.md", "y.md")
+        assert sig in dismiss.active_dismissed_sigs(tmp_path)

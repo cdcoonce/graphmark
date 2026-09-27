@@ -18,7 +18,18 @@ def content_hash(path: Path) -> str:
     return hashlib.sha1(path.read_bytes()).hexdigest()
 
 
+def _resolves_within(root: Path, rel: str) -> bool:
+    try:
+        return (root / rel).resolve().is_relative_to(root.resolve())
+    except (OSError, RuntimeError):
+        return False
+
+
 def record_dismissal(root: Path, a: str, b: str, *, path: str = _DEFAULT_PATH) -> None:
+    if not _resolves_within(root, a):
+        raise ValueError(f"record_dismissal: path resolves outside {root}: {a}")
+    if not _resolves_within(root, b):
+        raise ValueError(f"record_dismissal: path resolves outside {root}: {b}")
     dismissed_file = root / path
     try:
         a_hash = content_hash(root / a)
@@ -76,6 +87,8 @@ def active_dismissed_sigs(root: Path, *, path: str = _DEFAULT_PATH) -> set[str]:
             record.get("b_hash"),
         )
         if not all(isinstance(v, str) and v for v in (a, b, a_hash, b_hash)):
+            continue
+        if not _resolves_within(root, a) or not _resolves_within(root, b):
             continue
         a_path, b_path = root / a, root / b
         if (

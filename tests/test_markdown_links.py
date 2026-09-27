@@ -82,6 +82,15 @@ class TestExtractor:
         assert MarkdownLinkExtractor().extract("[text](note.md#My Section)") == ["note.md"]
         assert MarkdownLinkExtractor().extract('[text](note.md#My Section "T")') == ["note.md"]
 
+    def test_extracts_an_uppercase_extension(self):
+        # #261: `.MD` must match exactly like `.md`, matching the wikilink case-insensitive check.
+        assert MarkdownLinkExtractor().extract("[text](Note.MD)") == ["Note.MD"]
+
+    def test_extracts_a_mixed_case_extension_titled_and_angle_bracket(self):
+        # #261, combined with #239 syntax: a titled, angle-bracket-escaped target with a mixed-case
+        # extension must still match, and the target's original casing is preserved verbatim.
+        assert MarkdownLinkExtractor().extract('[text](<my note.Md> "A Title")') == ["my note.Md"]
+
 
 class TestDefaultIsUnchanged:
     def test_markdown_links_are_ignored_by_default(self, tmp_path):
