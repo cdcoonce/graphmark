@@ -85,8 +85,20 @@ def main() -> None:
     # Attached to every subparser under a distinct dest, then reconciled: argparse would otherwise
     # let the subparser's default (None) overwrite a value the top-level parser had already read.
     trailing_globals = argparse.ArgumentParser(add_help=False)
-    trailing_globals.add_argument("--config", metavar="PATH", dest="config_after", action="append")
-    trailing_globals.add_argument("--root", metavar="PATH", dest="root_after", action="append")
+    trailing_globals.add_argument(
+        "--config",
+        metavar="PATH",
+        dest="config_after",
+        action="append",
+        help="TOML config file",
+    )
+    trailing_globals.add_argument(
+        "--root",
+        metavar="PATH",
+        dest="root_after",
+        action="append",
+        help="Vault root (overrides --config root)",
+    )
 
     parser = argparse.ArgumentParser(
         prog="graphmark",
