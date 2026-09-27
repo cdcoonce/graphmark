@@ -89,10 +89,15 @@ def hubs(graph: VaultGraph, n: int = 10) -> list[list]:
 
 
 def clusters(graph: VaultGraph) -> list[list[str]]:
-    """Return connected components with >1 node, size-desc, members sorted."""
+    """Return connected components with >1 node, size-desc, members sorted.
+
+    Equal-size components break ties by their (already-sorted) member lists, not by
+    nx.connected_components' incidental traversal order (itself inherited from node-insertion
+    order). NOTE: this tie-break is graphmark's own defined convention, mirroring siloed_notes().
+    """
     G = _undirected(graph)
     components = [sorted(c) for c in nx.connected_components(G) if len(c) > 1]
-    components.sort(key=lambda c: -len(c))
+    components.sort(key=lambda c: (-len(c), c))
     return components
 
 
