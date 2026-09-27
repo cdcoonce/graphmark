@@ -130,12 +130,29 @@ def _parse_frontmatter(raw: str) -> dict:
     return result
 
 
-#: A markdown-style link to a local markdown file: ``[text](note.md)`` or
-#: ``[text](../a/b.md#Anchor)``.
+#: A markdown-style link to a local markdown file: ``[text](note.md)``,
+#: ``[text](../a/b.md#Anchor)``, a titled link (``[text](note.md "A Title")``), an
+#: angle-bracket-escaped target (``[text](<my note.md>)``, the standard escape for a path
+#: containing spaces/parens), or the two combined. The single capture group holds the raw target,
+#: angle brackets included when present — see ``_strip_angle_brackets``, its consumers' shared
+#: unwrap step.
 #: Not an image (``![...]``) and not an absolute URL — a link to somebody's README on the web is not
 #: a link into this vault. Deliberately narrow: this counts a *signal*, so a false positive here
 #: would produce a warning about nothing.
-_MD_LINK_RE = re.compile(r"(?<!!)\[[^\]]*\]\((?!\w+:)([^)\s]+?\.md)(?:#[^)]*)?\)")
+_MD_LINK_RE = re.compile(
+    r'(?<!!)\[[^\]]*\]\((?!\w+:)(<[^<>]+?\.md>|[^)\s<>]+?\.md)(?:#[^)"]*?)?(?:\s+"[^"]*")?\)'
+)
+
+
+def _strip_angle_brackets(target: str) -> str:
+    """Unwrap a `<...>`-escaped markdown target, leaving a bare target untouched.
+
+    Both `_MD_LINK_RE` consumers that care about the target's text (not just its count) need this
+    same unwrap, so it lives here once rather than twice.
+    """
+    if target.startswith("<") and target.endswith(">"):
+        return target[1:-1]
+    return target
 
 
 def count_markdown_links(text: str) -> int:
@@ -181,7 +198,7 @@ class MarkdownLinkExtractor:
 
     def extract(self, text: str) -> list[str]:
         text = _strip_non_link_regions(text)
-        return [unquote(target) for target in _MD_LINK_RE.findall(text)]
+        return [unquote(_strip_angle_brackets(target)) for target in _MD_LINK_RE.findall(text)]
 
 
 def parse_document(path: Path, root: Path) -> Document:
