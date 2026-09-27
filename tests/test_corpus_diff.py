@@ -80,6 +80,62 @@ def test_mismatched_vault_raises():
         diff_reports(expected, actual)
 
 
+def test_missing_top_level_field_raises_value_error():
+    expected = _report()
+    del expected["links"]
+    actual = _report()
+
+    with pytest.raises(ValueError, match="links") as exc_info:
+        diff_reports(expected, actual)
+
+    assert "expected" in str(exc_info.value)
+
+
+def test_missing_vault_field_raises_value_error_not_key_error():
+    # "vault" is not in _TOP_LEVEL_FIELDS (it is compared, not diffed), but the vault-mismatch
+    # check indexes it, so a report without it must fail the schema check, not KeyError.
+    expected = _report()
+    del expected["vault"]
+
+    with pytest.raises(ValueError, match="'vault'") as exc_info:
+        diff_reports(expected, _report())
+
+    assert "expected" in str(exc_info.value)
+
+
+def test_missing_top_level_field_in_actual_raises_value_error():
+    expected = _report()
+    actual = _report()
+    del actual["notes"]
+
+    with pytest.raises(ValueError, match="notes") as exc_info:
+        diff_reports(expected, actual)
+
+    assert "actual" in str(exc_info.value)
+
+
+def test_missing_bucket_reason_raises_value_error():
+    expected = _report()
+    del expected["buckets"]["ambiguous"]
+    actual = _report()
+
+    with pytest.raises(ValueError, match="ambiguous") as exc_info:
+        diff_reports(expected, actual)
+
+    assert "expected" in str(exc_info.value)
+
+
+def test_missing_bucket_field_raises_value_error():
+    expected = _report()
+    actual = _report()
+    del actual["buckets"]["resolved"]["share"]
+
+    with pytest.raises(ValueError, match="share") as exc_info:
+        diff_reports(expected, actual)
+
+    assert "actual" in str(exc_info.value)
+
+
 def test_load_expected_missing_file_raises(tmp_path):
     with pytest.raises(ValueError, match="not found"):
         load_expected(tmp_path / "missing.json")
