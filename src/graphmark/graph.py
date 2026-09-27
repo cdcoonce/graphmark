@@ -162,7 +162,12 @@ def candidates_for(display: str, catalog: dict[str, list[str]]) -> list[str]:
     return list(catalog.get(_normalize(target), ()))
 
 
-def build_aliases(docs: list[Document], catalog: dict[str, list[str]]) -> dict[str, str]:
+def build_aliases(
+    docs: list[Document],
+    catalog: dict[str, list[str]],
+    *,
+    out_of_scope: dict[str, list[str]] | None = None,
+) -> dict[str, str]:
     """Map normalized alias → rel_path, for aliases that unambiguously name one note.
 
     Obsidian's ``aliases:`` property declares additional real names for a note, so a link written
@@ -170,7 +175,13 @@ def build_aliases(docs: list[Document], catalog: dict[str, list[str]]) -> dict[s
 
     * **An alias that collides with any real note name is dropped entirely** — not merely
       outranked. A note's own title must never be hijackable by someone else's alias, and an
-      already-ambiguous basename must not be rescued into resolving by a third note's alias.
+      already-ambiguous basename must not be rescued into resolving by a third note's alias. This
+      also covers a name claimed by an out-of-scope note (e.g. a ``rules_files`` entry like
+      ``CLAUDE.md``): such a note is real markdown, just excluded from the graph, so an alias
+      claiming its stem must be dropped the same way — otherwise the alias resolves before
+      ``_diagnose`` ever reaches its out-of-scope check, hijacking the real file's identity.
+      ``out_of_scope`` is keyword-only and optional so existing two-argument callers keep their
+      behavior; ``VaultGraph.build`` always passes it.
     * **An alias claimed by two or more notes resolves to nothing** — the same refusal graphmark
       already applies to colliding basenames. Ambiguity stays ambiguous.
 
@@ -193,7 +204,7 @@ def build_aliases(docs: list[Document], catalog: dict[str, list[str]]) -> dict[s
             if "/" in alias:
                 continue
             key = _normalize(alias)
-            if not key or key in catalog:
+            if not key or key in catalog or key in (out_of_scope or {}):
                 continue
             claims.setdefault(key, set()).add(doc.rel_path)
     return {key: paths.pop() for key, paths in claims.items() if len(paths) == 1}
@@ -719,7 +730,11 @@ class VaultGraph:
         docs = [parse_document(p, root) for p in md_files]
         nodes = {doc.rel_path: doc for doc in docs}
         catalog = build_catalog(docs)
-        aliases = build_aliases(docs, catalog) if config.resolve_aliases else {}
+        aliases = (
+            build_aliases(docs, catalog, out_of_scope=out_of_scope)
+            if config.resolve_aliases
+            else {}
+        )
 
         out_links: dict[str, set[str]] = {rel: set() for rel in nodes}
         back_links: dict[str, set[str]] = {rel: set() for rel in nodes}
