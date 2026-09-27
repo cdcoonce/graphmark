@@ -730,7 +730,13 @@ class VaultGraph:
         for paths in out_of_scope.values():
             paths.sort()  # same rel_path ordering guarantee as build_catalog
 
-        docs = [parse_document(p, root) for p in md_files]
+        docs: list[Document] = []
+        for p in md_files:
+            try:
+                docs.append(parse_document(p, root))
+            except OSError:
+                rel_path = p.relative_to(root).as_posix()
+                print(f"graphmark: warning: {rel_path}: unreadable, skipped", file=sys.stderr)
         nodes = {doc.rel_path: doc for doc in docs}
         catalog = build_catalog(docs)
         aliases = (
