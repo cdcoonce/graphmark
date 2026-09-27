@@ -375,6 +375,19 @@ class TestGapsCommand:
         assert "injected similarity source" in captured.err
         assert "graphmark.metrics.gaps" in captured.err
 
+    def test_bare_invocation_exits_2_with_gaps_guidance_not_generic_usage_error(self, capsys):
+        from graphmark.cli import main
+
+        argv = ["graphmark", "gaps"]
+        with patch.object(sys, "argv", argv), pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "injected similarity source" in captured.err
+        assert "graphmark.metrics.gaps" in captured.err
+        assert "--config or --root required" not in captured.err
+
 
 class TestSiloedCommand:
     def test_emits_valid_json(self, capsys):
