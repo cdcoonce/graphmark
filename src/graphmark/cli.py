@@ -175,18 +175,21 @@ def main() -> None:
         parser.print_help(sys.stderr)
         sys.exit(2)
 
-    if args.config is None and args.root is None:
-        parser.error("--config or --root required")
-
     if args.command == "gaps":
         # gaps needs a caller-injected similarity source the CLI can't supply; it is
-        # library-only. Signpost the library API rather than silently printing [].
+        # library-only. Signpost the library API rather than silently printing []. This
+        # must come before the --config/--root requirement below: gaps needs neither
+        # flag, so a bare `graphmark gaps` should see this guidance, not the generic
+        # usage error.
         print(
             "gaps requires an injected similarity source; use the library API "
             "(graphmark.metrics.gaps) — see README",
             file=sys.stderr,
         )
         sys.exit(2)
+
+    if args.config is None and args.root is None:
+        parser.error("--config or --root required")
 
     graph, config = _load(args)
 
