@@ -120,6 +120,18 @@ def fetch_vault(vault: CorpusVault, cache_root: Path) -> None:
                 f"exit {exc.returncode}"
             ) from exc
 
+    try:
+        subprocess.run(
+            ["git", "remote", "set-url", "origin", vault.clone_url],
+            check=True,
+            cwd=target,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise ValueError(
+            f"git remote set-url failed for corpus vault {vault.name!r} at {target}: "
+            f"exit {exc.returncode}"
+        ) from exc
+
     _fetch_pinned_commit(target, vault)
     try:
         subprocess.run(["git", "checkout", "--force", vault.sha], check=True, cwd=target)
