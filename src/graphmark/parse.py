@@ -69,6 +69,19 @@ def _strip_fenced_blocks(text: str) -> tuple[str, bool]:
     return "".join(out), fence_char is not None
 
 
+def _strip_non_link_regions(text: str) -> str:
+    """Strip fenced blocks and inline code spans -- the text that is never eligible to hold a link.
+
+    Both `count_markdown_links` and the two `LinkExtractor` implementations need to answer the same
+    question before they can extract anything: what text is left once code is excluded? This is
+    that shared answer, kept in one place so the three callers cannot silently drift out of
+    lock-step on what counts as code. The `_strip_fenced_blocks` `unterminated` flag is discarded
+    here, exactly as every caller already discarded it before this helper existed.
+    """
+    text, _ = _strip_fenced_blocks(text)
+    return _INLINE_CODE_RE.sub("", text)
+
+
 #: A block-list item line: leading whitespace, a dash, then the value. Checked before the
 #: key/value split because an item may itself contain a colon ("- Note: A Subtitle") — the dash
 #: decides, not the colon.
@@ -139,8 +152,7 @@ def count_markdown_links(text: str) -> int:
     Code spans and fenced blocks are skipped, exactly as wikilink extraction skips them: a
     documented example is not a link.
     """
-    text, _ = _strip_fenced_blocks(text)
-    text = _INLINE_CODE_RE.sub("", text)
+    text = _strip_non_link_regions(text)
     return len(_MD_LINK_RE.findall(text))
 
 
@@ -148,8 +160,7 @@ class WikilinkExtractor:
     """Extracts raw wikilink displays from note text, excluding code spans."""
 
     def extract(self, text: str) -> list[str]:
-        text, _ = _strip_fenced_blocks(text)
-        text = _INLINE_CODE_RE.sub("", text)
+        text = _strip_non_link_regions(text)
         return _WIKILINK_RE.findall(text)
 
 
@@ -169,8 +180,7 @@ class MarkdownLinkExtractor:
     """
 
     def extract(self, text: str) -> list[str]:
-        text, _ = _strip_fenced_blocks(text)
-        text = _INLINE_CODE_RE.sub("", text)
+        text = _strip_non_link_regions(text)
         return [unquote(target) for target in _MD_LINK_RE.findall(text)]
 
 
