@@ -176,6 +176,77 @@ class TestRootTypeValidation:
 
 
 # ---------------------------------------------------------------------------
+# str-list field validation (#332) — a bare string silently iterates
+# character-by-character instead of being rejected; must raise ValueError.
+# ---------------------------------------------------------------------------
+
+STR_LIST_FIELDS = ("scoped_folders", "excluded_dirs", "rules_files", "transient_prefixes")
+
+
+class TestStrListFieldRejectsBareString:
+    @pytest.mark.parametrize("field_name", STR_LIST_FIELDS)
+    def test_vault_config_rejects_bare_string(self, tmp_path, field_name):
+        with pytest.raises(ValueError, match=re.escape(f"{field_name} must be a list of strings")):
+            VaultConfig(root=tmp_path, **{field_name: ".git"})
+
+    @pytest.mark.parametrize("field_name", STR_LIST_FIELDS)
+    def test_vault_config_rejects_non_string_item(self, tmp_path, field_name):
+        with pytest.raises(ValueError, match=re.escape(f"{field_name} must be a list of strings")):
+            VaultConfig(root=tmp_path, **{field_name: [".git", 3]})
+
+    @pytest.mark.parametrize("key", STR_LIST_FIELDS)
+    def test_load_config_rejects_bare_string_in_toml(self, tmp_path, key):
+        toml = tmp_path / "bare-string.toml"
+        toml.write_text(f'root = "vault"\n{key} = ".git"\n')
+        with pytest.raises(
+            ValueError, match=re.escape(f"config {toml}: {key} must be a list of strings")
+        ):
+            load_config(toml)
+
+
+class TestStrListFieldStillAcceptsValidInput:
+    @pytest.mark.parametrize("field_name", STR_LIST_FIELDS)
+    def test_empty_list_still_valid(self, tmp_path, field_name):
+        cfg = VaultConfig(root=tmp_path, **{field_name: []})
+        assert getattr(cfg, field_name) == []
+
+    @pytest.mark.parametrize("field_name", STR_LIST_FIELDS)
+    def test_tuple_of_strings_still_valid(self, tmp_path, field_name):
+        cfg = VaultConfig(root=tmp_path, **{field_name: ("a", "b")})
+        assert getattr(cfg, field_name) == ("a", "b")
+
+    def test_vault_config_keeps_tuple_input_as_a_tuple(self, tmp_path):
+        # The stored value is not converted — only validated.
+        cfg = VaultConfig(root=tmp_path, excluded_dirs=("a",))
+        assert cfg.excluded_dirs == ("a",)
+        assert isinstance(cfg.excluded_dirs, tuple)
+
+    def test_vault_config_keeps_list_input_as_a_list(self, tmp_path):
+        cfg = VaultConfig(root=tmp_path, excluded_dirs=["a"])
+        assert cfg.excluded_dirs == ["a"]
+        assert isinstance(cfg.excluded_dirs, list)
+
+
+class TestBareStringRegressionAgainstListInput:
+    """#332 Problem table: `excluded_dirs=".git"` silently expands to {'.', 'g', 'i', 't'}.
+
+    A positive control proving list input still builds the correct, unaffected node set.
+    """
+
+    def test_list_excluded_dirs_produces_expected_node_set(self, tmp_path):
+        (tmp_path / "notes").mkdir()
+        (tmp_path / "notes" / "a.md").write_text("a\n")
+        (tmp_path / "t").mkdir()
+        (tmp_path / "t" / "b.md").write_text("b\n")
+        (tmp_path / ".git").mkdir()
+        (tmp_path / ".git" / "c.md").write_text("c\n")
+
+        cfg = VaultConfig(root=tmp_path, excluded_dirs=[".git"])
+        graph = VaultGraph.build(cfg, WikilinkExtractor(), NormalizeResolver())
+        assert set(graph.nodes) == {"notes/a.md", "t/b.md"}
+
+
+# ---------------------------------------------------------------------------
 # Path B — simple fixture via load_config
 # ---------------------------------------------------------------------------
 
