@@ -191,6 +191,35 @@ def test_diff_unreadable_manifest_exits_2(tmp_path, capsys):
     assert captured.err.startswith("error:")
 
 
+def test_diff_expected_missing_top_level_field_exits_2(tmp_path, capsys):
+    manifest_path = tmp_path / "manifest.toml"
+    _write_manifest(manifest_path, [{"name": "synthetic-vault"}])
+    cache_root = tmp_path / "cache"
+    vault = _write_synthetic_vault(cache_root, "synthetic-vault")
+    expected_dir = tmp_path / "expected"
+    expected_dir.mkdir()
+    actual = build_vault_report(vault, cache_root)
+    incomplete = dict(actual)
+    del incomplete["links"]
+    (expected_dir / "synthetic-vault.json").write_text(json.dumps(incomplete))
+
+    code = cli.main(
+        [
+            "diff",
+            "--manifest",
+            str(manifest_path),
+            "--cache-root",
+            str(cache_root),
+            "--expected-dir",
+            str(expected_dir),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert captured.err.startswith("error:")
+
+
 def test_diff_malformed_expected_file_exits_2(tmp_path, capsys):
     manifest_path = tmp_path / "manifest.toml"
     _write_manifest(manifest_path, [{"name": "synthetic-vault"}])

@@ -83,7 +83,11 @@ def _cmd_diff(args: argparse.Namespace) -> int:
             print(f"error: {e}", file=sys.stderr)
             return 2
 
-        all_lines.extend(diff_mod.diff_reports(expected, actual))
+        try:
+            all_lines.extend(diff_mod.diff_reports(expected, actual))
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
 
     for line in all_lines:
         print(line)

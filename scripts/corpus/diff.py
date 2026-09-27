@@ -19,9 +19,31 @@ _BUCKET_FIELDS = ("count", "share")
 def diff_reports(expected: dict, actual: dict) -> list[str]:
     """Return one formatted drift line per changed field between ``expected`` and ``actual``.
 
-    Raises ``ValueError`` if the two reports are for different vaults -- comparing two different
-    vaults' reports is a usage error, not drift.
+    Raises ``ValueError`` if either report has an incomplete shape -- missing a top-level field
+    from ``_TOP_LEVEL_FIELDS``, missing ``"buckets"``, or missing a bucket entry (or one of its
+    ``_BUCKET_FIELDS``) for one of ``DIAGNOSIS_REASONS`` -- naming the missing field or
+    bucket/reason and which side (``"expected"`` or ``"actual"``) it is missing from. Also raises
+    ``ValueError`` if the two reports are for different vaults -- comparing two different vaults'
+    reports is a usage error, not drift. Both checks run before any indexing that would otherwise
+    raise a bare ``KeyError``.
     """
+    for field in (*_TOP_LEVEL_FIELDS, "buckets"):
+        if field not in expected:
+            raise ValueError(f"expected report is missing field {field!r}")
+        if field not in actual:
+            raise ValueError(f"actual report is missing field {field!r}")
+
+    for reason in DIAGNOSIS_REASONS:
+        if reason not in expected["buckets"]:
+            raise ValueError(f"expected report is missing bucket {reason!r}")
+        if reason not in actual["buckets"]:
+            raise ValueError(f"actual report is missing bucket {reason!r}")
+        for field in _BUCKET_FIELDS:
+            if field not in expected["buckets"][reason]:
+                raise ValueError(f"expected report is missing field {field!r} in bucket {reason!r}")
+            if field not in actual["buckets"][reason]:
+                raise ValueError(f"actual report is missing field {field!r} in bucket {reason!r}")
+
     if expected["vault"] != actual["vault"]:
         raise ValueError(
             f"cannot diff reports for different vaults: "
