@@ -374,6 +374,9 @@ def _suggestion_keys(catalog: dict[str, list[str]]) -> list[tuple[str, frozenset
         for rel in paths:
             path = Path(rel)
             name = path.parent.name if path.stem.lower() in GENERIC_STEMS else path.stem
+            # A generic stem at the vault root has no parent folder to be keyed by
+            # (path.parent.name == "") — fall back to the note's own stem rather than dropping it.
+            name = name if name else path.stem
             tokens = _content_tokens(name)
             if tokens:
                 keys.append((rel, tokens))
