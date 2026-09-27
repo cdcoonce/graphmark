@@ -72,6 +72,10 @@ class VaultConfig:
     """All vault-specific behavior, parametrized."""
 
     root: Path
+    # Include-list of top-level folder names a note must live under to be in scope. Empty
+    # means no restriction (everything is in scope). A root-level note has no folder segment,
+    # so it can never match once this list is non-empty — it is always out-of-scope, with no
+    # way to opt in.
     scoped_folders: list[str] = field(default_factory=list)
     excluded_dirs: list[str] = field(default_factory=list)
     rules_files: list[str] = field(default_factory=lambda: ["CLAUDE.md", "CLAUDE.local.md"])
