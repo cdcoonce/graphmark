@@ -224,7 +224,7 @@ license = "MIT"
 excluded_dirs = ".git"
 """)
 
-    with pytest.raises(ValueError, match="excluded_dirs"):
+    with pytest.raises(ValueError, match="excluded_dirs that is not a list of strings"):
         load_manifest(manifest_path)
 
 
@@ -239,7 +239,20 @@ license = "MIT"
 excluded_dirs = [1, 2]
 """)
 
-    with pytest.raises(ValueError, match="excluded_dirs"):
+    with pytest.raises(ValueError, match="excluded_dirs that is not a list of strings"):
+        load_manifest(manifest_path)
+
+
+def test_excluded_dirs_shape_check_runs_before_the_duplicate_name_check(tmp_path):
+    # An entry that is both a duplicate and malformed must report the shape error: the shape
+    # check sits with the other per-entry shape checks, ahead of the cross-entry dedup check.
+    manifest_path = tmp_path / "manifest.toml"
+    malformed_duplicate = _VALID_ENTRY.replace(
+        'excluded_dirs = [".git", ".obsidian"]', 'excluded_dirs = ".git"'
+    )
+    manifest_path.write_text(_VALID_ENTRY + malformed_duplicate)
+
+    with pytest.raises(ValueError, match="excluded_dirs that is not a list of strings"):
         load_manifest(manifest_path)
 
 
