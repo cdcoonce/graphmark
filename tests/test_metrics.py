@@ -115,6 +115,10 @@ class TestHubs:
         # fixture has 4 non-orphan nodes; all should appear with default n=10
         assert len(result) == 4
 
+    def test_negative_n_raises_value_error(self, graph):
+        with pytest.raises(ValueError, match="n"):
+            hubs(graph, n=-1)
+
 
 class TestClusters:
     def test_matches_oracle(self, graph):
