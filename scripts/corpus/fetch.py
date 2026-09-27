@@ -17,7 +17,16 @@ from .manifest import CorpusVault
 
 
 def _head_sha(target: Path) -> str | None:
-    """Return the commit ``target`` is checked out at, or ``None`` if it is not a git repo."""
+    """Return the commit ``target`` is checked out at, or ``None`` if it is not yet a git repo.
+
+    Distinguishes "never a repo" from "was a repo, git failed": a ``target`` with no ``.git``
+    entry returns ``None`` (needs clone/reinit). A ``target`` that does have a ``.git`` entry but
+    where ``git rev-parse HEAD`` still fails raises ``ValueError`` instead -- collapsing that case
+    to ``None`` would hide a real failure (permissions, corruption, ...) behind the same signal as
+    "not yet populated".
+    """
+    if not (target / ".git").exists():
+        return None
     result = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=target,
@@ -25,7 +34,9 @@ def _head_sha(target: Path) -> str | None:
         text=True,
     )
     if result.returncode != 0:
-        return None
+        raise ValueError(
+            f"git rev-parse HEAD failed in existing repo at {target}: {result.stderr.strip()}"
+        )
     return result.stdout.strip()
 
 
@@ -111,7 +122,7 @@ def fetch_vault(vault: CorpusVault, cache_root: Path) -> None:
 
     _fetch_pinned_commit(target, vault)
     try:
-        subprocess.run(["git", "checkout", vault.sha], check=True, cwd=target)
+        subprocess.run(["git", "checkout", "--force", vault.sha], check=True, cwd=target)
     except subprocess.CalledProcessError as exc:
         raise ValueError(
             f"git checkout failed for corpus vault {vault.name!r} at {target}: "

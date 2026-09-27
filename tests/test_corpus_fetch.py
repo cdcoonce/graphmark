@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.corpus.fetch import fetch_vault  # noqa: E402
+from scripts.corpus.fetch import _head_sha, fetch_vault  # noqa: E402
 from scripts.corpus.manifest import CorpusVault  # noqa: E402
 
 
@@ -149,6 +149,57 @@ class TestWrongSha:
         target = cache_root / "example-vault"
         assert _git(["rev-parse", "HEAD"], target) == third_sha
         assert (target / "note.md").read_text(encoding="utf-8") == "# third\n"
+
+
+class TestDirtyTrackedFile:
+    def test_cache_entry_with_a_dirty_tracked_file_is_force_corrected(
+        self, tmp_path, remote, first_sha, second_sha
+    ):
+        """A locally-modified tracked file must not block correction to the pinned SHA.
+
+        The cache is machine-owned and disposable, so ``fetch_vault`` must force the checkout
+        rather than aborting the way a plain ``git checkout`` would on a dirty tracked file.
+        """
+        cache_root = tmp_path / "cache"
+        fetch_vault(_vault(remote, second_sha), cache_root)
+
+        target = cache_root / "example-vault"
+        (target / "note.md").write_text("locally modified, not committed\n", encoding="utf-8")
+        assert _git(["status", "--porcelain"], target) != ""
+
+        fetch_vault(_vault(remote, first_sha), cache_root)
+
+        assert _git(["rev-parse", "HEAD"], target) == first_sha
+        assert (target / "note.md").read_text(encoding="utf-8") == "# first\n"
+        assert _git(["status", "--porcelain"], target) == ""
+
+
+class TestHeadShaNoRepo:
+    def test_returns_none_for_a_plain_directory_with_no_git_entry(self, tmp_path):
+        """Unchanged behavior: a directory that was never a git repo yields ``None``, not an
+
+        error -- this is the "needs clone/reinit" signal, distinct from a real git failure.
+        """
+        target = tmp_path / "not-a-repo"
+        target.mkdir()
+        assert _head_sha(target) is None
+
+
+class TestHeadShaGitFailure:
+    def test_raises_value_error_when_git_rev_parse_fails_inside_an_existing_repo(self, tmp_path):
+        """A ``target`` with a ``.git`` entry where ``git rev-parse HEAD`` still fails (here: a
+
+        freshly-initialized repo with no commits yet, so ``HEAD`` is unresolvable) is a real
+        error, not "not populated yet" -- it must raise, not silently collapse to ``None``.
+        """
+        target = tmp_path / "existing-repo-no-commits"
+        target.mkdir()
+        _git(["init", "-q", "-b", "main"], target)
+
+        with pytest.raises(ValueError) as excinfo:
+            _head_sha(target)
+
+        assert str(target) in str(excinfo.value)
 
 
 class TestShallowFetchFallback:
