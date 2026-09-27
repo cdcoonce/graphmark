@@ -159,3 +159,10 @@ def test_load_expected_reads_valid_report(tmp_path):
         "links": 0,
         "buckets": {},
     }
+
+
+def test_load_expected_accepts_str_path(tmp_path):
+    good_path = tmp_path / "good.json"
+    good_path.write_text('{"vault": "v", "notes": 1, "links": 0, "buckets": {}}')
+
+    assert load_expected(str(good_path)) == load_expected(good_path)
