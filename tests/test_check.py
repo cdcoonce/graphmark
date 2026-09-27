@@ -10,6 +10,7 @@ Contract under test:
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import sys
 from pathlib import Path
@@ -17,7 +18,7 @@ from unittest.mock import patch
 
 import pytest
 
-from graphmark.check import run_check, unresolved_link_count
+from graphmark.check import _DISPATCH, run_check, unresolved_link_count
 from graphmark.config import CheckPolicy, VaultConfig, load_config
 from graphmark.graph import NormalizeResolver, VaultGraph
 from graphmark.parse import WikilinkExtractor
@@ -228,3 +229,14 @@ class TestUnresolvedLinkCountTransientPrefixes:
             "actual": 1,
             "pass": True,
         }
+
+
+class TestDispatchMappingWired:
+    """_DISPATCH must have an entry for every CheckPolicy field (issue #234).
+
+    A future field added to CheckPolicy without a matching _DISPATCH entry must fail this test
+    at test time, rather than only failing at first real invocation via run_check's KeyError.
+    """
+
+    def test_dispatch_keys_match_checkpolicy_fields(self):
+        assert set(_DISPATCH) == {f.name for f in dataclasses.fields(CheckPolicy)}

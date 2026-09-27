@@ -58,15 +58,20 @@ def links_summary_line(report: dict) -> str:
     return " · ".join(parts)
 
 
+# Maps a CheckPolicy field name to the callable that computes its "actual" value. Honors
+# transient_prefixes for max_orphans (scratch/daily notes do not fail the gate) and passes
+# config= through to unresolved_link_count for the same reason (issue #256). An unwired field
+# name raises the dict's natural KeyError; TestDispatchMappingWired (tests/test_check.py) is what
+# makes an unwired CheckPolicy field visible at test time rather than at first real invocation.
+_DISPATCH = {
+    "max_orphans": lambda g, c: len(orphans(g, c)),
+    "max_unresolved_links": lambda g, c: unresolved_link_count(g, config=c),
+    "max_siloed": lambda g, c: len(siloed_notes(g)),
+}
+
+
 def _actual(name: str, graph: VaultGraph, config: VaultConfig) -> int:
-    if name == "max_orphans":
-        # Honors transient_prefixes, so scratch/daily notes do not fail the gate.
-        return len(orphans(graph, config))
-    if name == "max_unresolved_links":
-        return unresolved_link_count(graph, config=config)
-    if name == "max_siloed":
-        return len(siloed_notes(graph))
-    raise AssertionError(f"no metric wired for threshold {name!r}")  # pragma: no cover
+    return _DISPATCH[name](graph, config)
 
 
 def run_check(graph: VaultGraph, config: VaultConfig) -> dict:
