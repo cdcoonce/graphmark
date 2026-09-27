@@ -39,6 +39,18 @@ class CheckPolicy:
             for f in fields(self)  # noqa: B009 - dataclass
         )
 
+    def __post_init__(self) -> None:
+        # Mirrors _parse_check's invariant (config.py) so direct construction is exactly as
+        # strict as the TOML path: a non-negative int, or None for "not enforced". bool is an
+        # int subclass in Python, so it needs its own exclusion rather than falling out of the
+        # int check for free.
+        for f in fields(self):  # noqa: B009 - dataclass
+            value = getattr(self, f.name)
+            if value is None:
+                continue
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError(f"{f.name} must be a non-negative integer, got {value!r}")
+
 
 @dataclass
 class VaultConfig:
