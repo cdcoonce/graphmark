@@ -140,6 +140,30 @@ class TestClusters:
         sizes = [len(c) for c in result]
         assert sizes == sorted(sizes, reverse=True)
 
+    def test_equal_size_components_tie_break_is_deterministic(self):
+        # Two 2-node components {a.md, b.md} and {y.md, z.md} tie for largest. Build the same
+        # graph twice with the components inserted in reversed order, so any dependence on
+        # nx.connected_components' incidental traversal order (itself inherited from
+        # node-insertion order) would flip which component comes first. The tie-break must make
+        # both graphs agree on the same, lexicographically-ordered result regardless.
+        nodes_forward = {"a.md": None, "b.md": None, "y.md": None, "z.md": None}
+        out_links_forward = {"a.md": {"b.md"}, "b.md": set(), "y.md": {"z.md"}, "z.md": set()}
+        back_links_forward = {"b.md": {"a.md"}, "a.md": set(), "z.md": {"y.md"}, "y.md": set()}
+        g_forward = VaultGraph(
+            nodes=nodes_forward, out_links=out_links_forward, back_links=back_links_forward
+        )
+
+        nodes_reversed = {"y.md": None, "z.md": None, "a.md": None, "b.md": None}
+        out_links_reversed = {"y.md": {"z.md"}, "z.md": set(), "a.md": {"b.md"}, "b.md": set()}
+        back_links_reversed = {"z.md": {"y.md"}, "y.md": set(), "b.md": {"a.md"}, "a.md": set()}
+        g_reversed = VaultGraph(
+            nodes=nodes_reversed, out_links=out_links_reversed, back_links=back_links_reversed
+        )
+
+        expected = [["a.md", "b.md"], ["y.md", "z.md"]]
+        assert clusters(g_forward) == expected
+        assert clusters(g_reversed) == expected
+
 
 class TestBridges:
     def test_matches_oracle(self, graph):
