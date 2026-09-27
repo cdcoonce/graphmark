@@ -91,6 +91,15 @@ def test_build_vault_report_counts(tmp_path):
         assert report["buckets"][reason] == {"count": 0, "share": 0.0}
 
 
+def test_build_vault_report_accepts_str_cache_root(tmp_path):
+    vault = _write_synthetic_vault(tmp_path, "synthetic-vault")
+
+    path_report = build_vault_report(vault, tmp_path)
+    str_report = build_vault_report(vault, str(tmp_path))
+
+    assert str_report == path_report
+
+
 def test_report_json_is_byte_stable_across_calls(tmp_path):
     vault = _write_synthetic_vault(tmp_path, "synthetic-vault")
 
