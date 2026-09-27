@@ -377,16 +377,14 @@ class TestGitignore:
         assert ".corpus-cache/" in entries
 
 
-class TestCloneFailureWrapping:
-    def test_failing_clone_raises_value_error_naming_vault_and_chained_to_the_original(
+class TestFreshEntryInitFailureWrapping:
+    def test_failing_init_raises_value_error_naming_vault_and_chained_to_the_original(
         self, tmp_path, monkeypatch, remote, first_sha
     ):
-        """A failing ``git clone`` must surface as a chained ``ValueError``, not a bare
+        """A failing fresh-entry ``git init`` must surface as a chained ``ValueError``, not a
 
-        ``CalledProcessError`` -- the type assertion matters here specifically because the
-        unwrapped ``CalledProcessError``'s default message already happens to contain
-        ``vault.name`` (it is the clone destination argv element), so a message-only assertion
-        would pass whether or not the wrapping exists.
+        bare ``CalledProcessError`` -- same contract the old clone-failure wrapping proved,
+        retargeted onto the fresh-entry ``git init`` call now that population no longer clones.
         """
         cache_root = tmp_path / "cache"
         vault = _vault(remote, first_sha)
@@ -394,10 +392,8 @@ class TestCloneFailureWrapping:
         real_run = subprocess.run
 
         def spy(args, *rest, **kwargs):
-            if args[:2] == ["git", "clone"]:
-                return real_run(
-                    ["git", "clone", "/no/such/path/at/all", vault.name], *rest, **kwargs
-                )
+            if args[:2] == ["git", "init"]:
+                return real_run(["git", "init", "--separate-git-dir"], *rest, **kwargs)
             return real_run(args, *rest, **kwargs)
 
         monkeypatch.setattr("scripts.corpus.fetch.subprocess.run", spy)
@@ -408,6 +404,40 @@ class TestCloneFailureWrapping:
         assert isinstance(excinfo.value, ValueError)
         assert vault.name in str(excinfo.value)
         assert isinstance(excinfo.value.__cause__, subprocess.CalledProcessError)
+
+
+class TestFreshEntryNoFullHistoryClone:
+    def test_fresh_fetch_never_clones_and_lands_less_than_full_history(
+        self, tmp_path, monkeypatch, remote, first_sha
+    ):
+        """Populating a fresh cache entry must not run a full-history ``git clone`` -- it must
+
+        init + remote-add + a pinned-SHA fetch instead, landing strictly less history than the
+        remote holds. ``first_sha`` is deliberately the remote's non-tip commit: pinning to it
+        proves the cache entry holds only what was fetched for that SHA, not the full history a
+        ``git clone`` of ``HEAD`` (or a naive full fetch) would have pulled in.
+        """
+        cache_root = tmp_path / "cache"
+        vault = _vault(remote, first_sha)
+
+        calls: list[list[str]] = []
+        real_run = subprocess.run
+
+        def spy(args, *rest, **kwargs):
+            calls.append(list(args))
+            return real_run(args, *rest, **kwargs)
+
+        monkeypatch.setattr("scripts.corpus.fetch.subprocess.run", spy)
+        fetch_vault(vault, cache_root)
+
+        assert ["git", "clone", str(remote), vault.name] not in calls
+        assert not any(call[:2] == ["git", "clone"] for call in calls)
+
+        target = cache_root / "example-vault"
+        remote_commit_count = int(_git(["rev-list", "--all", "--count"], remote))
+        cache_commit_count = int(_git(["rev-list", "--all", "--count"], target))
+        assert cache_commit_count < remote_commit_count
+        assert _git(["rev-parse", "HEAD"], target) == first_sha
 
 
 class TestCheckoutFailureWrapping:
@@ -510,21 +540,23 @@ class TestSkipsFetchWhenTargetShaIsAlreadyLocal:
     def test_correcting_to_a_locally_present_sha_issues_no_fetch(
         self, tmp_path, monkeypatch, remote, first_sha, second_sha
     ):
-        """Correcting to a SHA already reachable in the cache entry's local history (e.g. via the
-        initial full clone) must not touch the network -- only ``git checkout`` (and origin
-        reconciliation) is needed.
+        """Correcting to a SHA already present in the cache entry's local objects (e.g. a pin
+        rolled back to one this entry was populated at earlier) must not touch the network --
+        only ``git checkout`` (and origin reconciliation) is needed.
 
         Checkout flags and whether an ``origin`` reconciliation call fires are owned by sibling
         issues and may vary by build order, so this only asserts the absence of any ``git fetch``
         call and the correct end-state SHA -- not the full call list.
         """
         cache_root = tmp_path / "cache"
-        vault_first = _vault(remote, first_sha)
-        fetch_vault(vault_first, cache_root)
+        # Populate at second_sha, then re-pin to first_sha: second_sha's objects stay local. A
+        # fresh entry fetches only its pinned commit (#214), so an earlier pin is the realistic
+        # way a SHA is already local -- not a full-history clone.
+        fetch_vault(_vault(remote, second_sha), cache_root)
+        fetch_vault(_vault(remote, first_sha), cache_root)
 
         target = cache_root / "example-vault"
         assert _git(["rev-parse", "HEAD"], target) == first_sha
-        # The initial clone pulled full history, so second_sha is already a local object here.
         probe = subprocess.run(
             ["git", "cat-file", "-e", f"{second_sha}^{{commit}}"],
             cwd=target,
