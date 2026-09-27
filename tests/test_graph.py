@@ -1,5 +1,6 @@
 """Tests for graph.py: build_catalog, NormalizeResolver, VaultGraph."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -186,6 +187,72 @@ class TestVaultGraphBuild:
         assert degree("personal/gamma.md") == 2
         assert degree("reference/island.md") == 0
         assert degree("reference/stub.md") == 0
+
+
+class TestVaultGraphBuildUnreadableNotes:
+    """A broken symlink or a directory named `*.md` must be skipped, not crash the build."""
+
+    def _build(self, root: Path) -> VaultGraph:
+        return VaultGraph.build(
+            VaultConfig(root=root),
+            WikilinkExtractor(),
+            NormalizeResolver(),
+        )
+
+    def test_broken_symlink_does_not_crash_build_and_is_absent_from_nodes(self, tmp_path):
+        (tmp_path / "good.md").write_text("# Good\n")
+        os.symlink(tmp_path / "does-not-exist.md", tmp_path / "broken.md")
+
+        graph = self._build(tmp_path)
+
+        assert "broken.md" not in graph.nodes
+        assert "good.md" in graph.nodes
+
+    def test_directory_named_md_does_not_crash_build_and_is_absent_from_nodes(self, tmp_path):
+        (tmp_path / "good.md").write_text("# Good\n")
+        (tmp_path / "dirlooksmd.md").mkdir()
+
+        graph = self._build(tmp_path)
+
+        assert "dirlooksmd.md" not in graph.nodes
+        assert "good.md" in graph.nodes
+
+    def test_unreadable_notes_produce_exactly_n_warnings_one_per_file(self, tmp_path, capsys):
+        (tmp_path / "good.md").write_text("# Good\n")
+        os.symlink(tmp_path / "does-not-exist.md", tmp_path / "broken.md")
+        (tmp_path / "dirlooksmd.md").mkdir()
+
+        self._build(tmp_path)
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        lines = [line for line in captured.err.splitlines() if line]
+        assert len(lines) == 2
+        assert "graphmark: warning: broken.md: unreadable, skipped" in lines
+        assert "graphmark: warning: dirlooksmd.md: unreadable, skipped" in lines
+
+    def test_good_notes_unaffected_by_a_skipped_unreadable_note(self, tmp_path):
+        (tmp_path / "alpha.md").write_text("# Alpha\n\n[[beta]]\n")
+        (tmp_path / "beta.md").write_text("# Beta\n")
+        os.symlink(tmp_path / "does-not-exist.md", tmp_path / "broken.md")
+
+        graph = self._build(tmp_path)
+
+        assert graph.out_links.get("alpha.md") == {"beta.md"}
+        assert graph.back_links.get("beta.md") == {"alpha.md"}
+
+    def test_a_non_os_error_while_parsing_still_propagates(self, tmp_path, monkeypatch):
+        # Only filesystem-level unreadability is skipped; a bug inside parsing must stay loud
+        # rather than silently dropping notes behind a broadened except.
+        (tmp_path / "good.md").write_text("# Good\n")
+
+        def boom(path, root):
+            raise ValueError("parser bug")
+
+        monkeypatch.setattr("graphmark.graph.parse_document", boom)
+
+        with pytest.raises(ValueError, match="parser bug"):
+            self._build(tmp_path)
 
 
 class TestMarkdownExtensionInLinks:
