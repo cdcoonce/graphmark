@@ -47,7 +47,7 @@ def load_manifest(path: Path) -> list[CorpusVault]:
 
     required = [f.name for f in fields(CorpusVault)]
     vaults: list[CorpusVault] = []
-    seen_names: set[str] = set()
+    seen_names_casefold: dict[str, str] = {}
 
     for entry in data.get("vault", []):
         missing = [key for key in required if key not in entry]
@@ -77,9 +77,13 @@ def load_manifest(path: Path) -> list[CorpusVault]:
                 f"'{entry['clone_url']}'"
             )
 
-        if name in seen_names:
-            raise ValueError(f"manifest {path}: duplicate vault name '{name}'")
-        seen_names.add(name)
+        name_casefold = name.casefold()
+        if name_casefold in seen_names_casefold:
+            other = seen_names_casefold[name_casefold]
+            raise ValueError(
+                f"manifest {path}: duplicate vault name '{name}' (collides with '{other}')"
+            )
+        seen_names_casefold[name_casefold] = name
 
         vaults.append(
             CorpusVault(

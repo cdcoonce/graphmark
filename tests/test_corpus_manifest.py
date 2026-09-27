@@ -54,6 +54,24 @@ def test_duplicate_name_raises(tmp_path):
         load_manifest(manifest_path)
 
 
+def test_case_insensitive_duplicate_name_raises(tmp_path):
+    # Two entries whose names differ only by case must be rejected too: on case-insensitive
+    # filesystems (macOS/APFS default, Windows) they'd resolve to the same checkout directory in
+    # fetch.py, silently clobbering each other. The message must name both original-case entries,
+    # not just one, so a fix that only case-folds the comparison but keeps a single-name message
+    # still fails this test.
+    manifest_path = tmp_path / "manifest.toml"
+    first = _VALID_ENTRY.replace('name = "example-vault"', 'name = "Example-Vault"')
+    second = _VALID_ENTRY  # name = "example-vault"
+    manifest_path.write_text(first + second)
+
+    with pytest.raises(ValueError, match="duplicate vault name") as exc_info:
+        load_manifest(manifest_path)
+
+    assert "Example-Vault" in str(exc_info.value)
+    assert "example-vault" in str(exc_info.value)
+
+
 def test_missing_required_field_raises(tmp_path):
     manifest_path = tmp_path / "manifest.toml"
     manifest_path.write_text("""
