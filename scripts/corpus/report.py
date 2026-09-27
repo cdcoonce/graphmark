@@ -38,6 +38,7 @@ def build_vault_report(vault: CorpusVault, cache_root: Path) -> dict:
         "notes": len(graph.nodes),
         "links": total,
         "buckets": buckets,
+        "alias_resolved": report["alias_resolved"],
     }
 
 
