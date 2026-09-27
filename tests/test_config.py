@@ -8,6 +8,7 @@ Path A — alt fixture via load_config reproduces alt/expected.json exactly, inc
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -107,6 +108,59 @@ class TestLoadConfig:
     def test_excluded_dirs_loaded(self):
         cfg = load_config(ALT_DIR / "config.toml")
         assert cfg.excluded_dirs == [".git"]
+
+
+# ---------------------------------------------------------------------------
+# root type validation (#236) — a non-string TOML `root` must raise ValueError,
+# not a raw TypeError from Path.__truediv__ / Path().
+# ---------------------------------------------------------------------------
+
+
+class TestRootTypeValidation:
+    def test_toml_root_int_raises_valueerror(self, tmp_path):
+        toml = tmp_path / "int-root.toml"
+        toml.write_text("root = 5\n")
+        with pytest.raises(
+            ValueError, match=re.escape(f"config {toml}: root must be a string, got 5")
+        ):
+            load_config(toml)
+
+    def test_toml_root_list_raises_valueerror(self, tmp_path):
+        toml = tmp_path / "list-root.toml"
+        toml.write_text('root = ["a"]\n')
+        with pytest.raises(
+            ValueError, match=re.escape(f"config {toml}: root must be a string, got ['a']")
+        ):
+            load_config(toml)
+
+    def test_toml_root_bool_raises_valueerror(self, tmp_path):
+        # bool is not str (and is an int subclass), so `root = true` must be rejected.
+        toml = tmp_path / "bool-root.toml"
+        toml.write_text("root = true\n")
+        with pytest.raises(
+            ValueError, match=re.escape(f"config {toml}: root must be a string, got True")
+        ):
+            load_config(toml)
+
+    def test_vault_config_root_int_raises_valueerror(self):
+        with pytest.raises(
+            ValueError,
+            match=re.escape("root must be a string, Path, or os.PathLike, got 5"),
+        ):
+            VaultConfig(root=5)
+
+    def test_vault_config_accepts_a_custom_pathlike(self, tmp_path):
+        # A custom os.PathLike (not str, not Path) must remain accepted.
+        class FakePath:
+            def __init__(self, p: Path) -> None:
+                self._p = p
+
+            def __fspath__(self) -> str:
+                return str(self._p)
+
+        cfg = VaultConfig(root=FakePath(tmp_path / "vault"))
+        assert isinstance(cfg.root, Path)
+        assert cfg.root == tmp_path / "vault"
 
 
 # ---------------------------------------------------------------------------
