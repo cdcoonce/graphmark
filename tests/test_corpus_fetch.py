@@ -185,6 +185,30 @@ class TestShallowFetchFallback:
         assert (target / "note.md").read_text(encoding="utf-8") == "# third\n"
 
 
+class TestNonDirectoryTarget:
+    def test_raises_value_error_naming_vault_and_path_when_target_is_a_file(
+        self, tmp_path, remote, first_sha
+    ):
+        """A stray file at the cache target must fail loudly with a ValueError, not surface the
+
+        raw ``NotADirectoryError``/``OSError`` that ``subprocess.run`` would otherwise raise deep
+        inside ``_fetch_pinned_commit``. The message must name both the vault and the path so the
+        error is actionable, not just correctly typed.
+        """
+        cache_root = tmp_path / "cache"
+        cache_root.mkdir()
+        target = cache_root / "example-vault"
+        target.write_text("not a directory\n", encoding="utf-8")
+
+        vault = _vault(remote, first_sha)
+
+        with pytest.raises(ValueError) as excinfo:
+            fetch_vault(vault, cache_root)
+
+        assert vault.name in str(excinfo.value)
+        assert str(target) in str(excinfo.value)
+
+
 class TestGitignore:
     def test_corpus_cache_is_gitignored(self):
         entries = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()

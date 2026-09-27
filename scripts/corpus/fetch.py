@@ -54,6 +54,11 @@ def fetch_vault(vault: CorpusVault, cache_root: Path) -> None:
     """
     target = Path(cache_root) / vault.name
 
+    if target.exists() and not target.is_dir():
+        raise ValueError(
+            f"corpus cache target for vault {vault.name!r} exists but is not a directory: {target}"
+        )
+
     if target.is_dir() and _head_sha(target) == vault.sha:
         return
 
