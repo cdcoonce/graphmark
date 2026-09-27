@@ -132,6 +132,15 @@ class TestOutOfScope:
         _write(tmp_path, "b.md")
         assert _build(tmp_path).out_of_scope == {}
 
+    def test_root_level_note_is_out_of_scope_when_scoped_folders_set(self, tmp_path):
+        # A root-level note has no folder segment, so rel_parts[0] is the filename itself, not a
+        # folder — it can never match a non-empty scoped_folders list, regardless of its name.
+        _write(tmp_path, "docs/a.md")
+        _write(tmp_path, "Root Note.md")
+        graph = _build(tmp_path, scoped_folders=["docs"])
+        assert "Root Note.md" not in graph.nodes
+        assert graph.out_of_scope == {"root note": ["Root Note.md"]}
+
 
 class TestConstruction:
     def test_three_positional_arguments_still_construct(self):
