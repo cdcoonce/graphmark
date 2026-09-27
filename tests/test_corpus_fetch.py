@@ -434,6 +434,78 @@ class TestCheckoutFailureWrapping:
         assert isinstance(excinfo.value.__cause__, subprocess.CalledProcessError)
 
 
+class TestOriginReconciliation:
+    def test_fetch_reconciles_origin_before_pulling_a_pinned_sha_from_a_new_remote(
+        self, tmp_path, remote, first_sha
+    ):
+        """A manifest entry's ``clone_url`` can change to a genuinely different repository while
+        the cache directory persists -- ``origin`` must be reconciled before the fetch, not left
+        pointing at the stale URL.
+
+        The second remote below shares no history with the first, so this test is load-bearing:
+        without the reconciliation, ``_fetch_pinned_commit``'s ``git fetch origin <sha>`` cannot
+        resolve a SHA the stale ``origin`` never had, and ``fetch_vault`` raises ``ValueError``
+        instead of succeeding.
+        """
+        cache_root = tmp_path / "cache"
+        fetch_vault(_vault(remote, first_sha), cache_root)
+        target = cache_root / "example-vault"
+        assert _git(["remote", "get-url", "origin"], target) == str(remote)
+
+        other_remote = tmp_path / "other-remote"
+        other_remote.mkdir()
+        _git(["init", "-q", "-b", "main"], other_remote)
+        _git(["config", "user.email", "corpus@example.test"], other_remote)
+        _git(["config", "user.name", "corpus test"], other_remote)
+        (other_remote / "note.md").write_text("# other\n", encoding="utf-8")
+        _git(["add", "note.md"], other_remote)
+        _git(["commit", "-q", "-m", "other"], other_remote)
+        other_sha = _git(["rev-parse", "HEAD"], other_remote)
+
+        other_vault = CorpusVault(
+            name="example-vault",
+            clone_url=str(other_remote),
+            sha=other_sha,
+            license="MIT",
+            excluded_dirs=(".git", ".obsidian"),
+        )
+
+        fetch_vault(other_vault, cache_root)
+
+        assert _git(["remote", "get-url", "origin"], target) == str(other_remote)
+        assert _git(["rev-parse", "HEAD"], target) == other_sha
+        assert (target / "note.md").read_text(encoding="utf-8") == "# other\n"
+
+
+class TestSetUrlFailureWrapping:
+    def test_failing_set_url_raises_value_error_naming_vault_and_chained(
+        self, tmp_path, monkeypatch, remote, first_sha, second_sha
+    ):
+        cache_root = tmp_path / "cache"
+        fetch_vault(_vault(remote, first_sha), cache_root)
+        vault = _vault(remote, second_sha)
+
+        real_run = subprocess.run
+
+        def spy(args, *rest, **kwargs):
+            if args[:3] == ["git", "remote", "set-url"]:
+                return real_run(
+                    ["git", "remote", "set-url", "no-such-remote", vault.clone_url],
+                    *rest,
+                    **kwargs,
+                )
+            return real_run(args, *rest, **kwargs)
+
+        monkeypatch.setattr("scripts.corpus.fetch.subprocess.run", spy)
+
+        with pytest.raises(ValueError) as excinfo:
+            fetch_vault(vault, cache_root)
+
+        assert isinstance(excinfo.value, ValueError)
+        assert vault.name in str(excinfo.value)
+        assert isinstance(excinfo.value.__cause__, subprocess.CalledProcessError)
+
+
 class TestFullFetchFallbackFailureWrapping:
     def test_failing_full_fetch_fallback_raises_value_error_naming_vault_and_chained(
         self, tmp_path, monkeypatch, remote, first_sha
