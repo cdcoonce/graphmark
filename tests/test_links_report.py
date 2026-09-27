@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from graphmark.check import links_report, run_check
+from graphmark.check import links_report, links_summary_line, run_check
 from graphmark.config import VaultConfig
 from graphmark.graph import DIAGNOSIS_REASONS, NormalizeResolver, VaultGraph
 from graphmark.parse import WikilinkExtractor
@@ -169,3 +169,30 @@ class TestCli:
         proc = _cli("links", flag)
         assert proc.returncode == 0
         assert "links" in proc.stdout.lower()
+
+
+class TestLinksSummaryLine:
+    """Direct unit test for `links_summary_line` (issue #272) — no CLI subprocess, no real graph.
+
+    TestCli.test_a_human_readable_summary_goes_to_stderr above only checks loose substrings
+    ("resolved" in stderr, "alias-resolved" in stderr); nothing pins the exact `" · "`-joined
+    format or the `alias-resolved N` segment's exact placement and value.
+    """
+
+    def test_exact_joined_format_including_alias_resolved_segment(self):
+        report = {
+            "total": 7,
+            "counts": {
+                "resolved": 6,
+                "ambiguous": 0,
+                "non-note-file": 0,
+                "out-of-scope-note": 0,
+                "missing": 1,
+                "intra-note": 0,
+            },
+            "alias_resolved": 2,
+        }
+        assert links_summary_line(report) == (
+            "resolved 6 · ambiguous 0 · non-note-file 0 · out-of-scope-note 0 · "
+            "missing 1 · intra-note 0 · alias-resolved 2"
+        )

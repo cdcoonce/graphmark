@@ -291,3 +291,38 @@ class TestDispatchMappingWired:
 
     def test_dispatch_keys_match_checkpolicy_fields(self):
         assert set(_DISPATCH) == {f.name for f in dataclasses.fields(CheckPolicy)}
+
+
+class TestBreachLines:
+    """Direct unit tests for `breach_lines` (issue #272) — no CLI subprocess, no real graph.
+
+    Coverage before this class was entirely indirect (loose substring assertions against CLI
+    stderr in TestExitCodes/TestMaxSiloedBreach above); nothing pinned the exact
+    ``f"{name}: {actual} exceeds limit {limit}"`` format or that passing checks are omitted.
+    """
+
+    def test_all_passing_report_yields_empty_list(self):
+        report = {
+            "checks": [
+                {"name": "max_orphans", "limit": 5, "actual": 2, "pass": True},
+                {"name": "max_siloed", "limit": 0, "actual": 0, "pass": True},
+            ]
+        }
+        assert breach_lines(report) == []
+
+    def test_single_breach_exact_format(self):
+        report = {"checks": [{"name": "max_orphans", "limit": 1, "actual": 3, "pass": False}]}
+        assert breach_lines(report) == ["max_orphans: 3 exceeds limit 1"]
+
+    def test_multiple_breaches_are_in_report_order_with_passing_checks_omitted(self):
+        report = {
+            "checks": [
+                {"name": "max_orphans", "limit": 1, "actual": 3, "pass": False},
+                {"name": "max_unresolved_links", "limit": 0, "actual": 0, "pass": True},
+                {"name": "max_siloed", "limit": 2, "actual": 5, "pass": False},
+            ]
+        }
+        assert breach_lines(report) == [
+            "max_orphans: 3 exceeds limit 1",
+            "max_siloed: 5 exceeds limit 2",
+        ]
