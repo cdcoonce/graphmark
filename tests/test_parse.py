@@ -375,6 +375,29 @@ class TestBlockStyleLists:
         assert "Body" in doc.text
 
 
+class TestFrontmatterListParsing:
+    """Inline lists (`key: [a, b]`) split naively on every comma, including commas embedded
+    inside a double-quoted item. A note declaring `aliases: ["Smith, John", "Doe, Jane"]` meant
+    two aliases but silently got four bogus, wrong ones fed into `build_aliases` — see #227.
+    """
+
+    def _fm(self, raw: str) -> dict:
+        from graphmark.parse import _parse_frontmatter
+
+        return _parse_frontmatter(raw)
+
+    def test_quoted_comma_bearing_items_are_preserved(self):
+        assert self._fm('aliases: ["Smith, John", "Doe, Jane"]') == {
+            "aliases": ["Smith, John", "Doe, Jane"]
+        }
+
+    def test_unquoted_apostrophe_is_not_a_quote_delimiter(self):
+        assert self._fm("aliases: [O'Brien, Smith]") == {"aliases": ["O'Brien", "Smith"]}
+
+    def test_empty_inline_list_does_not_raise(self):
+        assert self._fm("aliases: []") == {"aliases": []}
+
+
 class TestFixtureFrontmatterUnchanged:
     def test_no_fixture_note_uses_a_block_list(self):
         # The parity argument for this change: fixture notes use inline/scalar frontmatter only,
