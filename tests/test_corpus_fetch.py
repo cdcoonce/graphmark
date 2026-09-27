@@ -303,6 +303,23 @@ class TestNestedInUnrelatedRepo:
         assert _git(["status", "--porcelain"], outer) == ""
 
 
+class TestSymlinkedCacheRoot:
+    def test_a_valid_cache_entry_reached_through_a_symlink_is_still_corrected(
+        self, tmp_path, remote, first_sha, second_sha
+    ):
+        # ``git rev-parse --show-toplevel`` reports the symlink-resolved path, so the identity
+        # check must resolve ``target`` too; comparing unresolved paths would reject this real,
+        # correctly-rooted cache entry as "not its own repo root".
+        real_cache = tmp_path / "real-cache"
+        fetch_vault(_vault(remote, second_sha), real_cache)
+        linked_cache = tmp_path / "linked-cache"
+        linked_cache.symlink_to(real_cache, target_is_directory=True)
+
+        fetch_vault(_vault(remote, first_sha), linked_cache)
+
+        assert _git(["rev-parse", "HEAD"], real_cache / "example-vault") == first_sha
+
+
 class TestGitignore:
     def test_corpus_cache_is_gitignored(self):
         entries = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
