@@ -83,6 +83,7 @@ class TestPublicSurface:
         # config
         "VaultConfig",
         "CheckPolicy",
+        "LINK_SYNTAXES",
         "load_config",
         # model + graph
         "Document",
@@ -148,3 +149,20 @@ class TestPublicSurface:
         exec("from graphmark import *", namespace)  # noqa: S102 - pinning the export surface
         for name in graphmark.__all__:
             assert name in namespace
+
+
+class TestLinkSyntaxesExport:
+    def test_it_resolves_and_equals_the_submodule_value(self):
+        from graphmark import LINK_SYNTAXES
+
+        assert LINK_SYNTAXES is graphmark.config.LINK_SYNTAXES
+
+    def test_it_is_a_frozenset(self):
+        from graphmark import LINK_SYNTAXES
+
+        assert isinstance(LINK_SYNTAXES, frozenset)
+
+    def test_markdown_autolinks_is_an_accepted_syntax(self):
+        from graphmark import LINK_SYNTAXES
+
+        assert "markdown-autolinks" in LINK_SYNTAXES
