@@ -15,9 +15,21 @@ from graphmark.graph import DIAGNOSIS_REASONS, VaultGraph
 from graphmark.metrics import orphans, siloed_notes
 
 
-def unresolved_link_count(graph: VaultGraph) -> int:
-    """Total unresolved link OCCURRENCES across the vault (not distinct targets)."""
-    return sum(len(displays) for displays in graph.unresolved.values())
+def unresolved_link_count(graph: VaultGraph, *, config: VaultConfig | None = None) -> int:
+    """Total unresolved link OCCURRENCES across the vault (not distinct targets).
+
+    With no ``config`` (the default), every occurrence counts — byte-identical to this
+    function's behavior before issue #256. With ``config`` given, occurrences whose source
+    note (the key in ``graph.unresolved``) starts with any ``config.transient_prefixes`` entry
+    are excluded, the same ``str.startswith`` test ``orphans`` uses (metrics.py).
+    """
+    if config is None:
+        return sum(len(displays) for displays in graph.unresolved.values())
+    return sum(
+        len(displays)
+        for note, displays in graph.unresolved.items()
+        if not any(note.startswith(prefix) for prefix in config.transient_prefixes)
+    )
 
 
 def links_report(graph: VaultGraph) -> dict:
@@ -51,7 +63,7 @@ def _actual(name: str, graph: VaultGraph, config: VaultConfig) -> int:
         # Honors transient_prefixes, so scratch/daily notes do not fail the gate.
         return len(orphans(graph, config))
     if name == "max_unresolved_links":
-        return unresolved_link_count(graph)
+        return unresolved_link_count(graph, config=config)
     if name == "max_siloed":
         return len(siloed_notes(graph))
     raise AssertionError(f"no metric wired for threshold {name!r}")  # pragma: no cover

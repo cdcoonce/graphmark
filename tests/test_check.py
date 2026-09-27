@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 import pytest
 
-from graphmark.check import run_check
+from graphmark.check import run_check, unresolved_link_count
 from graphmark.config import CheckPolicy, VaultConfig, load_config
 from graphmark.graph import NormalizeResolver, VaultGraph
 from graphmark.parse import WikilinkExtractor
@@ -188,3 +188,43 @@ class TestExitCodes:
         out, err = _run(argv, capsys, 2)
         assert out == ""
         assert "policy" in err
+
+
+class TestUnresolvedLinkCountTransientPrefixes:
+    """unresolved_link_count honors transient_prefixes when a config is given (issue #256).
+
+    A tiny synthetic vault (not a frozen fixture) with one broken link inside a
+    transient_prefixes-matched note and one identical-shape broken link outside it.
+    """
+
+    @staticmethod
+    def _build(tmp_path) -> tuple[VaultGraph, VaultConfig]:
+        (tmp_path / "daily").mkdir()
+        (tmp_path / "daily" / "scratch.md").write_text("Broken: [[NopeMissing]]\n")
+        (tmp_path / "normal.md").write_text("Broken: [[AlsoMissing]]\n")
+        config = VaultConfig(root=tmp_path, transient_prefixes=("daily/",))
+        graph = VaultGraph.build(config, WikilinkExtractor(), NormalizeResolver())
+        return graph, config
+
+    def test_no_config_counts_every_occurrence(self, tmp_path):
+        graph, _ = self._build(tmp_path)
+        assert unresolved_link_count(graph) == 2
+
+    def test_config_none_counts_every_occurrence(self, tmp_path):
+        graph, _ = self._build(tmp_path)
+        assert unresolved_link_count(graph, config=None) == 2
+
+    def test_config_given_excludes_transient_prefix_matches(self, tmp_path):
+        graph, config = self._build(tmp_path)
+        assert unresolved_link_count(graph, config=config) == 1
+
+    def test_run_check_passes_config_through_to_max_unresolved_links(self, tmp_path):
+        graph, config = self._build(tmp_path)
+        config.check = CheckPolicy(max_unresolved_links=1)
+        (check,) = run_check(graph, config)["checks"]
+        assert check == {
+            "name": "max_unresolved_links",
+            "limit": 1,
+            "actual": 1,
+            "pass": True,
+        }
