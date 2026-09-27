@@ -279,6 +279,24 @@ excluded_dirs = [".git", ".obsidian"]
         load_manifest(manifest_path)
 
 
+def test_link_syntax_key_loads_and_defaults(tmp_path):
+    # An entry that sets link_syntax loads it verbatim; an entry that omits it (like every real
+    # manifest entry today) must still default to "wikilink" — the pre-existing behavior — not
+    # be rejected as missing a required field.
+    manifest_path = tmp_path / "manifest.toml"
+    with_syntax = (
+        _VALID_ENTRY.replace('name = "example-vault"', 'name = "markdown-vault"')
+        + '\nlink_syntax = "markdown"\n'
+    )
+    manifest_path.write_text(_VALID_ENTRY + with_syntax)
+
+    vaults = load_manifest(manifest_path)
+    by_name = {v.name: v for v in vaults}
+
+    assert by_name["example-vault"].link_syntax == "wikilink"
+    assert by_name["markdown-vault"].link_syntax == "markdown"
+
+
 def test_real_manifest_loads():
     vaults = load_manifest(REAL_MANIFEST)
 

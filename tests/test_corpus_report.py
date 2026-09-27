@@ -32,6 +32,29 @@ def _write_synthetic_vault(cache_root: Path, name: str) -> CorpusVault:
     )
 
 
+def _write_markdown_link_vault(cache_root: Path, name: str) -> CorpusVault:
+    """Write a vault whose only link is markdown-style ``[text](note.md)``, no wikilinks.
+
+    Scanned with the default ``link_syntax="wikilink"``, this link is invisible to the parser
+    (0 links total), so it cannot prove the fix — a report threading ``link_syntax`` through
+    correctly must instead see it and resolve it, matching the real
+    ``lyz-code/blue-book``-style failure mode described in the issue.
+    """
+    vault_dir = cache_root / name
+    vault_dir.mkdir(parents=True)
+    (vault_dir / "alpha.md").write_text("See [beta](beta.md).\n")
+    (vault_dir / "beta.md").write_text("# Beta\n")
+
+    return CorpusVault(
+        name=name,
+        clone_url="https://github.com/example/vault",
+        sha="0123456789abcdef0123456789abcdef01234567",
+        license="MIT",
+        excluded_dirs=(),
+        link_syntax="markdown",
+    )
+
+
 def _write_vault_with_excluded_subdir(
     cache_root: Path, name: str
 ) -> tuple[CorpusVault, CorpusVault]:
@@ -124,6 +147,19 @@ def test_build_vault_report_counts(tmp_path):
     assert report["buckets"]["missing"] == {"count": 1, "share": 0.5}
     for reason in ("ambiguous", "non-note-file", "out-of-scope-note", "intra-note"):
         assert report["buckets"][reason] == {"count": 0, "share": 0.0}
+
+
+def test_build_vault_report_threads_link_syntax_for_markdown_links(tmp_path):
+    # Proves build_vault_report actually passes vault.link_syntax into the VaultConfig it
+    # constructs: scanned as the default wikilink syntax, the markdown-style link below would
+    # never be extracted at all (0 links, 0 resolved) — exactly the silent, misleading-report
+    # failure mode this issue describes for markdown-link vaults like lyz-code/blue-book.
+    vault = _write_markdown_link_vault(tmp_path, "markdown-vault")
+
+    report = build_vault_report(vault, tmp_path)
+
+    assert report["links"] > 0
+    assert report["buckets"]["resolved"]["count"] > 0
 
 
 def test_build_vault_report_accepts_str_cache_root(tmp_path):
