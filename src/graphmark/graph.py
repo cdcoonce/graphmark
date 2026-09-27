@@ -163,7 +163,10 @@ def candidates_for(display: str, catalog: dict[str, list[str]]) -> list[str]:
 
 
 def build_aliases(
-    docs: list[Document], catalog: dict[str, list[str]], out_of_scope: dict[str, list[str]]
+    docs: list[Document],
+    catalog: dict[str, list[str]],
+    *,
+    out_of_scope: dict[str, list[str]] | None = None,
 ) -> dict[str, str]:
     """Map normalized alias → rel_path, for aliases that unambiguously name one note.
 
@@ -177,6 +180,8 @@ def build_aliases(
       ``CLAUDE.md``): such a note is real markdown, just excluded from the graph, so an alias
       claiming its stem must be dropped the same way — otherwise the alias resolves before
       ``_diagnose`` ever reaches its out-of-scope check, hijacking the real file's identity.
+      ``out_of_scope`` is keyword-only and optional so existing two-argument callers keep their
+      behavior; ``VaultGraph.build`` always passes it.
     * **An alias claimed by two or more notes resolves to nothing** — the same refusal graphmark
       already applies to colliding basenames. Ambiguity stays ambiguous.
 
@@ -199,7 +204,7 @@ def build_aliases(
             if "/" in alias:
                 continue
             key = _normalize(alias)
-            if not key or key in catalog or key in out_of_scope:
+            if not key or key in catalog or key in (out_of_scope or {}):
                 continue
             claims.setdefault(key, set()).add(doc.rel_path)
     return {key: paths.pop() for key, paths in claims.items() if len(paths) == 1}
@@ -725,7 +730,11 @@ class VaultGraph:
         docs = [parse_document(p, root) for p in md_files]
         nodes = {doc.rel_path: doc for doc in docs}
         catalog = build_catalog(docs)
-        aliases = build_aliases(docs, catalog, out_of_scope) if config.resolve_aliases else {}
+        aliases = (
+            build_aliases(docs, catalog, out_of_scope=out_of_scope)
+            if config.resolve_aliases
+            else {}
+        )
 
         out_links: dict[str, set[str]] = {rel: set() for rel in nodes}
         back_links: dict[str, set[str]] = {rel: set() for rel in nodes}

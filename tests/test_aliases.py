@@ -29,8 +29,14 @@ from pathlib import Path
 import pytest
 
 from graphmark.config import VaultConfig
-from graphmark.graph import NormalizeResolver, VaultGraph, diagnose
-from graphmark.parse import WikilinkExtractor
+from graphmark.graph import (
+    NormalizeResolver,
+    VaultGraph,
+    build_aliases,
+    build_catalog,
+    diagnose,
+)
+from graphmark.parse import WikilinkExtractor, parse_document
 
 
 def _write(root: Path, rel: str, aliases: list[str] | None = None, body: str = "") -> None:
@@ -268,6 +274,15 @@ class TestOutOfScopeCollisions:
         _write(tmp_path, "aliasing-note.md", aliases=["CLAUDE"])
         graph = _build(tmp_path, rules_files=["CLAUDE.md"])
         assert "claude" not in graph.aliases
+
+    def test_out_of_scope_is_an_optional_keyword_so_two_argument_calls_keep_working(self, tmp_path):
+        # build_aliases is public API (graphmark.__all__): existing two-argument callers must keep
+        # their exact behavior, and the new guard applies only when out_of_scope is passed.
+        _write(tmp_path, "aliasing-note.md", aliases=["CLAUDE"])
+        docs = [parse_document(tmp_path / "aliasing-note.md", tmp_path)]
+        catalog = build_catalog(docs)
+        assert build_aliases(docs, catalog) == {"claude": "aliasing-note.md"}
+        assert build_aliases(docs, catalog, out_of_scope={"claude": ["CLAUDE.md"]}) == {}
 
 
 class TestFixtureParity:
