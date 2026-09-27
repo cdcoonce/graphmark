@@ -209,6 +209,117 @@ class TestNonDirectoryTarget:
         assert str(target) in str(excinfo.value)
 
 
+class TestNestedInUnrelatedRepo:
+    """`target` is a stray non-repo directory nested inside an unrelated (enclosing) git repo --
+
+    mirroring ``.corpus-cache/``'s real nesting inside the graphmark repo itself. Because git walks
+    up the directory tree looking for ``.git``, commands run with ``cwd=target`` would otherwise
+    silently operate on the enclosing repo instead of failing.
+    """
+
+    def test_raises_and_leaves_the_enclosing_repo_untouched_when_its_history_has_the_sha(
+        self, tmp_path
+    ):
+        """The teeth-bearing case: the enclosing repo's own history actually contains the pinned
+
+        SHA (just not at its current HEAD). A test using a SHA absent from the enclosing repo's
+        history (see the sibling test below) would pass on today's unfixed code too, via the
+        unrelated ``git fetch`` failure path -- it would not prove the identity check exists. This
+        one does: without the identity check, ``_fetch_pinned_commit``/``git checkout`` would run
+        against the enclosing repo (whose ``origin`` can resolve the SHA locally) and land a
+        detached-HEAD checkout onto it.
+        """
+        outer = tmp_path / "outer"
+        outer.mkdir()
+        _git(["init", "-q", "-b", "main"], outer)
+        _git(["config", "user.email", "outer@example.test"], outer)
+        _git(["config", "user.name", "outer test"], outer)
+
+        (outer / "outer.md").write_text("# outer first\n", encoding="utf-8")
+        _git(["add", "outer.md"], outer)
+        _git(["commit", "-q", "-m", "outer first"], outer)
+        pinned_sha = _git(["rev-parse", "HEAD"], outer)
+
+        (outer / "outer.md").write_text("# outer second\n", encoding="utf-8")
+        _git(["add", "outer.md"], outer)
+        _git(["commit", "-q", "-m", "outer second"], outer)
+        outer_head_before = _git(["rev-parse", "HEAD"], outer)
+        assert outer_head_before != pinned_sha
+
+        _git(["remote", "add", "origin", str(outer)], outer)
+
+        cache_root = outer / ".corpus-cache"
+        cache_root.mkdir()
+        target = cache_root / "example-vault"
+        target.mkdir()
+
+        vault = CorpusVault(
+            name="example-vault",
+            clone_url="https://example.invalid/unused.git",
+            sha=pinned_sha,
+            license="MIT",
+            excluded_dirs=(".git", ".obsidian"),
+        )
+
+        with pytest.raises(ValueError) as excinfo:
+            fetch_vault(vault, cache_root)
+
+        assert vault.name in str(excinfo.value)
+        assert str(target) in str(excinfo.value)
+        assert _git(["rev-parse", "HEAD"], outer) == outer_head_before
+        assert _git(["status", "--porcelain"], outer) == ""
+        assert not (target / ".git").exists()
+
+    def test_fails_loudly_without_damage_when_its_history_lacks_the_sha(
+        self, tmp_path, remote, first_sha
+    ):
+        """The realistic sub-case for graphmark's actual corpus layout: the enclosing repo's
+
+        history does NOT contain the pinned SHA. This already fails loudly today via the unrelated
+        ``git fetch`` failure path; pinned here so the identity check doesn't change this outcome's
+        shape (still a ``ValueError``, still no damage to the enclosing repo).
+        """
+        outer = tmp_path / "outer"
+        outer.mkdir()
+        _git(["init", "-q", "-b", "main"], outer)
+        _git(["config", "user.email", "outer@example.test"], outer)
+        _git(["config", "user.name", "outer test"], outer)
+        (outer / "outer.md").write_text("# outer only\n", encoding="utf-8")
+        _git(["add", "outer.md"], outer)
+        _git(["commit", "-q", "-m", "outer only"], outer)
+        outer_head_before = _git(["rev-parse", "HEAD"], outer)
+
+        cache_root = outer / ".corpus-cache"
+        cache_root.mkdir()
+        target = cache_root / "example-vault"
+        target.mkdir()
+
+        vault = _vault(remote, first_sha)
+
+        with pytest.raises(ValueError):
+            fetch_vault(vault, cache_root)
+
+        assert _git(["rev-parse", "HEAD"], outer) == outer_head_before
+        assert _git(["status", "--porcelain"], outer) == ""
+
+
+class TestSymlinkedCacheRoot:
+    def test_a_valid_cache_entry_reached_through_a_symlink_is_still_corrected(
+        self, tmp_path, remote, first_sha, second_sha
+    ):
+        # ``git rev-parse --show-toplevel`` reports the symlink-resolved path, so the identity
+        # check must resolve ``target`` too; comparing unresolved paths would reject this real,
+        # correctly-rooted cache entry as "not its own repo root".
+        real_cache = tmp_path / "real-cache"
+        fetch_vault(_vault(remote, second_sha), real_cache)
+        linked_cache = tmp_path / "linked-cache"
+        linked_cache.symlink_to(real_cache, target_is_directory=True)
+
+        fetch_vault(_vault(remote, first_sha), linked_cache)
+
+        assert _git(["rev-parse", "HEAD"], real_cache / "example-vault") == first_sha
+
+
 class TestGitignore:
     def test_corpus_cache_is_gitignored(self):
         entries = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
