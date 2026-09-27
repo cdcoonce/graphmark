@@ -171,3 +171,29 @@ class TestAtomicWriteInterruption:
 
         leftover = list(store.parent.glob(f"{store.name}.tmp*"))
         assert leftover == [], f"no <store>.tmp<pid> file should survive a failed write: {leftover}"
+
+
+class TestRecordDismissalMissingNote:
+    """A missing note under `root` must raise a clear ValueError, not a bare OS error (#208)."""
+
+    def test_missing_a_raises_value_error_naming_path(self, tmp_path):
+        (tmp_path / "y.md").write_text("y content")
+
+        with pytest.raises(ValueError, match="note not found under"):
+            dismiss.record_dismissal(tmp_path, "missing.md", "y.md")
+
+    def test_missing_b_raises_value_error_naming_path(self, tmp_path):
+        (tmp_path / "x.md").write_text("x content")
+
+        with pytest.raises(ValueError, match="note not found under"):
+            dismiss.record_dismissal(tmp_path, "x.md", "missing.md")
+
+    def test_store_not_created_or_mutated_on_missing_note(self, tmp_path):
+        (tmp_path / "x.md").write_text("x content")
+        store = tmp_path / dismiss._DEFAULT_PATH
+
+        with pytest.raises(ValueError):
+            dismiss.record_dismissal(tmp_path, "x.md", "missing.md")
+
+        assert not store.exists()
+        assert not store.parent.exists()
