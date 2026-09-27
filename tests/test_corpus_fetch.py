@@ -213,3 +213,99 @@ class TestGitignore:
     def test_corpus_cache_is_gitignored(self):
         entries = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
         assert ".corpus-cache/" in entries
+
+
+class TestCloneFailureWrapping:
+    def test_failing_clone_raises_value_error_naming_vault_and_chained_to_the_original(
+        self, tmp_path, monkeypatch, remote, first_sha
+    ):
+        """A failing ``git clone`` must surface as a chained ``ValueError``, not a bare
+
+        ``CalledProcessError`` -- the type assertion matters here specifically because the
+        unwrapped ``CalledProcessError``'s default message already happens to contain
+        ``vault.name`` (it is the clone destination argv element), so a message-only assertion
+        would pass whether or not the wrapping exists.
+        """
+        cache_root = tmp_path / "cache"
+        vault = _vault(remote, first_sha)
+
+        real_run = subprocess.run
+
+        def spy(args, *rest, **kwargs):
+            if args[:2] == ["git", "clone"]:
+                return real_run(
+                    ["git", "clone", "/no/such/path/at/all", vault.name], *rest, **kwargs
+                )
+            return real_run(args, *rest, **kwargs)
+
+        monkeypatch.setattr("scripts.corpus.fetch.subprocess.run", spy)
+
+        with pytest.raises(ValueError) as excinfo:
+            fetch_vault(vault, cache_root)
+
+        assert isinstance(excinfo.value, ValueError)
+        assert vault.name in str(excinfo.value)
+        assert isinstance(excinfo.value.__cause__, subprocess.CalledProcessError)
+
+
+class TestCheckoutFailureWrapping:
+    def test_failing_checkout_raises_value_error_naming_vault_and_chained_to_the_original(
+        self, tmp_path, monkeypatch, remote, first_sha
+    ):
+        cache_root = tmp_path / "cache"
+        vault = _vault(remote, first_sha)
+
+        real_run = subprocess.run
+
+        def spy(args, *rest, **kwargs):
+            if args[:2] == ["git", "checkout"]:
+                return real_run(["git", "checkout", "not-a-real-sha-at-all"], *rest, **kwargs)
+            return real_run(args, *rest, **kwargs)
+
+        monkeypatch.setattr("scripts.corpus.fetch.subprocess.run", spy)
+
+        with pytest.raises(ValueError) as excinfo:
+            fetch_vault(vault, cache_root)
+
+        assert isinstance(excinfo.value, ValueError)
+        assert vault.name in str(excinfo.value)
+        assert isinstance(excinfo.value.__cause__, subprocess.CalledProcessError)
+
+
+class TestFullFetchFallbackFailureWrapping:
+    def test_failing_full_fetch_fallback_raises_value_error_naming_vault_and_chained(
+        self, tmp_path, monkeypatch, remote, first_sha
+    ):
+        """Both the shallow attempt and the full-by-SHA fallback fail; the fallback's
+
+        ``check=True`` failure must be wrapped into a chained ``ValueError``.
+        """
+        cache_root = tmp_path / "cache"
+        vault = _vault(remote, first_sha)
+        fetch_vault(vault, cache_root)
+
+        (remote / "note.md").write_text("# third\n", encoding="utf-8")
+        _git(["add", "note.md"], remote)
+        _git(["commit", "-q", "-m", "third"], remote)
+        third_sha = _git(["rev-parse", "HEAD"], remote)
+        third_vault = _vault(remote, third_sha)
+
+        real_run = subprocess.run
+
+        def spy(args, *rest, **kwargs):
+            if "--depth" in args:
+                return subprocess.CompletedProcess(args, 1, stdout="", stderr="denied\n")
+            if args[:3] == ["git", "fetch", "origin"]:
+                return real_run(
+                    ["git", "fetch", "origin", "not-a-real-sha-at-all"], *rest, **kwargs
+                )
+            return real_run(args, *rest, **kwargs)
+
+        monkeypatch.setattr("scripts.corpus.fetch.subprocess.run", spy)
+
+        with pytest.raises(ValueError) as excinfo:
+            fetch_vault(third_vault, cache_root)
+
+        assert isinstance(excinfo.value, ValueError)
+        assert third_vault.name in str(excinfo.value)
+        assert isinstance(excinfo.value.__cause__, subprocess.CalledProcessError)

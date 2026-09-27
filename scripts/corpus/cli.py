@@ -43,7 +43,11 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
 
     cache_root = Path(args.cache_root)
     for vault in vaults:
-        fetch_mod.fetch_vault(vault, cache_root)
+        try:
+            fetch_mod.fetch_vault(vault, cache_root)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
     return 0
 
 
