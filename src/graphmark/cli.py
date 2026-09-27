@@ -74,7 +74,9 @@ def _reconcile_globals(parser: argparse.ArgumentParser, args: argparse.Namespace
         distinct = sorted({os.path.normpath(v) for v in given})
         if len(distinct) > 1:
             parser.error(f"--{name} given more than once with conflicting values: {distinct}")
-        setattr(args, name, distinct[0] if distinct else None)
+        # Normalization is for the comparison only: keep the value exactly as the user gave it.
+        # normpath collapses ".." lexically, which is wrong across a symlink.
+        setattr(args, name, given[0] if given else None)
         if hasattr(args, after):
             delattr(args, after)
 

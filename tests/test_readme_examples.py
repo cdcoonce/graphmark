@@ -12,13 +12,14 @@ and running them, so an example that stops working fails the gate rather than sh
 
 from __future__ import annotations
 
+import argparse
 import re
 import shlex
 from pathlib import Path
 
 import pytest
 
-from graphmark.cli import main
+from graphmark.cli import _reconcile_globals, main
 
 README = Path(__file__).resolve().parents[1] / "README.md"
 FIXTURE_VAULT = Path(__file__).parent / "fixtures" / "simple" / "vault"
@@ -127,6 +128,13 @@ class TestGlobalsAcceptBothPositions:
             monkeypatch,
         )
         assert code == 0
+
+    def test_reconciled_value_is_kept_as_given_not_normalized(self):
+        # normpath is for the conflict comparison only; "a/../b" differs from "b" across a
+        # symlinked "a", so the stored value must be the user's own spelling.
+        args = argparse.Namespace(config=None, root=["link/../vault/"], root_after=None)
+        _reconcile_globals(argparse.ArgumentParser(), args)
+        assert args.root == "link/../vault/"
 
     def test_a_global_given_twice_with_conflicting_values_is_a_usage_error(
         self, capsys, monkeypatch
