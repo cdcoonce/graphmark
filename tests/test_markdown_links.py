@@ -178,6 +178,50 @@ class TestRelativeResolution:
         assert diagnose(graph, "c.md").reason == "ambiguous"
 
 
+class TestRootRelativeResolution:
+    # #205: pathlib's `/` operator discards the left-hand side entirely when the right-hand
+    # operand is absolute, so a leading-slash target used to have the linking note's folder
+    # silently dropped and could never match any catalog entry.
+
+    def test_a_root_relative_target_resolves_to_an_existing_note(self, tmp_path):
+        _write(tmp_path, "blog/post.md", "[x](/notes/foo.md)\n")
+        _write(tmp_path, "notes/foo.md")
+        graph = _build(tmp_path, link_syntax="markdown")
+        assert graph.out_links["blog/post.md"] == {"notes/foo.md"}
+        assert graph.link_counts["missing"] == 0
+
+    def test_a_root_relative_target_to_a_missing_note_stays_missing(self, tmp_path):
+        # The basename "gone.md" exists elsewhere in the vault, so a basename-fallback regression
+        # (resolving via name anywhere in the tree instead of strictly at the root-relative path)
+        # would turn this green for the wrong reason.
+        _write(tmp_path, "blog/post.md", "[x](/notes/gone.md)\n")
+        _write(tmp_path, "other/gone.md")
+        graph = _build(tmp_path, link_syntax="markdown")
+        assert graph.out_links["blog/post.md"] == set()
+        assert graph.link_counts["missing"] == 1
+
+    def test_root_relative_resolution_is_the_same_from_the_vault_root_and_nested(self, tmp_path):
+        root_case = tmp_path / "root_case"
+        _write(root_case, "a.md", "[x](/notes/foo.md)\n")
+        _write(root_case, "notes/foo.md")
+        root_graph = _build(root_case, link_syntax="markdown")
+
+        nested_case = tmp_path / "nested_case"
+        _write(nested_case, "x/y/z/a.md", "[x](/notes/foo.md)\n")
+        _write(nested_case, "notes/foo.md")
+        nested_graph = _build(nested_case, link_syntax="markdown")
+
+        assert root_graph.out_links["a.md"] == {"notes/foo.md"}
+        assert nested_graph.out_links["x/y/z/a.md"] == {"notes/foo.md"}
+        assert root_graph.link_counts["missing"] == nested_graph.link_counts["missing"] == 0
+
+    def test_a_root_relative_target_escaping_the_vault_is_missing(self, tmp_path):
+        _write(tmp_path, "a.md", "[out](/../outside.md)\n")
+        graph = _build(tmp_path, link_syntax="markdown")
+        assert graph.link_counts["missing"] == 1
+        assert graph.out_links["a.md"] == set()
+
+
 class TestBothModes:
     def test_both_syntaxes_are_counted_and_conserved(self, tmp_path):
         _write(tmp_path, "a.md", "[[b]]\n[one](b.md)\n[gone](nope.md)\n")
