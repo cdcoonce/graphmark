@@ -83,6 +83,69 @@ excluded_dirs = [".git", ".obsidian"]
         load_manifest(manifest_path)
 
 
+def test_traversal_name_raises(tmp_path):
+    manifest_path = tmp_path / "manifest.toml"
+    manifest_path.write_text("""
+[[vault]]
+name = "../escape"
+clone_url = "https://github.com/example/vault"
+sha = "0123456789abcdef0123456789abcdef01234567"
+license = "MIT"
+excluded_dirs = [".git", ".obsidian"]
+""")
+
+    with pytest.raises(ValueError, match="invalid vault name"):
+        load_manifest(manifest_path)
+
+
+def test_separator_name_raises(tmp_path):
+    manifest_path = tmp_path / "manifest.toml"
+    manifest_path.write_text("""
+[[vault]]
+name = "sub/dir"
+clone_url = "https://github.com/example/vault"
+sha = "0123456789abcdef0123456789abcdef01234567"
+license = "MIT"
+excluded_dirs = [".git", ".obsidian"]
+""")
+
+    with pytest.raises(ValueError, match="invalid vault name"):
+        load_manifest(manifest_path)
+
+
+def test_backslash_name_raises(tmp_path):
+    manifest_path = tmp_path / "manifest.toml"
+    manifest_path.write_text("""
+[[vault]]
+name = 'sub\\dir'
+clone_url = "https://github.com/example/vault"
+sha = "0123456789abcdef0123456789abcdef01234567"
+license = "MIT"
+excluded_dirs = [".git", ".obsidian"]
+""")
+
+    with pytest.raises(ValueError, match="invalid vault name"):
+        load_manifest(manifest_path)
+
+
+@pytest.mark.parametrize("name", ["..", "."])
+def test_bare_dot_segment_name_raises(tmp_path, name):
+    # Separator-free on purpose: "../escape" is already caught by the "/" check, so only a bare
+    # ".." proves the traversal clause itself, and "." would make the cache target the cache root.
+    manifest_path = tmp_path / "manifest.toml"
+    manifest_path.write_text(f"""
+[[vault]]
+name = "{name}"
+clone_url = "https://github.com/example/vault"
+sha = "0123456789abcdef0123456789abcdef01234567"
+license = "MIT"
+excluded_dirs = [".git", ".obsidian"]
+""")
+
+    with pytest.raises(ValueError, match="invalid vault name"):
+        load_manifest(manifest_path)
+
+
 def test_real_manifest_loads():
     vaults = load_manifest(REAL_MANIFEST)
 
