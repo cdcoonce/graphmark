@@ -73,6 +73,23 @@ class TestCorruptStore:
         assert dismiss.load_dismissed(tmp_path) == {}
         assert dismiss.active_dismissed_sigs(tmp_path) == set()
 
+    def test_record_dismissal_survives_non_dict_json(self, tmp_path):
+        (tmp_path / "x.md").write_text("x content")
+        (tmp_path / "y.md").write_text("y content")
+        store = tmp_path / dismiss._DEFAULT_PATH
+        store.parent.mkdir(parents=True, exist_ok=True)
+        store.write_text("[]")  # valid JSON, wrong shape
+        dismiss.record_dismissal(tmp_path, "x.md", "y.md")
+        sig = dismiss.weaklink_sig("x.md", "y.md")
+        assert dismiss.load_dismissed(tmp_path) == {
+            sig: {
+                "a": "x.md",
+                "a_hash": dismiss.content_hash(tmp_path / "x.md"),
+                "b": "y.md",
+                "b_hash": dismiss.content_hash(tmp_path / "y.md"),
+            }
+        }
+
 
 class TestSigRoundTrip:
     """gaps() emits sigs, callers persist them via record_dismissal, and feed
