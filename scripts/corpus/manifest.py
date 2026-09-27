@@ -77,6 +77,15 @@ def load_manifest(path: Path) -> list[CorpusVault]:
                 f"'{entry['clone_url']}'"
             )
 
+        excluded_dirs = entry["excluded_dirs"]
+        if not isinstance(excluded_dirs, list) or not all(
+            isinstance(item, str) for item in excluded_dirs
+        ):
+            raise ValueError(
+                f"manifest {path}: vault entry has excluded_dirs that is not a list of "
+                f"strings: {excluded_dirs!r}"
+            )
+
         name_casefold = name.casefold()
         if name_casefold in seen_names_casefold:
             other = seen_names_casefold[name_casefold]

@@ -211,6 +211,51 @@ excluded_dirs = [".git", ".obsidian"]
         load_manifest(manifest_path)
 
 
+def test_excluded_dirs_bare_string_raises(tmp_path):
+    # A bare string is valid TOML but not the required list: tuple(".git") would otherwise
+    # silently explode into ('.', 'g', 'i', 't') instead of raising.
+    manifest_path = tmp_path / "manifest.toml"
+    manifest_path.write_text("""
+[[vault]]
+name = "example-vault"
+clone_url = "https://github.com/example/vault"
+sha = "0123456789abcdef0123456789abcdef01234567"
+license = "MIT"
+excluded_dirs = ".git"
+""")
+
+    with pytest.raises(ValueError, match="excluded_dirs that is not a list of strings"):
+        load_manifest(manifest_path)
+
+
+def test_excluded_dirs_non_string_element_raises(tmp_path):
+    manifest_path = tmp_path / "manifest.toml"
+    manifest_path.write_text("""
+[[vault]]
+name = "example-vault"
+clone_url = "https://github.com/example/vault"
+sha = "0123456789abcdef0123456789abcdef01234567"
+license = "MIT"
+excluded_dirs = [1, 2]
+""")
+
+    with pytest.raises(ValueError, match="excluded_dirs that is not a list of strings"):
+        load_manifest(manifest_path)
+
+
+def test_excluded_dirs_shape_check_runs_before_the_duplicate_name_check(tmp_path):
+    # An entry that is both a duplicate and malformed must report the shape error: the shape
+    # check sits with the other per-entry shape checks, ahead of the cross-entry dedup check.
+    manifest_path = tmp_path / "manifest.toml"
+    malformed_duplicate = _VALID_ENTRY.replace(
+        'excluded_dirs = [".git", ".obsidian"]', 'excluded_dirs = ".git"'
+    )
+    manifest_path.write_text(_VALID_ENTRY + malformed_duplicate)
+
+    with pytest.raises(ValueError, match="excluded_dirs that is not a list of strings"):
+        load_manifest(manifest_path)
+
+
 @pytest.mark.parametrize("empty_key", ["sha", "clone_url"])
 def test_empty_field_raises_before_new_shape_checks(tmp_path, empty_key):
     # An empty sha/clone_url must still hit the pre-existing "empty required field" error, not the
