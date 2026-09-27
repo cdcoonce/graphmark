@@ -44,7 +44,12 @@ def _fetch_pinned_commit(target: Path, vault: CorpusVault) -> None:
     )
     if shallow.returncode == 0:
         return
-    subprocess.run(["git", "fetch", "origin", vault.sha], check=True, cwd=target)
+    try:
+        subprocess.run(["git", "fetch", "origin", vault.sha], check=True, cwd=target)
+    except subprocess.CalledProcessError as exc:
+        raise ValueError(
+            f"git fetch failed for corpus vault {vault.name!r} at {target}: exit {exc.returncode}"
+        ) from exc
 
 
 def fetch_vault(vault: CorpusVault, cache_root: Path) -> None:
@@ -65,11 +70,23 @@ def fetch_vault(vault: CorpusVault, cache_root: Path) -> None:
     if not target.exists():
         cache_root = Path(cache_root)
         cache_root.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
-            ["git", "clone", vault.clone_url, vault.name],
-            check=True,
-            cwd=cache_root,
-        )
+        try:
+            subprocess.run(
+                ["git", "clone", vault.clone_url, vault.name],
+                check=True,
+                cwd=cache_root,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise ValueError(
+                f"git clone failed for corpus vault {vault.name!r} at {target}: "
+                f"exit {exc.returncode}"
+            ) from exc
 
     _fetch_pinned_commit(target, vault)
-    subprocess.run(["git", "checkout", vault.sha], check=True, cwd=target)
+    try:
+        subprocess.run(["git", "checkout", vault.sha], check=True, cwd=target)
+    except subprocess.CalledProcessError as exc:
+        raise ValueError(
+            f"git checkout failed for corpus vault {vault.name!r} at {target}: "
+            f"exit {exc.returncode}"
+        ) from exc

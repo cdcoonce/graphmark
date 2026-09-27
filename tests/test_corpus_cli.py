@@ -281,6 +281,35 @@ def test_fetch_calls_fetch_vault_for_every_manifest_entry(tmp_path):
     assert (target_b / "note.md").read_text(encoding="utf-8") == "# first\n"
 
 
+def test_fetch_exits_2_and_prints_error_when_a_vault_fails_to_fetch(tmp_path, capsys):
+    """``fetch_vault``'s wrapped ``ValueError`` must be caught here, not left as a traceback --
+
+    same discipline every other corpus-cli subcommand already applies around its own ``ValueError``
+    sources.
+    """
+    manifest_path = tmp_path / "manifest.toml"
+    _write_manifest(
+        manifest_path,
+        [{"name": "broken-vault", "clone_url": str(tmp_path / "no-such-remote"), "sha": _SHA}],
+    )
+    cache_root = tmp_path / "cache"
+
+    code = cli.main(
+        [
+            "fetch",
+            "--manifest",
+            str(manifest_path),
+            "--cache-root",
+            str(cache_root),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert captured.err.startswith("error:")
+    assert "broken-vault" in captured.err
+
+
 # --- report -------------------------------------------------------------------------------------
 
 
