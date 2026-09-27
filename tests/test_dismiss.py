@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from graphmark import dismiss
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "dismiss"
@@ -116,3 +118,39 @@ class TestSigRoundTrip:
         # The sig gaps() emitted is exactly the one the store now holds.
         assert sig in active
         assert gaps(graph, similar, dismissed=active) == []
+
+
+class TestAtomicWriteInterruption:
+    """A crash mid-write must not corrupt or wipe prior recorded dismissals (issue #257)."""
+
+    def test_interrupted_write_preserves_prior_store_and_leaves_no_temp_file(
+        self, tmp_path, monkeypatch
+    ):
+        (tmp_path / "x.md").write_text("x content")
+        (tmp_path / "y.md").write_text("y content")
+        (tmp_path / "z.md").write_text("z content")
+
+        # First call: record a dismissal successfully, with no interference.
+        dismiss.record_dismissal(tmp_path, "x.md", "y.md")
+        store = tmp_path / dismiss._DEFAULT_PATH
+        before = store.read_bytes()
+        assert before  # sanity: the successful call actually wrote something
+
+        real_write_text = Path.write_text
+
+        def flaky_write_text(self, data, *args, **kwargs):
+            # Simulate a write that is interrupted partway through: some bytes land on
+            # disk (whatever file is being written at the time), then the process blows up.
+            real_write_text(self, data[: len(data) // 2], *args, **kwargs)
+            raise OSError("simulated interruption mid-write")
+
+        monkeypatch.setattr(Path, "write_text", flaky_write_text)
+
+        with pytest.raises(OSError):
+            dismiss.record_dismissal(tmp_path, "x.md", "z.md")
+
+        after = store.read_bytes()
+        assert after == before, "the live store must be byte-identical to before the interruption"
+
+        leftover = list(store.parent.glob(f"{store.name}.tmp*"))
+        assert leftover == [], f"no <store>.tmp<pid> file should survive a failed write: {leftover}"

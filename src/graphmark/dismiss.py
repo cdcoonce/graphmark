@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 _DEFAULT_PATH = ".claude/data/connect-dismissed.json"
@@ -33,7 +34,14 @@ def record_dismissal(root: Path, a: str, b: str, *, path: str = _DEFAULT_PATH) -
         "b": b,
         "b_hash": content_hash(root / b),
     }
-    dismissed_file.write_text(json.dumps(existing, indent=2))
+    temp_file = dismissed_file.parent / (dismissed_file.name + f".tmp{os.getpid()}")
+    try:
+        temp_file.write_text(json.dumps(existing, indent=2))
+        temp_file.replace(dismissed_file)
+    except Exception:
+        if temp_file.exists():
+            temp_file.unlink()
+        raise
 
 
 def load_dismissed(root: Path, *, path: str = _DEFAULT_PATH) -> dict:
