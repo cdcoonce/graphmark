@@ -26,6 +26,11 @@ from graphmark.metrics import (
 )
 
 
+def _die(message: str) -> None:
+    print(f"error: {message}", file=sys.stderr)
+    sys.exit(2)
+
+
 def _load(args: argparse.Namespace) -> tuple[VaultGraph, VaultConfig]:
     root = Path(args.root) if args.root is not None else None
     try:
@@ -37,8 +42,7 @@ def _load(args: argparse.Namespace) -> tuple[VaultGraph, VaultConfig]:
             config = VaultConfig(root=root)
         graph = build(config)
     except (OSError, tomllib.TOMLDecodeError, ValueError) as e:
-        print(f"error: {e}", file=sys.stderr)
-        sys.exit(2)
+        _die(str(e))
     return graph, config
 
 
@@ -194,8 +198,7 @@ def main() -> None:
         try:
             result = hubs(graph, n=args.n)
         except ValueError as e:
-            print(f"error: {e}", file=sys.stderr)
-            sys.exit(2)
+            _die(str(e))
         print(to_json(result))
     elif args.command == "clusters":
         print(to_json(clusters(graph)))
@@ -207,15 +210,13 @@ def main() -> None:
         try:
             result = neighborhood(graph, args.note, depth=args.depth)
         except ValueError as e:
-            print(f"error: {e}", file=sys.stderr)
-            sys.exit(2)
+            _die(str(e))
         print(to_json(result))
     elif args.command == "pagerank":
         try:
             result = pagerank(graph, n=args.n, alpha=args.alpha)
         except (ValueError, nx.PowerIterationFailedConvergence) as e:
-            print(f"error: {e}", file=sys.stderr)
-            sys.exit(2)
+            _die(str(e))
         print(to_json(result))
     elif args.command == "export" and args.format == "dot":
         print(to_dot(graph))
@@ -230,8 +231,7 @@ def main() -> None:
         except ValueError as e:
             # A misconfigured gate is a usage error (2), never a breach (1) — CI must be able
             # to tell "your vault is unhealthy" from "your config is wrong".
-            print(f"error: {e}", file=sys.stderr)
-            sys.exit(2)
+            _die(str(e))
         print(to_json(report))
         for line in breach_lines(report):
             print(line, file=sys.stderr)
