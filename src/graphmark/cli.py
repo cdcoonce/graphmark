@@ -191,7 +191,12 @@ def main() -> None:
     elif args.command == "orphans":
         print(to_json(orphans(graph, config)))
     elif args.command == "hubs":
-        print(to_json(hubs(graph, n=args.n)))
+        try:
+            result = hubs(graph, n=args.n)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            sys.exit(2)
+        print(to_json(result))
     elif args.command == "clusters":
         print(to_json(clusters(graph)))
     elif args.command == "bridges":

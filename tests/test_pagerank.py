@@ -124,6 +124,14 @@ class TestPagerankAlphaValidation:
         assert all(score > 0 for _, score in result)
 
 
+class TestPagerankNValidation:
+    """A negative n is a count that cannot exist — it must not silently truncate results."""
+
+    def test_negative_n_raises_value_error(self, simple_graph):
+        with pytest.raises(ValueError, match="n"):
+            pagerank(simple_graph, n=-1)
+
+
 class TestPagerankConvergence:
     """networkx raises PowerIterationFailedConvergence at max_iter; so must we."""
 
