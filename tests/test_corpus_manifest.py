@@ -146,6 +146,76 @@ excluded_dirs = [".git", ".obsidian"]
         load_manifest(manifest_path)
 
 
+def test_malformed_sha_raises(tmp_path):
+    manifest_path = tmp_path / "manifest.toml"
+    manifest_path.write_text("""
+[[vault]]
+name = "example-vault"
+clone_url = "https://github.com/example/vault"
+sha = "not-a-real-sha!!"
+license = "MIT"
+excluded_dirs = [".git", ".obsidian"]
+""")
+
+    with pytest.raises(ValueError, match="malformed sha"):
+        load_manifest(manifest_path)
+
+
+def test_abbreviated_sha_raises(tmp_path):
+    # A 12-char abbreviated sha is valid hex but not 40 chars: it must still be rejected, since
+    # fetch.py's idempotent-fetch check does a full-string comparison against vault.sha.
+    manifest_path = tmp_path / "manifest.toml"
+    manifest_path.write_text("""
+[[vault]]
+name = "example-vault"
+clone_url = "https://github.com/example/vault"
+sha = "0123456789ab"
+license = "MIT"
+excluded_dirs = [".git", ".obsidian"]
+""")
+
+    with pytest.raises(ValueError, match="malformed sha"):
+        load_manifest(manifest_path)
+
+
+def test_clone_url_leading_dash_raises(tmp_path):
+    manifest_path = tmp_path / "manifest.toml"
+    manifest_path.write_text("""
+[[vault]]
+name = "example-vault"
+clone_url = "--upload-pack=touch /tmp/x"
+sha = "0123456789abcdef0123456789abcdef01234567"
+license = "MIT"
+excluded_dirs = [".git", ".obsidian"]
+""")
+
+    with pytest.raises(ValueError, match=r"starting with '-'"):
+        load_manifest(manifest_path)
+
+
+@pytest.mark.parametrize("empty_key", ["sha", "clone_url"])
+def test_empty_field_raises_before_new_shape_checks(tmp_path, empty_key):
+    # An empty sha/clone_url must still hit the pre-existing "empty required field" error, not the
+    # new malformed-sha / leading-dash shape checks — same precedence as before this change.
+    values = {
+        "clone_url": "https://github.com/example/vault",
+        "sha": "0123456789abcdef0123456789abcdef01234567",
+    }
+    values[empty_key] = ""
+    manifest_path = tmp_path / "manifest.toml"
+    manifest_path.write_text(f"""
+[[vault]]
+name = "example-vault"
+clone_url = "{values["clone_url"]}"
+sha = "{values["sha"]}"
+license = "MIT"
+excluded_dirs = [".git", ".obsidian"]
+""")
+
+    with pytest.raises(ValueError, match="empty required field"):
+        load_manifest(manifest_path)
+
+
 def test_real_manifest_loads():
     vaults = load_manifest(REAL_MANIFEST)
 
