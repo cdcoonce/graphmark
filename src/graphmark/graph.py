@@ -7,6 +7,7 @@ import re
 import string
 import sys
 import unicodedata
+from collections.abc import Collection
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
@@ -460,6 +461,8 @@ def _diagnose(
     out_of_scope: dict[str, list[str]],
     resolver: Resolver,
     aliases: dict[str, str] | None = None,
+    *,
+    exact_paths: Collection[str] | None = None,
 ) -> LinkDiagnosis:
     """Classify one display against already-built resolution state.
 
@@ -467,9 +470,23 @@ def _diagnose(
     exists to pass), and the public ``diagnose`` wraps it for callers holding a built graph. Two
     independent classifiers would drift from each other inside the package, which is the exact
     failure this surface exists to remove.
+
+    ``exact_paths``, when not ``None``, is the set of in-scope note rel_paths (#270). It exists
+    because a relative markdown target is a *path*, not a name, but both branches of the shared
+    resolver are name-like (normalized-stem or path-*suffix*), so a target that lands on a real
+    file can still be misreported ``ambiguous`` by a same-stem or same-suffix collision elsewhere
+    in the vault. Checked before ``resolver.resolve`` so a genuine exact-path hit is never shadowed
+    by that collision; strictly additive, since a display with no exact-path match falls through to
+    the unchanged classification below. Callers decide eligibility per display — see
+    ``VaultGraph.build`` — never as a blanket, build-wide gate.
     """
     if _is_intra_note_reference(display):
         return LinkDiagnosis(display=display, reason="intra-note")
+
+    if exact_paths is not None:
+        candidate = _strip_display(display) + ".md"
+        if candidate in exact_paths:
+            return LinkDiagnosis(display=display, target=candidate, reason="resolved", via="stem")
 
     target = resolver.resolve(display, catalog)
     if target is not None:
@@ -715,17 +732,32 @@ class VaultGraph:
         md_extractor = MarkdownLinkExtractor() if read_markdown else None
 
         for doc in docs:
-            displays = list(extractor.extract(doc.text)) if read_wikilinks else []
+            # Eligibility for the #270 exact-path rule (`exact_paths`) is a per-display property,
+            # not a per-build one: `link_syntax="both"` interleaves wikilink-derived and
+            # markdown-derived strings in this same list, and only a markdown target that went
+            # through the relative rule may take the exact-path shortcut. A wikilink display, an
+            # autolinks bare passthrough, or an escaped target (raw target, `resolved is None`)
+            # is diagnosed exactly as before — no `exact_paths` argument at all, so a caller that
+            # still monkeypatches `_diagnose`'s old fixed positional signature is unaffected.
+            displays: list[tuple[str, bool]] = (
+                [(d, False) for d in extractor.extract(doc.text)] if read_wikilinks else []
+            )
             if md_extractor is not None:
                 for target in md_extractor.extract(doc.text):
                     resolved = resolve_markdown_target(target, doc.rel_path, autolinks=autolinks)
+                    eligible = resolved is not None and not (autolinks and "/" not in target)
                     # A target above the vault root names no note here. Kept in the stream as the
                     # raw target so it is counted and reported `missing`, never silently dropped —
                     # the conservation law holds for every syntax that is read.
-                    displays.append(resolved if resolved is not None else target)
+                    displays.append((resolved if resolved is not None else target, eligible))
 
-            for display in displays:
-                d = _diagnose(display, catalog, out_of_scope, resolver, aliases)
+            for display, eligible in displays:
+                if eligible:
+                    d = _diagnose(
+                        display, catalog, out_of_scope, resolver, aliases, exact_paths=nodes
+                    )
+                else:
+                    d = _diagnose(display, catalog, out_of_scope, resolver, aliases)
                 link_counts[d.reason] += 1
                 if d.via == "alias":
                     alias_resolved += 1

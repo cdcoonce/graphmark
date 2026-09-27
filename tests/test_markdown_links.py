@@ -23,7 +23,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from graphmark.config import VaultConfig
-from graphmark.graph import NormalizeResolver, VaultGraph
+from graphmark.graph import NormalizeResolver, VaultGraph, diagnose
 from graphmark.parse import MarkdownLinkExtractor, WikilinkExtractor
 
 
@@ -119,6 +119,64 @@ class TestRelativeResolution:
         assert graph.out_links["a.md"] == set()
         assert graph.link_counts["resolved"] == 1
 
+    def test_a_root_level_source_resolves_the_exact_sibling(self, tmp_path):
+        # #270: PurePosixPath("b.md").parent is "." for a root-level source, so the join used to
+        # degenerate to the slash-less "c.md" and get looked up by stem anywhere in the vault.
+        _write(tmp_path, "b.md", "[x](c.md)\n")
+        _write(tmp_path, "c.md")
+        _write(tmp_path, "docs/c.md")
+        graph = _build(tmp_path, link_syntax="markdown")
+        assert graph.out_links["b.md"] == {"c.md"}
+        assert graph.link_counts["ambiguous"] == 0
+
+    def test_a_nested_source_resolves_the_exact_sibling(self, tmp_path):
+        # Same defect one level down: a one-component suffix match is still a global basename
+        # search, so the path-suffix branch collides too without the exact-path rule.
+        _write(tmp_path, "docs/b.md", "[x](c.md)\n")
+        _write(tmp_path, "docs/c.md")
+        _write(tmp_path, "x/docs/c.md")
+        graph = _build(tmp_path, link_syntax="markdown")
+        assert graph.out_links["docs/b.md"] == {"docs/c.md"}
+        assert graph.link_counts["ambiguous"] == 0
+
+    def test_wikilinks_are_not_affected_by_the_exact_path_rule(self, tmp_path):
+        # The exact-path rule is markdown-only: the same colliding shapes, linked with [[...]]
+        # instead, must still be reported ambiguous.
+        root_case = tmp_path / "root_case"
+        _write(root_case, "b.md", "[[c]]\n")
+        _write(root_case, "c.md")
+        _write(root_case, "docs/c.md")
+        graph = _build(root_case, link_syntax="wikilink")
+        assert graph.link_counts["ambiguous"] == 1
+        assert graph.out_links["b.md"] == set()
+
+        nested_case = tmp_path / "nested_case"
+        _write(nested_case, "docs/b.md", "[[docs/c]]\n")
+        _write(nested_case, "docs/c.md")
+        _write(nested_case, "x/docs/c.md")
+        graph = _build(nested_case, link_syntax="wikilink")
+        assert graph.link_counts["ambiguous"] == 1
+        assert graph.out_links["docs/b.md"] == set()
+
+    def test_autolinks_bare_targets_are_not_affected_by_the_exact_path_rule(self, tmp_path):
+        # The autolinks passthrough is name-based by design; a bare target must not gain the
+        # relative-rule's exact-path resolution.
+        _write(tmp_path, "b.md", "[x](c.md)\n")
+        _write(tmp_path, "c.md")
+        _write(tmp_path, "docs/c.md")
+        graph = _build(tmp_path, link_syntax="markdown-autolinks")
+        assert graph.link_counts["ambiguous"] == 1
+        assert graph.out_links["b.md"] == set()
+
+    def test_diagnose_never_applies_the_exact_path_rule(self, tmp_path):
+        # The public diagnose() has no source note to be relative to, so it must keep reporting
+        # this collision exactly as before, regardless of what build() did with exact_paths.
+        _write(tmp_path, "b.md", "[x](c.md)\n")
+        _write(tmp_path, "c.md")
+        _write(tmp_path, "docs/c.md")
+        graph = _build(tmp_path, link_syntax="markdown")
+        assert diagnose(graph, "c.md").reason == "ambiguous"
+
 
 class TestBothModes:
     def test_both_syntaxes_are_counted_and_conserved(self, tmp_path):
@@ -129,6 +187,22 @@ class TestBothModes:
         assert graph.link_counts["resolved"] == 2
         assert graph.link_counts["missing"] == 1
         assert graph.out_links["a.md"] == {"b.md"}
+
+    def test_a_colliding_wikilink_stays_ambiguous_alongside_a_resolvable_markdown_link(
+        self, tmp_path
+    ):
+        # #270's exact-path eligibility must be decided per display, not by whether markdown
+        # reading is on for the build: a wikilink display sharing the build with a resolvable
+        # markdown link must not pick up the markdown-only exact-path rule.
+        _write(tmp_path, "a.md", "[[c]]\n")
+        _write(tmp_path, "c.md")
+        _write(tmp_path, "docs/c.md")
+        _write(tmp_path, "other.md")
+        _write(tmp_path, "b.md", "[x](other.md)\n")
+        graph = _build(tmp_path, link_syntax="both")
+        assert graph.link_counts["ambiguous"] == 1
+        assert graph.out_links["a.md"] == set()
+        assert graph.out_links["b.md"] == {"other.md"}
 
     def test_the_unread_syntax_warning_is_silent_once_markdown_is_read(self, tmp_path, capsys):
         _write(tmp_path, "a.md", "[1](b.md)\n[2](b.md)\n[3](b.md)\n")
