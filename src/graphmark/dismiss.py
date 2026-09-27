@@ -67,13 +67,22 @@ def active_dismissed_sigs(root: Path, *, path: str = _DEFAULT_PATH) -> set[str]:
     dismissed = load_dismissed(root, path=path)
     active: set[str] = set()
     for sig, record in dismissed.items():
-        a_path = root / record["a"]
-        b_path = root / record["b"]
+        if not isinstance(record, dict):
+            continue
+        a, b, a_hash, b_hash = (
+            record.get("a"),
+            record.get("b"),
+            record.get("a_hash"),
+            record.get("b_hash"),
+        )
+        if not all(isinstance(v, str) and v for v in (a, b, a_hash, b_hash)):
+            continue
+        a_path, b_path = root / a, root / b
         if (
-            a_path.exists()
-            and b_path.exists()
-            and content_hash(a_path) == record["a_hash"]
-            and content_hash(b_path) == record["b_hash"]
+            a_path.is_file()
+            and b_path.is_file()
+            and content_hash(a_path) == a_hash
+            and content_hash(b_path) == b_hash
         ):
             active.add(sig)
     return active
