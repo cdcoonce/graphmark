@@ -2,9 +2,9 @@
 
 ``fetch_vault`` is idempotent: a cache entry already sitting on the pinned SHA costs one local
 ``git rev-parse`` and no network work at all. A missing entry is brought to the pin by
-clone/fetch/checkout. An existing entry sitting on the wrong commit is corrected by checkout
-alone, skipping the fetch, when the pinned SHA is already a local git object (e.g. reachable from
-the initial clone's history); otherwise it is fetched first, same as before. The cache root is a
+init/fetch/checkout. An existing entry sitting on the wrong commit is corrected by checkout
+alone, skipping the fetch, when the pinned SHA is already a local git object (e.g. a pin this
+entry was populated at earlier); otherwise it is fetched first, same as before. The cache root is a
 parameter, not a constant — the repo's default is ``.corpus-cache/`` (see ``.gitignore``), but
 nothing here hardcodes it.
 
@@ -123,19 +123,24 @@ def fetch_vault(vault: CorpusVault, cache_root: Path) -> None:
             f"repository (found a directory nested inside an unrelated repo?): {target}"
         )
 
-    freshly_cloned = not target.exists()
-    if freshly_cloned:
+    fresh_entry = not target.exists()
+    if fresh_entry:
         cache_root = Path(cache_root)
         cache_root.mkdir(parents=True, exist_ok=True)
         try:
             subprocess.run(
-                ["git", "clone", vault.clone_url, vault.name],
+                ["git", "init", vault.name],
                 check=True,
                 cwd=cache_root,
             )
+            subprocess.run(
+                ["git", "remote", "add", "origin", vault.clone_url],
+                check=True,
+                cwd=target,
+            )
         except subprocess.CalledProcessError as exc:
             raise ValueError(
-                f"git clone failed for corpus vault {vault.name!r} at {target}: "
+                f"git init/remote add failed for corpus vault {vault.name!r} at {target}: "
                 f"exit {exc.returncode}"
             ) from exc
 
@@ -151,7 +156,7 @@ def fetch_vault(vault: CorpusVault, cache_root: Path) -> None:
             f"exit {exc.returncode}"
         ) from exc
 
-    if freshly_cloned or not _sha_is_local(target, vault.sha):
+    if fresh_entry or not _sha_is_local(target, vault.sha):
         _fetch_pinned_commit(target, vault)
     try:
         subprocess.run(["git", "checkout", "--force", vault.sha], check=True, cwd=target)
