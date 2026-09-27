@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 import pytest
 
-from graphmark.check import _DISPATCH, run_check, unresolved_link_count
+from graphmark.check import _DISPATCH, breach_lines, run_check, unresolved_link_count
 from graphmark.config import CheckPolicy, VaultConfig, load_config
 from graphmark.graph import NormalizeResolver, VaultGraph
 from graphmark.parse import WikilinkExtractor
@@ -26,6 +26,11 @@ from graphmark.parse import WikilinkExtractor
 SIMPLE_DIR = Path(__file__).parent / "fixtures" / "simple"
 # Measured on the simple fixture: 2 orphans, 1 unresolved link, 0 siloed notes.
 SIMPLE_ORPHANS, SIMPLE_UNRESOLVED, SIMPLE_SILOED = 2, 1, 0
+
+# The alt fixture has 5 siloed notes (tests/fixtures/alt/expected.json), unlike the simple
+# fixture above where SIMPLE_SILOED == 0 — it's the only fixture that can drive max_siloed's
+# breach arm without inventing a new one (issue #241).
+ALT_DIR = Path(__file__).parent / "fixtures" / "alt"
 
 
 def _graph_and_config(**check_kwargs) -> tuple[VaultGraph, VaultConfig]:
@@ -257,6 +262,24 @@ class TestUnresolvedLinkCountTransientPrefixes:
             "actual": 1,
             "pass": True,
         }
+
+
+class TestMaxSiloedBreach:
+    """max_siloed's breach arm, unlike max_orphans and max_unresolved_links, had zero coverage:
+    every existing max_siloed-parameterized test runs against the simple fixture, where
+    SIMPLE_SILOED == 0, so `_actual("max_siloed", ...)` was never driven past its configured
+    limit (issue #241). The alt fixture's 5 siloed notes make that reachable.
+    """
+
+    def test_max_siloed_breach_is_reported_and_named(self):
+        config = load_config(ALT_DIR / "config.toml")
+        config.check = CheckPolicy(max_siloed=2)
+        graph = VaultGraph.build(config, WikilinkExtractor(), NormalizeResolver())
+        report = run_check(graph, config)
+        (check,) = report["checks"]
+        assert check == {"name": "max_siloed", "limit": 2, "actual": 5, "pass": False}
+        assert report["pass"] is False
+        assert any(line.startswith("max_siloed") for line in breach_lines(report))
 
 
 class TestDispatchMappingWired:

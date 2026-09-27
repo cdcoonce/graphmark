@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import tomllib
 from pathlib import Path
@@ -59,15 +60,23 @@ def _reconcile_globals(parser: argparse.ArgumentParser, args: argparse.Namespace
     this tool exists not to give. Both options collect with ``action="append"``, so this covers a
     repeat *within* one position (``stats --root A --root B``) as well as one across the two —
     argparse's own last-wins would otherwise swallow the first silently.
+
+    Values are compared after ``os.path.normpath`` — no ``resolve()``/``expanduser()``/symlink
+    following — so a trailing slash or a redundant ``./``/``.`` segment doesn't turn the same path
+    into a spurious conflict. A relative spelling and an absolute spelling of the same location are
+    still distinct values here: resolving that equivalence would need cwd-/symlink-dependent
+    behavior this deliberately does not do.
     """
     for name in ("config", "root"):
         after = f"{name}_after"
         # `after` is absent when no subcommand ran at all — argparse never reached a subparser.
         given = (getattr(args, name) or []) + (getattr(args, after, None) or [])
-        distinct = sorted(set(given))
+        distinct = sorted({os.path.normpath(v) for v in given})
         if len(distinct) > 1:
             parser.error(f"--{name} given more than once with conflicting values: {distinct}")
-        setattr(args, name, distinct[0] if distinct else None)
+        # Normalization is for the comparison only: keep the value exactly as the user gave it.
+        # normpath collapses ".." lexically, which is wrong across a symlink.
+        setattr(args, name, given[0] if given else None)
         if hasattr(args, after):
             delattr(args, after)
 
