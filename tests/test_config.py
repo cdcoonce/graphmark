@@ -40,7 +40,8 @@ class TestLoadConfig:
         assert cfg.root == ALT_DIR / "vault"
 
     def test_absolute_root_is_used_as_is(self, tmp_path):
-        # When a TOML root is absolute, it should be used as-is, not resolved relative to the TOML dir.
+        # An absolute TOML root is used as-is, not joined under the TOML's directory. Five test
+        # files rely on this to pair a fixture vault with a generated config (#298).
         cfg_dir = tmp_path / "cfg"
         cfg_dir.mkdir()
         absolute_vault = tmp_path / "elsewhere" / "vault"
