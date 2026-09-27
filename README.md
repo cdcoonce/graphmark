@@ -132,7 +132,7 @@ max_siloed = 3
 ```console
 $ graphmark check --config vault.toml
 max_orphans: 14 exceeds limit 10
-{"pass": false, "checks": [{"name": "max_orphans", "limit": 10, "actual": 14, "pass": false}, {"name": "max_unresolved_links", "limit": 20, "actual": 10, "pass": true}, {"name": "max_siloed", "limit": 3, "actual": 1, "pass": true}], "links": {"total": 512, "counts": {"resolved": 480, "ambiguous": 2, "non-note-file": 15, "out-of-scope-note": 3, "missing": 8, "intra-note": 4}, "alias_resolved": 6}}
+{"pass": false, "checks": [{"name": "max_orphans", "limit": 10, "actual": 14, "pass": false}, {"name": "max_unresolved_links", "limit": 0, "actual": 0, "pass": true}, {"name": "max_siloed", "limit": 3, "actual": 1, "pass": true}], "links": {"total": 512, "counts": {"resolved": 490, "ambiguous": 0, "non-note-file": 15, "out-of-scope-note": 3, "missing": 0, "intra-note": 4}, "alias_resolved": 6}}
 $ echo $?
 1
 ```
