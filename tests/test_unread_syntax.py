@@ -66,6 +66,10 @@ class TestCounting:
     def test_ignores_a_link_inside_an_inline_code_span(self):
         assert count_markdown_links("`[a](note.md)`") == 0
 
+    def test_counts_an_uppercase_extension(self):
+        # #261: a `.MD` extension must be counted exactly like a lowercase `.md` one.
+        assert count_markdown_links("[a](note.MD)") == 1
+
 
 class TestWarning:
     def test_warns_when_the_unread_syntax_outnumbers_the_read_one(self, tmp_path, capsys):
