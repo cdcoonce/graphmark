@@ -66,6 +66,41 @@ def _write_vault_with_excluded_subdir(
     return excluded_vault, included_vault
 
 
+def _write_vault_with_alias_resolved_link(cache_root: Path, name: str) -> CorpusVault:
+    """Write a vault with one alias-resolved link and one plain-stem-resolved link.
+
+    Gives `build_vault_report`'s new `alias_resolved` field a genuine non-zero count to assert
+    against, matching the `aliases:` frontmatter pattern used by
+    `TestAliasResolved.test_alias_hits_are_counted_separately` in `tests/test_link_counts.py`. The
+    second, non-alias resolved link (`[[beta]]`) keeps `alias_resolved` (1) strictly less than both
+    `links` (2) and the `resolved` bucket count (2), so a mutation that substitutes either of those
+    for `alias_resolved` is distinguishable from the correct value, not just from zero.
+    """
+    vault_dir = cache_root / name
+    vault_dir.mkdir(parents=True)
+    (vault_dir / "beta.md").write_text("---\naliases:\n  - Nickname\n---\n# Beta\n")
+    (vault_dir / "alpha.md").write_text("See [[Nickname]].\n")
+    (vault_dir / "gamma.md").write_text("See [[beta]].\n")
+
+    return CorpusVault(
+        name=name,
+        clone_url="https://github.com/example/vault",
+        sha="0123456789abcdef0123456789abcdef01234567",
+        license="MIT",
+        excluded_dirs=(),
+    )
+
+
+def test_build_vault_report_includes_alias_resolved(tmp_path):
+    vault = _write_vault_with_alias_resolved_link(tmp_path, "alias-vault")
+
+    report = build_vault_report(vault, tmp_path)
+
+    assert report["alias_resolved"] == 1
+    assert report["links"] == 2
+    assert report["buckets"]["resolved"] == {"count": 2, "share": 1.0}
+
+
 def test_build_vault_report_applies_excluded_dirs(tmp_path):
     excluded_vault, included_vault = _write_vault_with_excluded_subdir(
         tmp_path, "vault-with-archive"

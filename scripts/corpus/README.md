@@ -28,3 +28,22 @@ or auto-reclone the directory (removal policy for a disposable-but-untrusted cac
 separate decision, not implied by this check).
 
 Reference implementation: `_is_repo_root` / `fetch_vault` in `fetch.py`.
+
+## Idempotent correction against a machine-owned, disposable directory
+
+A state-correction helper (like `fetch_vault`) that reconciles a machine-owned, disposable
+directory -- the corpus cache, or any future cache/build-artifact directory under this repo's
+automation -- to a target state must handle two things beyond the happy path:
+
+1. **Force-correct "exists but out of sync" states, including a dirty working tree.** Don't assume
+   the directory is clean before correcting it. Since nothing but the automation itself is
+   supposed to write there, a locally-modified tracked file is noise to discard, not a condition
+   to detect and stop for -- correction (`git checkout --force`, a reset, etc.) should be
+   unconditional.
+2. **Don't silently fold a genuine error into the same path as "not yet populated."** A directory
+   that exists as a repo but fails to read (permissions, corruption, ...) is not the same state as
+   a directory that was never populated -- collapsing both to the same "needs (re)fetch" signal
+   hides the real failure. Surface it (e.g. raise) instead of returning the same sentinel a fresh,
+   never-touched target would produce.
+
+Reference implementation: `_head_sha` / `fetch_vault`'s correction checkout in `fetch.py`.
