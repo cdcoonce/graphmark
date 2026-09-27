@@ -29,6 +29,27 @@ def _head_sha(target: Path) -> str | None:
     return result.stdout.strip()
 
 
+def _is_repo_root(target: Path) -> bool:
+    """Return whether ``target`` is the top-level directory of its own git repository.
+
+    Git walks up the directory tree looking for ``.git``, so a ``target`` that exists but is not
+    itself a repo root (e.g. a stray leftover directory nested inside some unrelated, enclosing
+    repo) would otherwise let git commands run with ``cwd=target`` silently operate on that
+    enclosing repo instead of failing. Both sides are resolved before comparing -- ``git rev-parse
+    --show-toplevel`` can differ from ``target`` by symlink normalization alone (e.g. macOS
+    ``/tmp`` vs ``/private/tmp``), which would false-positive on a plain string comparison.
+    """
+    result = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=target,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return False
+    return Path(result.stdout.strip()).resolve() == target.resolve()
+
+
 def _fetch_pinned_commit(target: Path, vault: CorpusVault) -> None:
     """Make ``vault.sha`` available in ``target``, cheapest viable fetch first.
 
@@ -66,6 +87,12 @@ def fetch_vault(vault: CorpusVault, cache_root: Path) -> None:
 
     if target.is_dir() and _head_sha(target) == vault.sha:
         return
+
+    if target.is_dir() and not _is_repo_root(target):
+        raise ValueError(
+            f"corpus cache target for vault {vault.name!r} is not the root of its own git "
+            f"repository (found a directory nested inside an unrelated repo?): {target}"
+        )
 
     if not target.exists():
         cache_root = Path(cache_root)
