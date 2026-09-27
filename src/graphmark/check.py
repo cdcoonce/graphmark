@@ -82,9 +82,10 @@ def run_check(graph: VaultGraph, config: VaultConfig) -> dict:
     """
     policy = config.check
     if not policy.is_configured():
+        names = ", ".join(f.name for f in fields(config.check))
         raise ValueError(
             "no [check] policy configured: set at least one threshold in the config's "
-            "[check] table (max_orphans, max_unresolved_links, max_siloed)"
+            f"[check] table ({names})"
         )
 
     checks = []
