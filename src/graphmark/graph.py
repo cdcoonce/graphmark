@@ -581,15 +581,27 @@ def resolve_markdown_target(
     is a separate decision, not a fallback to slip in here — silently trying a second rule when the
     first fails is how a link resolves to the wrong note.
 
+    A target beginning with ``/`` is vault-root-relative instead — the convention `mkdocs`,
+    Docusaurus, Jekyll and Hugo vaults write. It resolves against the vault root directly: the
+    leading ``/`` is stripped and the remainder normalized, with no join against
+    ``source_rel_path``'s folder. Joining would silently discard that folder anyway — pathlib's
+    ``/`` operator drops its left-hand side entirely when the right-hand operand is absolute — so
+    root-relative targets are handled as their own case up front rather than falling into that
+    join.
+
     Without ``autolinks``, or for any target containing ``/``: ``None`` when the target escapes the
     vault root. That is not an error and not a resolution —
     a link out of the vault names no note in the graph, so it is reported ``missing`` like any other
-    target that is not there.
+    target that is not there. A root-relative target that normalizes above the root is ``None`` by
+    the same rule, with no second rule attempted when it is.
     """
     if autolinks and "/" not in target:
         return target
-    combined = PurePosixPath(source_rel_path).parent / target
-    normalized = posixpath.normpath(str(combined))
+    if target.startswith("/"):
+        normalized = posixpath.normpath(target[1:])
+    else:
+        combined = PurePosixPath(source_rel_path).parent / target
+        normalized = posixpath.normpath(str(combined))
     # normpath leaves leading "..", which is the only way to express "above the root".
     if normalized == ".." or normalized.startswith("../"):
         return None
