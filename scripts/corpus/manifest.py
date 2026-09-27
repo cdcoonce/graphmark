@@ -58,10 +58,10 @@ def load_manifest(path: Path) -> list[CorpusVault]:
                 raise ValueError(f"manifest {path}: vault entry has empty required field '{key}'")
 
         name = entry["name"]
-        if "/" in name or "\\" in name or ".." in name:
+        if "/" in name or "\\" in name or ".." in name or name == ".":
             raise ValueError(
                 f"manifest {path}: vault entry has invalid vault name {name!r} "
-                "(must not contain '/', '\\', or '..')"
+                "(must not contain '/', '\\', or '..', and must not be '.')"
             )
 
         if name in seen_names:
