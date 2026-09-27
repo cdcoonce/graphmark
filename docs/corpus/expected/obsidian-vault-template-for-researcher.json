@@ -1,0 +1,32 @@
+{
+  "alias_resolved": 0,
+  "buckets": {
+    "ambiguous": {
+      "count": 0,
+      "share": 0.0
+    },
+    "intra-note": {
+      "count": 0,
+      "share": 0.0
+    },
+    "missing": {
+      "count": 7,
+      "share": 0.0237
+    },
+    "non-note-file": {
+      "count": 116,
+      "share": 0.3932
+    },
+    "out-of-scope-note": {
+      "count": 0,
+      "share": 0.0
+    },
+    "resolved": {
+      "count": 172,
+      "share": 0.5831
+    }
+  },
+  "links": 295,
+  "notes": 83,
+  "vault": "obsidian-vault-template-for-researcher"
+}

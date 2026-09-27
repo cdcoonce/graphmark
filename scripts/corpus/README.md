@@ -3,6 +3,22 @@
 Harness scripts for the corpus study -- not part of the graphmark engine or its public package
 surface (see each module's own docstring).
 
+## Running the harness
+
+```bash
+uv run --extra dev python -m scripts.corpus.cli fetch --manifest docs/corpus/manifest.toml --cache-root .corpus-cache
+uv run --extra dev python -m scripts.corpus.cli diff --manifest docs/corpus/manifest.toml --cache-root .corpus-cache --expected-dir docs/corpus/expected
+```
+
+`fetch` is the only step that touches the network. `diff` runs offline against the cache and
+exits `0` on no drift, `1` on drift (one `vault · field · before → after` line per changed number),
+and `2` on a usage or config error.
+
+A drift is a question for a human, not a fixture to update. Regenerating the frozen tables means
+pointing `report` at `docs/corpus/expected/` (`report ... --out-dir docs/corpus/expected`). Do that
+only as its own deliberate, reviewed change, with the drift explained in the PR. Never regenerate
+them to make a run green.
+
 ## Confirm repo identity before mutating git commands
 
 Any script under `scripts/corpus/` that shells out to `git` against a config- or caller-supplied
