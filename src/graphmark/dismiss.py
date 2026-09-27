@@ -21,12 +21,7 @@ def content_hash(path: Path) -> str:
 def record_dismissal(root: Path, a: str, b: str, *, path: str = _DEFAULT_PATH) -> None:
     dismissed_file = root / path
     dismissed_file.parent.mkdir(parents=True, exist_ok=True)
-    existing = {}
-    if dismissed_file.exists():
-        try:
-            existing = json.loads(dismissed_file.read_text())
-        except (json.JSONDecodeError, OSError):
-            existing = {}
+    existing = load_dismissed(root, path=path)
     sig = weaklink_sig(a, b)
     existing[sig] = {
         "a": a,
