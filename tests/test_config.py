@@ -61,6 +61,19 @@ class TestLoadConfig:
         assert cfg.rules_files == default.rules_files
         assert cfg.transient_prefixes == default.transient_prefixes
 
+    def test_rules_files_fallback_tracks_the_dataclass_default(self, tmp_path, monkeypatch):
+        # rules_files must have exactly one source of truth: the VaultConfig dataclass field
+        # default. Mutating only the field's default_factory (never load_config's own source)
+        # must change what a TOML omitting rules_files resolves to — proving load_config
+        # references the dataclass default rather than re-literaling it (#233).
+        monkeypatch.setattr(
+            VaultConfig.__dataclass_fields__["rules_files"], "default_factory", lambda: ["X.md"]
+        )
+        toml = tmp_path / "minimal.toml"
+        toml.write_text('root = "vault"\n')
+        cfg = load_config(toml)
+        assert cfg.rules_files == ["X.md"]
+
     def test_missing_root_raises_valueerror_with_path_and_key(self, tmp_path):
         toml = tmp_path / "no-root.toml"
         toml.write_text('scoped_folders = ["a"]\n')

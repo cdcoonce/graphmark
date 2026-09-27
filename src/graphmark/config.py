@@ -187,7 +187,9 @@ def load_config(path: str | Path, *, root_override: str | Path | None = None) ->
         root=root,
         scoped_folders=data.get("scoped_folders", []),
         excluded_dirs=data.get("excluded_dirs", []),
-        rules_files=data.get("rules_files", ["CLAUDE.md", "CLAUDE.local.md"]),
+        rules_files=data.get(
+            "rules_files", VaultConfig.__dataclass_fields__["rules_files"].default_factory()
+        ),
         transient_prefixes=tuple(data.get("transient_prefixes", [])),
         resolve_aliases=bool(data.get("resolve_aliases", True)),
         link_syntax=data.get("link_syntax", "wikilink"),
