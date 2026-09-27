@@ -80,6 +80,8 @@ def orphans(graph: VaultGraph, config: VaultConfig) -> list[str]:
 
 def hubs(graph: VaultGraph, n: int = 10) -> list[list]:
     """Return top-n nodes by undirected degree (degree > 0), ties broken by path order."""
+    if n < 0:
+        raise ValueError(f"n must be >= 0, got {n}")
     G = _undirected(graph)
     degree_pairs = [(node, G.degree(node)) for node in G.nodes if G.degree(node) > 0]
     degree_pairs.sort(key=lambda x: (-x[1], x[0]))
@@ -137,6 +139,8 @@ def pagerank(graph: VaultGraph, n: int = 10, alpha: float = 0.85) -> list[list]:
     """
     if not 0.0 < alpha < 1.0:
         raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+    if n < 0:
+        raise ValueError(f"n must be >= 0, got {n}")
 
     nodes = list(graph.nodes.keys())
     N = len(nodes)
