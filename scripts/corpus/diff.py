@@ -70,6 +70,7 @@ def diff_reports(expected: dict, actual: dict) -> list[str]:
 
 def load_expected(path: Path) -> dict:
     """Load a frozen expected report from ``path``, raising ``ValueError`` if that fails."""
+    path = Path(path)
     try:
         return json.loads(path.read_text())
     except FileNotFoundError as exc:
