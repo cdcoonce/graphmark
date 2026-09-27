@@ -241,6 +241,19 @@ class TestVaultGraphBuildUnreadableNotes:
         assert graph.out_links.get("alpha.md") == {"beta.md"}
         assert graph.back_links.get("beta.md") == {"alpha.md"}
 
+    def test_a_non_os_error_while_parsing_still_propagates(self, tmp_path, monkeypatch):
+        # Only filesystem-level unreadability is skipped; a bug inside parsing must stay loud
+        # rather than silently dropping notes behind a broadened except.
+        (tmp_path / "good.md").write_text("# Good\n")
+
+        def boom(path, root):
+            raise ValueError("parser bug")
+
+        monkeypatch.setattr("graphmark.graph.parse_document", boom)
+
+        with pytest.raises(ValueError, match="parser bug"):
+            self._build(tmp_path)
+
 
 class TestMarkdownExtensionInLinks:
     """Obsidian treats [[Note.md]] and [[Note]] as the same link; so must the resolver."""
