@@ -244,6 +244,32 @@ class TestConfigKnob:
         assert cfg.resolve_aliases is True
 
 
+class TestOutOfScopeCollisions:
+    """An alias colliding with an out-of-scope note's name must be dropped too (#269).
+
+    ``build_aliases``'s collision check only tested against ``catalog`` (in-scope notes), so an
+    alias claiming the stem of an out-of-scope note (e.g. a ``rules_files`` entry like
+    ``CLAUDE.md``) survived indexing and let ``_diagnose``'s alias check win before its
+    out-of-scope check was ever reached — hijacking the real file's identity.
+    """
+
+    def test_an_alias_colliding_with_an_out_of_scope_note_diagnoses_as_out_of_scope(self, tmp_path):
+        _write(tmp_path, "CLAUDE.md")
+        _write(tmp_path, "aliasing-note.md", aliases=["CLAUDE"])
+        graph = _build(tmp_path, rules_files=["CLAUDE.md"])
+        d = diagnose(graph, "CLAUDE")
+        assert d.reason == "out-of-scope-note"
+        assert d.via is None
+
+    def test_an_alias_colliding_with_an_out_of_scope_note_is_dropped_from_the_alias_map(
+        self, tmp_path
+    ):
+        _write(tmp_path, "CLAUDE.md")
+        _write(tmp_path, "aliasing-note.md", aliases=["CLAUDE"])
+        graph = _build(tmp_path, rules_files=["CLAUDE.md"])
+        assert "claude" not in graph.aliases
+
+
 class TestFixtureParity:
     def test_no_fixture_note_declares_aliases(self):
         # The parity argument: this change alters what resolves, so it is the most parity-sensitive
