@@ -60,6 +60,22 @@ class TestExtractor:
         # Real markdown encodes spaces; the vault stores them literally.
         assert MarkdownLinkExtractor().extract("[x](my%20note.md)") == ["my note.md"]
 
+    def test_recognizes_a_plain_target_unchanged(self):
+        # #239 regression: the plain form's extraction must stay byte-identical.
+        assert MarkdownLinkExtractor().extract("[text](note.md)") == ["note.md"]
+
+    def test_recognizes_a_titled_link(self):
+        # #239: a link title (`"Some Title"`) after the target must not swallow the whole match.
+        assert MarkdownLinkExtractor().extract('[text](note.md "A Title")') == ["note.md"]
+
+    def test_recognizes_an_angle_bracket_target(self):
+        # #239: the standard CommonMark escape for a target containing spaces/parens.
+        assert MarkdownLinkExtractor().extract("[text](<my note.md>)") == ["my note.md"]
+
+    def test_recognizes_a_combined_angle_bracket_and_titled_target(self):
+        # #239: angle-bracket target and title together.
+        assert MarkdownLinkExtractor().extract('[text](<my note.md> "A Title")') == ["my note.md"]
+
 
 class TestDefaultIsUnchanged:
     def test_markdown_links_are_ignored_by_default(self, tmp_path):
