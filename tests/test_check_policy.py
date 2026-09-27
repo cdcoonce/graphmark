@@ -66,6 +66,45 @@ class TestCheckPolicyParsing:
         assert cfg.check.is_configured() is False
 
 
+class TestCheckPolicyPostInitValidation:
+    """Direct construction must enforce the same invariant as the TOML (_parse_check) path:
+    non-negative int only, bool excluded (bool is an int subclass in Python)."""
+
+    _FIELDS = ["max_orphans", "max_unresolved_links", "max_siloed"]
+
+    @pytest.mark.parametrize("field_name", _FIELDS)
+    def test_negative_int_raises(self, field_name):
+        with pytest.raises(ValueError):
+            CheckPolicy(**{field_name: -1})
+
+    @pytest.mark.parametrize("field_name", _FIELDS)
+    def test_bool_raises(self, field_name):
+        with pytest.raises(ValueError):
+            CheckPolicy(**{field_name: True})
+
+    @pytest.mark.parametrize("field_name", _FIELDS)
+    def test_float_raises(self, field_name):
+        with pytest.raises(ValueError):
+            CheckPolicy(**{field_name: 1.5})
+
+    @pytest.mark.parametrize("field_name", _FIELDS)
+    def test_non_numeric_str_raises(self, field_name):
+        with pytest.raises(ValueError):
+            CheckPolicy(**{field_name: "ten"})
+
+    def test_none_is_still_accepted_for_every_field(self):
+        assert (
+            CheckPolicy(max_orphans=None, max_unresolved_links=None, max_siloed=None)
+            == CheckPolicy()
+        )
+
+    def test_valid_non_negative_ints_are_accepted(self):
+        policy = CheckPolicy(max_orphans=0, max_unresolved_links=5, max_siloed=10)
+        assert policy.max_orphans == 0
+        assert policy.max_unresolved_links == 5
+        assert policy.max_siloed == 10
+
+
 class TestCheckPolicyStrictness:
     def test_unknown_key_inside_check_raises(self, tmp_path):
         toml = _write(tmp_path, "[check]\nmax_orphan = 10\n")  # note the typo

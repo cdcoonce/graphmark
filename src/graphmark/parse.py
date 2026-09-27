@@ -18,7 +18,7 @@ _INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
 _FENCE_OPEN_RE = re.compile(r"^(`{3,}|~{3,})")
 
 
-def _strip_fenced_blocks(text: str) -> str:
+def _strip_fenced_blocks(text: str) -> tuple[str, bool]:
     """Remove fenced code block contents so wikilinks inside them are ignored.
 
     Tracks the opening fence's character *and* length; a line only closes the fence when it is
@@ -35,6 +35,11 @@ def _strip_fenced_blocks(text: str) -> str:
     budget). Indentation is counted in raw characters: a tab counts as one character, not
     expanded to CommonMark's 4-column tab stop -- a documented simplification, not full
     CommonMark tab fidelity.
+
+    Returns ``(stripped_text, unterminated)``, where ``unterminated`` is ``True`` iff a fence was
+    still open when the text ended (an unclosed ``` `` `` or ``~~~`` that silently drops every
+    line after it, including any links). The caller decides what, if anything, to do with that
+    flag -- this function has no file identity to put in a diagnostic.
     """
     lines = text.splitlines(keepends=True)
     out: list[str] = []
@@ -61,7 +66,7 @@ def _strip_fenced_blocks(text: str) -> str:
             ):
                 fence_char = None
                 fence_len = 0
-    return "".join(out)
+    return "".join(out), fence_char is not None
 
 
 #: A block-list item line: leading whitespace, a dash, then the value. Checked before the
@@ -134,7 +139,7 @@ def count_markdown_links(text: str) -> int:
     Code spans and fenced blocks are skipped, exactly as wikilink extraction skips them: a
     documented example is not a link.
     """
-    text = _strip_fenced_blocks(text)
+    text, _ = _strip_fenced_blocks(text)
     text = _INLINE_CODE_RE.sub("", text)
     return len(_MD_LINK_RE.findall(text))
 
@@ -143,7 +148,7 @@ class WikilinkExtractor:
     """Extracts raw wikilink displays from note text, excluding code spans."""
 
     def extract(self, text: str) -> list[str]:
-        text = _strip_fenced_blocks(text)
+        text, _ = _strip_fenced_blocks(text)
         text = _INLINE_CODE_RE.sub("", text)
         return _WIKILINK_RE.findall(text)
 
@@ -164,7 +169,7 @@ class MarkdownLinkExtractor:
     """
 
     def extract(self, text: str) -> list[str]:
-        text = _strip_fenced_blocks(text)
+        text, _ = _strip_fenced_blocks(text)
         text = _INLINE_CODE_RE.sub("", text)
         return [unquote(target) for target in _MD_LINK_RE.findall(text)]
 
@@ -202,4 +207,14 @@ def parse_document(path: Path, root: Path) -> Document:
     else:
         frontmatter = {}
         body = raw
+    # Checked here, once, so the warning fires exactly one time per affected file regardless of
+    # how many extractors (WikilinkExtractor, MarkdownLinkExtractor, count_markdown_links) later
+    # call _strip_fenced_blocks on this same body during a build -- see that function's docstring.
+    _, unterminated = _strip_fenced_blocks(body)
+    if unterminated:
+        print(
+            f"graphmark: warning: {rel_path}: unterminated fenced code block, "
+            "trailing content dropped",
+            file=sys.stderr,
+        )
     return Document(rel_path=rel_path, text=body, frontmatter=frontmatter)
