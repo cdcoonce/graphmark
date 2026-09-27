@@ -91,6 +91,18 @@ def test_missing_top_level_field_raises_value_error():
     assert "expected" in str(exc_info.value)
 
 
+def test_missing_vault_field_raises_value_error_not_key_error():
+    # "vault" is not in _TOP_LEVEL_FIELDS (it is compared, not diffed), but the vault-mismatch
+    # check indexes it, so a report without it must fail the schema check, not KeyError.
+    expected = _report()
+    del expected["vault"]
+
+    with pytest.raises(ValueError, match="'vault'") as exc_info:
+        diff_reports(expected, _report())
+
+    assert "expected" in str(exc_info.value)
+
+
 def test_missing_top_level_field_in_actual_raises_value_error():
     expected = _report()
     actual = _report()
