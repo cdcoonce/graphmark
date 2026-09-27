@@ -152,3 +152,36 @@ class TestKPassthrough:
         graph = _graph("a/one.md", "b/two.md", "c/three.md")
         fn = _RecordingSimilarity({"a/one.md": [("b/two.md", 0.9), ("c/three.md", 0.8)]})
         assert len(gaps(graph, fn, note="a/one.md", k=k)) == expected
+
+
+class TestCrossFolder:
+    """Folder-locality in _rank_key: two root-level notes (no "/" in rel_path) must compare as
+    same-folder, and any note with a folder component must keep comparing by its existing
+    top-level path segment (issue #216)."""
+
+    def test_root_level_notes_are_not_cross_folder(self):
+        # "one.md" and "two.md" are both root-level (no "/"), so they must rank as same-folder
+        # despite "two.md" scoring higher. "sub/three.md" is genuinely cross-folder and, despite
+        # its lower score, must rank first. Equal scores would fall through to the a/b tie-break
+        # and pass even under the pre-fix bug, so the scores are deliberately unequal.
+        graph = _graph("one.md", "two.md", "sub/three.md")
+        fn = _RecordingSimilarity({"one.md": [("two.md", 0.9), ("sub/three.md", 0.5)]})
+        result = gaps(graph, fn, note="one.md")
+        assert [frozenset({r["a"], r["b"]}) for r in result] == [
+            frozenset({"one.md", "sub/three.md"}),
+            frozenset({"one.md", "two.md"}),
+        ]
+
+    def test_two_level_nesting_still_ranks_by_top_level_segment(self):
+        # Both "docs/sub1/x.md" and "docs/sub2/y.md" share the top-level segment "docs", so they
+        # must keep ranking as same-folder today -- a dirname-based comparison would instead see
+        # "docs/sub1" != "docs/sub2" and treat them as cross-folder, reversing this order.
+        graph = _graph("docs/sub1/x.md", "docs/sub2/y.md", "other/z.md")
+        fn = _RecordingSimilarity(
+            {"docs/sub1/x.md": [("docs/sub2/y.md", 0.9), ("other/z.md", 0.5)]}
+        )
+        result = gaps(graph, fn, note="docs/sub1/x.md")
+        assert [frozenset({r["a"], r["b"]}) for r in result] == [
+            frozenset({"docs/sub1/x.md", "other/z.md"}),
+            frozenset({"docs/sub1/x.md", "docs/sub2/y.md"}),
+        ]
