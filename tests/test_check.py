@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 import pytest
 
-from graphmark.check import _DISPATCH, breach_lines, run_check, unresolved_link_count
+from graphmark.check import _DISPATCH, breach_lines, links_report, run_check, unresolved_link_count
 from graphmark.config import CheckPolicy, VaultConfig, load_config
 from graphmark.graph import NormalizeResolver, VaultGraph
 from graphmark.parse import WikilinkExtractor
@@ -262,6 +262,46 @@ class TestUnresolvedLinkCountTransientPrefixes:
             "actual": 1,
             "pass": True,
         }
+
+
+class TestMaxUnresolvedLinksCombinesAmbiguousAndMissing:
+    """run_check's max_unresolved_links dispatch must count both broken-link reasons, not just
+    `missing` (issue #251). `unresolved_link_count`'s combination of `ambiguous` + `missing` is
+    already proven at that function's own level (test_diagnose.py, test_link_counts.py — see
+    #237, closed as already covered); the residual gap #251 targets is that no existing
+    `run_check` test in this file drives a vault containing both reasons at once — every one
+    uses either the SIMPLE fixture (0 ambiguous, 1 missing) or a synthetic vault with only
+    `missing` links (TestUnresolvedLinkCountTransientPrefixes above).
+    """
+
+    @staticmethod
+    def _build(tmp_path) -> tuple[VaultGraph, VaultConfig]:
+        # Two same-basename notes make "[[note]]" ambiguous; "[[Nowhere]]" has no target at all,
+        # making it missing — the same construction as
+        # test_link_counts.py::TestConservationLaw::test_unresolved_equals_ambiguous_plus_missing.
+        (tmp_path / "one").mkdir()
+        (tmp_path / "two").mkdir()
+        (tmp_path / "one" / "note.md").write_text("Hub note.\n")
+        (tmp_path / "two" / "note.md").write_text("Hub note.\n")
+        (tmp_path / "hub.md").write_text("[[note]] [[Nowhere]]\n")
+        config = VaultConfig(root=tmp_path)
+        graph = VaultGraph.build(config, WikilinkExtractor(), NormalizeResolver())
+        return graph, config
+
+    def test_run_check_actual_is_ambiguous_plus_missing(self, tmp_path):
+        graph, config = self._build(tmp_path)
+        config.check = CheckPolicy(max_unresolved_links=99)
+        counts = links_report(graph)["counts"]
+        # Both reasons must actually be present, or this test would not distinguish a dispatch
+        # that dropped one of them from one that didn't.
+        assert counts["ambiguous"] > 0
+        assert counts["missing"] > 0
+
+        (check,) = run_check(graph, config)["checks"]
+
+        assert check["actual"] == counts["ambiguous"] + counts["missing"]
+        assert check["actual"] > counts["ambiguous"]
+        assert check["actual"] > counts["missing"]
 
 
 class TestMaxSiloedBreach:
