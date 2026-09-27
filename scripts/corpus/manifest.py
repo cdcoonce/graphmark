@@ -12,6 +12,10 @@
 into a list of ``CorpusVault``. This is a sibling harness module, not part of the graphmark
 engine, but follows ``graphmark/config.py``'s style (frozen dataclass, ``tomllib``, ``Path``-based
 loader) for consistency.
+
+An entry may also set an optional ``link_syntax`` key (``"wikilink"`` | ``"markdown"`` |
+``"both"`` | ``"markdown-autolinks"``, see ``graphmark.config.LINK_SYNTAXES``); it defaults to
+``"wikilink"`` when absent, matching every entry in the manifest today.
 """
 
 from __future__ import annotations
@@ -33,6 +37,7 @@ class CorpusVault:
     sha: str
     license: str
     excluded_dirs: tuple[str, ...]
+    link_syntax: str = "wikilink"
 
 
 def load_manifest(path: Path) -> list[CorpusVault]:
@@ -45,7 +50,9 @@ def load_manifest(path: Path) -> list[CorpusVault]:
     with open(path, "rb") as f:
         data = tomllib.load(f)
 
-    required = [f.name for f in fields(CorpusVault)]
+    # link_syntax is optional (defaults to "wikilink" below) and must stay excluded here: every
+    # dataclass field is otherwise required, and none of the real manifest entries set it.
+    required = [f.name for f in fields(CorpusVault) if f.name != "link_syntax"]
     vaults: list[CorpusVault] = []
     seen_names_casefold: dict[str, str] = {}
 
@@ -101,6 +108,7 @@ def load_manifest(path: Path) -> list[CorpusVault]:
                 sha=entry["sha"],
                 license=entry["license"],
                 excluded_dirs=tuple(entry["excluded_dirs"]),
+                link_syntax=entry.get("link_syntax", "wikilink"),
             )
         )
 
