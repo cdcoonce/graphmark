@@ -7,7 +7,7 @@ import re
 import string
 import sys
 import unicodedata
-from collections.abc import Collection
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
@@ -220,21 +220,26 @@ def _is_intra_note_reference(display: str) -> bool:
     return not display.split("|")[0].split("#")[0].strip()
 
 
-def build_catalog(docs: list[Document]) -> dict[str, list[str]]:
-    """Map normalized stem → list of rel_paths (len > 1 means ambiguous).
+def _group_sorted(pairs: Iterable[tuple[str, str]]) -> dict[str, list[str]]:
+    """Group ``(key, rel_path)`` pairs by key, each value list sorted by rel_path.
 
-    Value lists are sorted by rel_path. ``build`` already walks in path order, but ``Path``
-    ordering and rel_path string ordering disagree where a separator meets punctuation
-    (``a-b/x.md`` vs ``a/b.md``), and this mapping is public state feeding byte-stable reports —
-    so the order is established here rather than inherited.
+    Shared by ``build_catalog`` and ``VaultGraph.build``'s out-of-scope mapping: both need the
+    same "walk order in, rel_path string order out" guarantee (``Path`` ordering and rel_path
+    string ordering disagree where a separator meets punctuation, e.g. ``a-b/x.md`` vs
+    ``a/b.md``), and both feed byte-stable reports, so the order is established here rather than
+    inherited from whatever produced ``pairs``.
     """
-    catalog: dict[str, list[str]] = {}
-    for doc in docs:
-        key = _normalize(Path(doc.rel_path).stem)
-        catalog.setdefault(key, []).append(doc.rel_path)
-    for paths in catalog.values():
-        paths.sort()
-    return catalog
+    grouped: dict[str, list[str]] = {}
+    for key, rel_path in pairs:
+        grouped.setdefault(key, []).append(rel_path)
+    for values in grouped.values():
+        values.sort()
+    return grouped
+
+
+def build_catalog(docs: list[Document]) -> dict[str, list[str]]:
+    """Map normalized stem → list of rel_paths (len > 1 means ambiguous)."""
+    return _group_sorted((_normalize(Path(doc.rel_path).stem), doc.rel_path) for doc in docs)
 
 
 #: A normalized final component → the paths ending with it, each paired with its precomputed
@@ -714,7 +719,7 @@ class VaultGraph:
         # Markdown that exists but is out of scope, normalized stem → rel_paths. Collected in
         # this same walk (no extra I/O) so a link to one can be told apart from a link to a note
         # that exists nowhere at all.
-        out_of_scope: dict[str, list[str]] = {}
+        out_of_scope_pairs: list[tuple[str, str]] = []
         for path in sorted(root.rglob("*.md")):
             rel = path.relative_to(root)
             rel_parts = rel.parts
@@ -723,12 +728,11 @@ class VaultGraph:
                 or any(p in excluded for p in rel_parts[:-1])
                 or path.name in rules
             ):
-                out_of_scope.setdefault(_normalize(path.stem), []).append(rel.as_posix())
+                out_of_scope_pairs.append((_normalize(path.stem), rel.as_posix()))
                 continue
             md_files.append(path)
 
-        for paths in out_of_scope.values():
-            paths.sort()  # same rel_path ordering guarantee as build_catalog
+        out_of_scope = _group_sorted(out_of_scope_pairs)
 
         docs: list[Document] = []
         for p in md_files:

@@ -18,7 +18,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from graphmark.check import links_report, run_check, unresolved_link_count
-from graphmark.config import CheckPolicy, VaultConfig, load_config
+from graphmark.config import LINK_SYNTAXES, CheckPolicy, VaultConfig, load_config
 from graphmark.dismiss import (
     active_dismissed_sigs,
     load_dismissed,
@@ -98,6 +98,7 @@ __all__ = [
     "GAPS_DEFAULT_THRESHOLD",
     "CheckPolicy",
     "Document",
+    "LINK_SYNTAXES",
     "LinkExtractor",
     "DIAGNOSIS_REASONS",
     "SUGGEST_MAX_MATCHES",
