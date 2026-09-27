@@ -39,6 +39,17 @@ class TestLoadConfig:
         cfg = load_config(ALT_DIR / "config.toml")
         assert cfg.root == ALT_DIR / "vault"
 
+    def test_absolute_root_is_used_as_is(self, tmp_path):
+        # When a TOML root is absolute, it should be used as-is, not resolved relative to the TOML dir.
+        cfg_dir = tmp_path / "cfg"
+        cfg_dir.mkdir()
+        absolute_vault = tmp_path / "elsewhere" / "vault"
+        absolute_vault.mkdir(parents=True)
+        toml = cfg_dir / "config.toml"
+        toml.write_text(f'root = "{absolute_vault}"\n')
+        cfg = load_config(toml)
+        assert cfg.root == absolute_vault
+
     def test_missing_optional_key_falls_back_to_dataclass_default(self, tmp_path):
         toml = tmp_path / "minimal.toml"
         toml.write_text('root = "vault"\n')

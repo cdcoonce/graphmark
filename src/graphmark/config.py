@@ -1,8 +1,8 @@
 """Vault configuration — the domain seam that makes the engine general.
 
 ``VaultConfig`` holds every vault-specific policy the engine consults. ``load_config`` reads a
-TOML file into a ``VaultConfig`` (paths resolved relative to the TOML's directory). Fixture tests
-may construct ``VaultConfig`` directly.
+TOML file into a ``VaultConfig`` (a relative ``root`` is resolved against the TOML file's directory;
+an absolute ``root`` is used as-is). Fixture tests may construct ``VaultConfig`` directly.
 """
 
 from __future__ import annotations
@@ -113,10 +113,10 @@ def _parse_check(data: dict, path: Path) -> CheckPolicy:
 def load_config(path: str | Path, *, root_override: str | Path | None = None) -> VaultConfig:
     """Load a VaultConfig from a TOML file.
 
-    ``root`` is the only required key (resolved relative to the TOML's directory). Every other
-    key that maps to a ``VaultConfig`` field is optional and falls back to the dataclass default;
-    any other key in the TOML is silently ignored. A TOML missing ``root`` raises ``ValueError``
-    naming the file and the missing key.
+    ``root`` is the only required key (a relative ``root`` is resolved against the TOML file's directory;
+    an absolute ``root`` is used as-is). Every other key that maps to a ``VaultConfig`` field is optional
+    and falls back to the dataclass default; any other key in the TOML is silently ignored. A TOML missing
+    ``root`` raises ``ValueError`` naming the file and the missing key.
 
     The one exception to that leniency is the optional ``[check]`` table (see ``CheckPolicy``):
     an unknown key or a non-negative-integer value there raises, because a silently-ignored
