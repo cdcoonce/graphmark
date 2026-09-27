@@ -52,6 +52,18 @@ class TestWikilinkExtractor:
         assert "hidden" not in result
         assert result == ["real"]
 
+    def test_fence_line_with_trailing_content_does_not_close_the_block(self):
+        # A same-length fence run followed by an info string (e.g. a nested ```python line
+        # documenting Markdown syntax) is not a closer — only the true closer below it is.
+        text = "```\nHow to open a python block:\n```python\ncode here\n```\nAfter [[real]].\n"
+        assert self.extractor.extract(text) == ["real"]
+
+    def test_fence_closer_with_trailing_whitespace_still_closes(self):
+        text = "```\n[[hidden]]\n```   \nAfter [[real]].\n"
+        result = self.extractor.extract(text)
+        assert "hidden" not in result
+        assert result == ["real"]
+
     def test_hub_md_links(self):
         # Matches hub.md content exactly — the definitive integration test for the extractor
         text = (

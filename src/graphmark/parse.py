@@ -22,8 +22,11 @@ def _strip_fenced_blocks(text: str) -> str:
     """Remove fenced code block contents so wikilinks inside them are ignored.
 
     Tracks the opening fence's character *and* length; a line only closes the fence when it is
-    the same character with length >= the opening length (CommonMark's fence-closing rule). This
-    stops a shorter nested fence of the same character from closing a longer outer fence early.
+    the same character with length >= the opening length, followed by nothing but optional
+    trailing whitespace (CommonMark's fence-closing rule). This stops a shorter nested fence of
+    the same character from closing a longer outer fence early, and stops a same-length-or-longer
+    fence run that carries trailing content (e.g. an info string like ```python``) from being
+    mistaken for a closer.
     """
     lines = text.splitlines(keepends=True)
     out: list[str] = []
@@ -40,7 +43,12 @@ def _strip_fenced_blocks(text: str) -> str:
                 out.append(line)
         else:
             m = _FENCE_OPEN_RE.match(ls)
-            if m and ls[0] == fence_char and len(m.group(1)) >= fence_len:
+            if (
+                m
+                and ls[0] == fence_char
+                and len(m.group(1)) >= fence_len
+                and ls[m.end() :].strip() == ""
+            ):
                 fence_char = None
                 fence_len = 0
     return "".join(out)
