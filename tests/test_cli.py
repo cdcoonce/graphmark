@@ -123,6 +123,8 @@ class TestVersionAndHelp:
             ("neighborhood", "Vault-relative path"),
             ("pagerank", "Damping factor"),
             ("export", "Output format"),
+            ("stats", "TOML config file"),
+            ("stats", "Vault root (overrides --config root)"),
         ],
     )
     def test_subcommand_help_documents_its_flags(self, command, needle, capsys):
