@@ -249,6 +249,8 @@ def gaps(
             key = frozenset({rel, other})
             if key not in dedup_map or score > dedup_map[key][2]:
                 dedup_map[key] = (rel, other, score, sig)
+            elif score == dedup_map[key][2]:
+                dedup_map[key] = (*sorted((rel, other)), score, sig)
 
     def _rank_key(item):
         a, b, score, _sig = item

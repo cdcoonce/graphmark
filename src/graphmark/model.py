@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 __all__ = ["Document"]
 
@@ -17,4 +17,4 @@ class Document:
 
     rel_path: str  # posix rel-path from vault root, e.g. "brain/North Star.md"
     text: str
-    frontmatter: dict
+    frontmatter: dict = field(hash=False)

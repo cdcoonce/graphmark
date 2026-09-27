@@ -20,14 +20,22 @@ def content_hash(path: Path) -> str:
 
 def record_dismissal(root: Path, a: str, b: str, *, path: str = _DEFAULT_PATH) -> None:
     dismissed_file = root / path
+    try:
+        a_hash = content_hash(root / a)
+    except (FileNotFoundError, IsADirectoryError):
+        raise ValueError(f"record_dismissal: note not found under {root}: {a}") from None
+    try:
+        b_hash = content_hash(root / b)
+    except (FileNotFoundError, IsADirectoryError):
+        raise ValueError(f"record_dismissal: note not found under {root}: {b}") from None
     dismissed_file.parent.mkdir(parents=True, exist_ok=True)
     existing = load_dismissed(root, path=path)
     sig = weaklink_sig(a, b)
     existing[sig] = {
         "a": a,
-        "a_hash": content_hash(root / a),
+        "a_hash": a_hash,
         "b": b,
-        "b_hash": content_hash(root / b),
+        "b_hash": b_hash,
     }
     temp_file = dismissed_file.parent / (dismissed_file.name + f".tmp{os.getpid()}")
     try:

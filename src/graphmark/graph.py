@@ -83,6 +83,16 @@ def _normalize(text: str) -> str:
 _FILE_SUFFIX_RE = re.compile(r"\.(?=[A-Za-z0-9]{1,10}$)[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]*$")
 
 
+def _strip_alias_and_anchor(display: str) -> str:
+    """Strip a wikilink display's alias (``|alias``) and anchor (``#Section``), then trim.
+
+    Obsidian treats ``[[Note|alias]]`` and ``[[Note#Section]]`` as targeting ``Note``, so every
+    place that asks "which note does this display name?" must strip the same two things the same
+    way. Shared by the resolver and the out-of-scope check so they cannot drift.
+    """
+    return display.split("|")[0].split("#")[0].strip()
+
+
 def _strip_display(display: str) -> str:
     """Reduce a raw wikilink display to its note part: no alias, no anchor, no ``.md``.
 
@@ -90,7 +100,7 @@ def _strip_display(display: str) -> str:
     the same link, so every place that asks "which note does this display name?" must strip the
     same three things. Shared by the resolver and the out-of-scope check so they cannot drift.
     """
-    target = display.split("|")[0].split("#")[0].strip()
+    target = _strip_alias_and_anchor(display)
     if target.lower().endswith(".md"):
         target = target[: -len(".md")]
     return target
@@ -106,7 +116,7 @@ def _targets_non_note_file(display: str) -> bool:
     Only ever consulted after the resolver has already failed, so a note that genuinely
     resolves (say a real ``report.v2.md`` linked as ``[[report.v2]]``) is never suppressed.
     """
-    target = display.split("|")[0].split("#")[0].strip()
+    target = _strip_alias_and_anchor(display)
     match = _FILE_SUFFIX_RE.search(target)
     return bool(match) and match.group(0).lower() != ".md"
 
@@ -217,7 +227,7 @@ def _is_intra_note_reference(display: str) -> bool:
     neither an edge nor a broken link, so it must not be recorded as unresolved — otherwise
     a note that navigates itself heavily looks like the vault's worst offender.
     """
-    return not display.split("|")[0].split("#")[0].strip()
+    return not _strip_alias_and_anchor(display)
 
 
 def _group_sorted(pairs: Iterable[tuple[str, str]]) -> dict[str, list[str]]:
