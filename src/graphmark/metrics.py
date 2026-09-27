@@ -252,10 +252,14 @@ def gaps(
             elif score == dedup_map[key][2]:
                 dedup_map[key] = (*sorted((rel, other)), score, sig)
 
+    def _top(p: str) -> str:
+        head, sep, _ = p.partition("/")
+        return head if sep else ""
+
     def _rank_key(item):
         a, b, score, _sig = item
         hubby = _hub(a) or _hub(b)
-        cross = a.split("/", 1)[0] != b.split("/", 1)[0]
+        cross = _top(a) != _top(b)
         return (hubby, not cross, -score, a, b)
 
     candidates = sorted(dedup_map.values(), key=_rank_key)
