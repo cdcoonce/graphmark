@@ -21,7 +21,9 @@ def build_vault_report(vault: CorpusVault, cache_root: Path) -> dict:
     """Build the report dict for ``vault``, whose checkout lives at ``cache_root / vault.name``."""
     cache_root = Path(cache_root)
     config = graphmark.VaultConfig(
-        root=cache_root / vault.name, excluded_dirs=list(vault.excluded_dirs)
+        root=cache_root / vault.name,
+        excluded_dirs=list(vault.excluded_dirs),
+        link_syntax=vault.link_syntax,
     )
     graph = graphmark.build(config)
     report = links_report(graph)
