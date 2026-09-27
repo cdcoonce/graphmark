@@ -7,9 +7,9 @@ import json
 from graphmark.graph import VaultGraph
 
 
-def to_json(obj: object) -> str:
+def to_json(obj: object, *, indent: int | None = None) -> str:
     """Serialise any JSON-serialisable object to a string."""
-    return json.dumps(obj)
+    return json.dumps(obj, indent=indent)
 
 
 def _dot_quote(s: str) -> str:

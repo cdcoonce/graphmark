@@ -45,6 +45,21 @@ class TestToJson:
         obj = [["a/b.md", 0.5], ["c/d.md", 0.3]]
         assert json.loads(to_json(obj)) == obj
 
+    def test_default_indent_is_compact_and_byte_identical(self):
+        assert to_json({"a": 1, "b": [2, 3]}) == '{"a": 1, "b": [2, 3]}'
+
+    def test_indent_pretty_prints_and_roundtrips(self):
+        obj = {"a": 1, "b": [2, 3]}
+        result = to_json(obj, indent=2)
+        assert "\n" in result
+        assert json.loads(result) == obj
+
+    def test_indent_roundtrips_nested_stats(self, simple_graph):
+        obj = stats(simple_graph)
+        result = to_json(obj, indent=2)
+        assert "\n" in result
+        assert json.loads(result) == obj
+
 
 class TestToDot:
     def test_is_digraph(self, simple_graph):

@@ -121,6 +121,18 @@ class TestLoadConfig:
         cfg = load_config(ALT_DIR / "config.toml")
         assert cfg.excluded_dirs == [".git"]
 
+    def test_resolve_aliases_false_loads_from_toml(self, tmp_path):
+        toml = tmp_path / "no-aliases.toml"
+        toml.write_text('root = "vault"\nresolve_aliases = false\n')
+        cfg = load_config(toml)
+        assert cfg.resolve_aliases is False
+
+    def test_resolve_aliases_default_is_true_via_load_config(self, tmp_path):
+        toml = tmp_path / "minimal.toml"
+        toml.write_text('root = "vault"\n')
+        cfg = load_config(toml)
+        assert cfg.resolve_aliases is True
+
 
 # ---------------------------------------------------------------------------
 # root type validation (#236) — a non-string TOML `root` must raise ValueError,

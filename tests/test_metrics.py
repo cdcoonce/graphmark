@@ -241,3 +241,25 @@ class TestSiloedNotes:
         first = siloed_notes(g)
         assert first == ["b.md"]
         assert siloed_notes(g) == first  # deterministic across runs
+
+
+class TestUndirectedAsymmetricPin:
+    def test_orphans_uses_out_links_only_when_back_links_diverges(self):
+        # CLAUDE.md's documented degree contract: "Degree: undirected —
+        # neighbors(n) = out_links[n] ∪ back_links[n]". _undirected (metrics.py) currently
+        # constructs edges solely from out_links; VaultGraph.build() always makes back_links an
+        # exact mirror of out_links, so nothing ever exercises the divergent case. Hand-build a
+        # VaultGraph with a genuinely asymmetric out_links/back_links pair — back_links["b.md"]
+        # includes "c.md" with no corresponding out_links edge — to pin today's out_links-only
+        # reality. If _undirected is ever changed to also union back_links (to honor the
+        # documented contract), c.md gains an edge from b.md and stops being an orphan, so this
+        # assertion must go red.
+        nodes = {"a.md": None, "b.md": None, "c.md": None}
+        out_links = {"a.md": {"b.md"}, "b.md": set(), "c.md": set()}
+        back_links = {"a.md": set(), "b.md": {"c.md"}, "c.md": set()}
+        g = VaultGraph(nodes=nodes, out_links=out_links, back_links=back_links)
+        config = VaultConfig(root=Path("."))
+
+        result = orphans(g, config)
+
+        assert result == ["c.md"]
