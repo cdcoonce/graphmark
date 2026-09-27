@@ -113,6 +113,21 @@ class TestGlobalsAcceptBothPositions:
         )
         assert code == 0
 
+    def test_a_global_given_twice_with_a_trailing_slash_variant_is_fine(self, capsys, monkeypatch):
+        code, _ = self._run(
+            [
+                "graphmark",
+                "--root",
+                str(FIXTURE_VAULT),
+                "stats",
+                "--root",
+                str(FIXTURE_VAULT) + "/",
+            ],
+            capsys,
+            monkeypatch,
+        )
+        assert code == 0
+
     def test_a_global_given_twice_with_conflicting_values_is_a_usage_error(
         self, capsys, monkeypatch
     ):
