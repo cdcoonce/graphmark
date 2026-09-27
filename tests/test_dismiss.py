@@ -90,6 +90,160 @@ class TestCorruptStore:
             }
         }
 
+    def test_record_missing_key_is_skipped_not_raised(self, tmp_path):
+        """A record missing b_hash must be skipped, not raise, and must not hide a
+        well-formed sibling record (#191)."""
+        (tmp_path / "good.md").write_text("good content")
+        (tmp_path / "good2.md").write_text("good2 content")
+        (tmp_path / "bad_a.md").write_text("bad_a content")
+        (tmp_path / "bad_b.md").write_text("bad_b content")
+        good_sig = dismiss.weaklink_sig("good.md", "good2.md")
+        bad_sig = dismiss.weaklink_sig("bad_a.md", "bad_b.md")
+        store = tmp_path / dismiss._DEFAULT_PATH
+        store.parent.mkdir(parents=True, exist_ok=True)
+        store.write_text(
+            json.dumps(
+                {
+                    good_sig: {
+                        "a": "good.md",
+                        "a_hash": dismiss.content_hash(tmp_path / "good.md"),
+                        "b": "good2.md",
+                        "b_hash": dismiss.content_hash(tmp_path / "good2.md"),
+                    },
+                    # "b_hash" deliberately missing — the other side (a/a_hash) is
+                    # well-formed so a bare `record["b_hash"]` is actually reached.
+                    bad_sig: {
+                        "a": "bad_a.md",
+                        "a_hash": dismiss.content_hash(tmp_path / "bad_a.md"),
+                        "b": "bad_b.md",
+                    },
+                }
+            )
+        )
+        assert dismiss.active_dismissed_sigs(tmp_path) == {good_sig}
+
+    def test_record_non_string_value_is_skipped_not_raised(self, tmp_path):
+        """A record where a value is non-string (e.g. None) must be skipped, not raise."""
+        (tmp_path / "good.md").write_text("good content")
+        (tmp_path / "good2.md").write_text("good2 content")
+        (tmp_path / "otherb.md").write_text("otherb content")
+        good_sig = dismiss.weaklink_sig("good.md", "good2.md")
+        bad_sig = "weaklink|bad-non-string"
+        store = tmp_path / dismiss._DEFAULT_PATH
+        store.parent.mkdir(parents=True, exist_ok=True)
+        store.write_text(
+            json.dumps(
+                {
+                    good_sig: {
+                        "a": "good.md",
+                        "a_hash": dismiss.content_hash(tmp_path / "good.md"),
+                        "b": "good2.md",
+                        "b_hash": dismiss.content_hash(tmp_path / "good2.md"),
+                    },
+                    # "a" is None (non-string); "b"/"b_hash" are well-formed so a
+                    # bare `root / record["a"]` is reached unconditionally.
+                    bad_sig: {
+                        "a": None,
+                        "a_hash": "irrelevant",
+                        "b": "otherb.md",
+                        "b_hash": dismiss.content_hash(tmp_path / "otherb.md"),
+                    },
+                }
+            )
+        )
+        assert dismiss.active_dismissed_sigs(tmp_path) == {good_sig}
+
+    def test_record_empty_string_value_is_skipped_not_raised(self, tmp_path):
+        """A record where a is "" must be skipped, not raise IsADirectoryError.
+
+        root / "" evaluates to root itself (an existing directory), so a naive fix
+        that only checks .exists() would crash in content_hash(). The other side
+        (b/b_hash) is a well-formed real file so evaluation actually reaches the
+        a-side check instead of short-circuiting on a broken b first.
+        """
+        (tmp_path / "good.md").write_text("good content")
+        (tmp_path / "good2.md").write_text("good2 content")
+        (tmp_path / "otherb.md").write_text("otherb content")
+        good_sig = dismiss.weaklink_sig("good.md", "good2.md")
+        bad_sig = "weaklink|bad-empty-string"
+        store = tmp_path / dismiss._DEFAULT_PATH
+        store.parent.mkdir(parents=True, exist_ok=True)
+        store.write_text(
+            json.dumps(
+                {
+                    good_sig: {
+                        "a": "good.md",
+                        "a_hash": dismiss.content_hash(tmp_path / "good.md"),
+                        "b": "good2.md",
+                        "b_hash": dismiss.content_hash(tmp_path / "good2.md"),
+                    },
+                    bad_sig: {
+                        "a": "",
+                        "a_hash": "irrelevant",
+                        "b": "otherb.md",
+                        "b_hash": dismiss.content_hash(tmp_path / "otherb.md"),
+                    },
+                }
+            )
+        )
+        assert dismiss.active_dismissed_sigs(tmp_path) == {good_sig}
+
+    def test_record_directory_value_is_skipped_not_raised(self, tmp_path):
+        """A record naming a real directory other than the vault root must be
+        skipped, not raise IsADirectoryError. The other side (b/b_hash) is a
+        well-formed real file so evaluation actually reaches the a-side check.
+        """
+        (tmp_path / "good.md").write_text("good content")
+        (tmp_path / "good2.md").write_text("good2 content")
+        (tmp_path / "otherb.md").write_text("otherb content")
+        (tmp_path / "some_subdir").mkdir()
+        good_sig = dismiss.weaklink_sig("good.md", "good2.md")
+        bad_sig = "weaklink|bad-directory-value"
+        store = tmp_path / dismiss._DEFAULT_PATH
+        store.parent.mkdir(parents=True, exist_ok=True)
+        store.write_text(
+            json.dumps(
+                {
+                    good_sig: {
+                        "a": "good.md",
+                        "a_hash": dismiss.content_hash(tmp_path / "good.md"),
+                        "b": "good2.md",
+                        "b_hash": dismiss.content_hash(tmp_path / "good2.md"),
+                    },
+                    bad_sig: {
+                        "a": "some_subdir",
+                        "a_hash": "irrelevant",
+                        "b": "otherb.md",
+                        "b_hash": dismiss.content_hash(tmp_path / "otherb.md"),
+                    },
+                }
+            )
+        )
+        assert dismiss.active_dismissed_sigs(tmp_path) == {good_sig}
+
+    def test_non_dict_entry_value_is_skipped_not_raised(self, tmp_path):
+        """A store entry whose value is not a dict at all must be skipped, not raise."""
+        (tmp_path / "good.md").write_text("good content")
+        (tmp_path / "good2.md").write_text("good2 content")
+        good_sig = dismiss.weaklink_sig("good.md", "good2.md")
+        bad_sig = "weaklink|bad-non-dict-entry"
+        store = tmp_path / dismiss._DEFAULT_PATH
+        store.parent.mkdir(parents=True, exist_ok=True)
+        store.write_text(
+            json.dumps(
+                {
+                    good_sig: {
+                        "a": "good.md",
+                        "a_hash": dismiss.content_hash(tmp_path / "good.md"),
+                        "b": "good2.md",
+                        "b_hash": dismiss.content_hash(tmp_path / "good2.md"),
+                    },
+                    bad_sig: ["not", "a", "dict"],
+                }
+            )
+        )
+        assert dismiss.active_dismissed_sigs(tmp_path) == {good_sig}
+
 
 class TestSigRoundTrip:
     """gaps() emits sigs, callers persist them via record_dismissal, and feed
