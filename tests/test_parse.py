@@ -64,6 +64,49 @@ class TestWikilinkExtractor:
         assert "hidden" not in result
         assert result == ["real"]
 
+    def test_four_space_indented_unbalanced_fence_does_not_swallow_a_later_link(self):
+        # False-open (#260): a 4+-space-indented ``` run is an indented code block, not a
+        # fence delimiter, per CommonMark's 0-3-space budget. Left unbalanced (no matching
+        # false-positive close), it must not swallow every remaining line to EOF.
+        text = "    ```\nAfter [[real]].\n"
+        assert self.extractor.extract(text) == ["real"]
+
+    def test_four_space_indented_line_does_not_close_a_real_fence(self):
+        # False-close (#260), symmetric to the above: once a real (0-3 space) fence is open,
+        # a 4+-space-indented ``` line inside it is not a closer either — it is ordinary
+        # fenced content, dropped like any other line inside the block. Only the true
+        # (0-indent) closer below it ends the block.
+        text = (
+            "```\n[[hidden]]\n    ```\n[[still-hidden-if-fence-stayed-open]]\n```\nSee [[real]].\n"
+        )
+        result = self.extractor.extract(text)
+        assert "hidden" not in result
+        assert "still-hidden-if-fence-stayed-open" not in result
+        assert result == ["real"]
+
+    def test_fence_indented_two_spaces_still_opens_and_closes(self):
+        text = "  ```\n[[hidden]]\n  ```\nAfter [[real]].\n"
+        result = self.extractor.extract(text)
+        assert "hidden" not in result
+        assert result == ["real"]
+
+    def test_fence_indented_exactly_three_spaces_still_opens_and_closes(self):
+        # The CommonMark boundary: 3 raw characters of leading whitespace is still within the
+        # 0-3 budget on both the open and the close side.
+        text = "   ```\n[[hidden]]\n   ```\nAfter [[real]].\n"
+        result = self.extractor.extract(text)
+        assert "hidden" not in result
+        assert result == ["real"]
+
+    def test_tab_indented_fence_counts_as_one_raw_character_and_still_opens_and_closes(self):
+        # A tab is counted as a single raw character of indentation (not expanded to a
+        # CommonMark 4-column tab stop) — a documented simplification. 1 <= 3, so this is
+        # still a real fence on both the open and the close side.
+        text = "\t```\n[[hidden]]\n\t```\nAfter [[real]].\n"
+        result = self.extractor.extract(text)
+        assert "hidden" not in result
+        assert result == ["real"]
+
     def test_hub_md_links(self):
         # Matches hub.md content exactly — the definitive integration test for the extractor
         text = (
