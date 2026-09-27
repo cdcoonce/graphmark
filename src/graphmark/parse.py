@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import re
 import sys
 from pathlib import Path
@@ -120,7 +122,14 @@ def _parse_frontmatter(raw: str) -> dict:
         key = key.strip()
         value = value.strip()
         if value.startswith("[") and value.endswith("]"):
-            items = [v.strip().strip("\"'") for v in value[1:-1].split(",")]
+            inner = value[1:-1]
+            if not inner:
+                # csv.reader over an empty string raises StopIteration on next(); an empty
+                # bracket ("key: []") is a valid empty list, not unparseable input.
+                items = []
+            else:
+                row = next(csv.reader(io.StringIO(inner), skipinitialspace=True))
+                items = [v.strip().strip("\"'") for v in row]
             result[key] = [i for i in items if i]
         else:
             result[key] = value.strip("\"'")
