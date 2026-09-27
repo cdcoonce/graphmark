@@ -216,6 +216,17 @@ class TestHubsCommand:
         out = _run_cli(["graphmark", "--config", str(SIMPLE_CONFIG), "hubs"], capsys)
         assert json.loads(out) == hubs(simple_graph)
 
+    def test_bad_n_exits_2_with_stderr_and_no_stdout(self, capsys):
+        from graphmark.cli import main
+
+        argv = ["graphmark", "--config", str(SIMPLE_CONFIG), "hubs", "--n", "-1"]
+        with patch.object(sys, "argv", argv), pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "n" in captured.err
+
 
 class TestClustersCommand:
     def test_emits_valid_json(self, capsys):
@@ -320,6 +331,17 @@ class TestPagerankCommand:
         captured = capsys.readouterr()
         assert captured.out == ""
         assert "alpha" in captured.err
+
+    def test_bad_n_exits_2_with_stderr_and_no_stdout(self, capsys):
+        from graphmark.cli import main
+
+        argv = ["graphmark", "--config", str(SIMPLE_CONFIG), "pagerank", "--n", "-1"]
+        with patch.object(sys, "argv", argv), pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "n" in captured.err
 
 
 class TestExportDotCommand:
