@@ -123,6 +123,16 @@ class TestUnconfiguredMessageIsDerived:
         with pytest.raises(ValueError, match="not_a_real_threshold"):
             run_check(graph, config)
 
+    def test_message_text_is_unchanged_for_the_real_checkpolicy(self):
+        # Deriving the list must not change today's user-facing text by a single byte.
+        graph, config = _graph_and_config()
+        with pytest.raises(ValueError) as exc_info:
+            run_check(graph, config)
+        assert str(exc_info.value) == (
+            "no [check] policy configured: set at least one threshold in the config's [check] "
+            "table (max_orphans, max_unresolved_links, max_siloed)"
+        )
+
 
 class TestByteStability:
     """The report must diff cleanly across runs — pinned against a literal."""
