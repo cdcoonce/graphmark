@@ -27,6 +27,14 @@ def _strip_fenced_blocks(text: str) -> str:
     the same character from closing a longer outer fence early, and stops a same-length-or-longer
     fence run that carries trailing content (e.g. an info string like ```python``) from being
     mistaken for a closer.
+
+    CommonMark only recognizes a fence delimiter -- open or close -- when its leading whitespace
+    is 0-3 characters; 4+ leading characters makes it an indented code block, and any
+    backticks/tildes on it are literal text, not a fence. This is checked on both the open and
+    the close side, measured from the start of the physical line (no container/list/blockquote
+    budget). Indentation is counted in raw characters: a tab counts as one character, not
+    expanded to CommonMark's 4-column tab stop -- a documented simplification, not full
+    CommonMark tab fidelity.
     """
     lines = text.splitlines(keepends=True)
     out: list[str] = []
@@ -34,9 +42,10 @@ def _strip_fenced_blocks(text: str) -> str:
     fence_len = 0
     for line in lines:
         ls = line.lstrip()
+        indent = len(line) - len(ls)
         if fence_char is None:
             m = _FENCE_OPEN_RE.match(ls)
-            if m:
+            if m and indent <= 3:
                 fence_char = ls[0]
                 fence_len = len(m.group(1))
             else:
@@ -45,6 +54,7 @@ def _strip_fenced_blocks(text: str) -> str:
             m = _FENCE_OPEN_RE.match(ls)
             if (
                 m
+                and indent <= 3
                 and ls[0] == fence_char
                 and len(m.group(1)) >= fence_len
                 and ls[m.end() :].strip() == ""
