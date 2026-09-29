@@ -6,16 +6,9 @@ Uses hand-authored dicts matching scripts/corpus/report.py's build_vault_report 
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 
-REPO_ROOT = Path(__file__).parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from scripts.corpus.diff import diff_reports, load_expected  # noqa: E402
+from scripts.corpus.diff import diff_reports, load_expected
 
 _EMPTY_BUCKETS = {
     "resolved": {"count": 0, "share": 0.0},

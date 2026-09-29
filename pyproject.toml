@@ -64,6 +64,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.semantic_release]
 # Deployment is driven by conventional-commit history: when dev is promoted to main, the
