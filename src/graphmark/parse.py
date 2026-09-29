@@ -90,6 +90,18 @@ def _strip_non_link_regions(text: str) -> str:
 _BLOCK_ITEM_RE = re.compile(r"^\s+-\s*(.*)$")
 
 
+def _strip_paired_quotes(value: str) -> str:
+    """Unwrap one surrounding quote pair, only when both ends carry the SAME quote character.
+
+    A blanket ``str.strip("\"'")`` removes any run of quote characters from either end whether or
+    not they pair up, so an unquoted ``Believin'`` lost its apostrophe. A value that is not
+    wrapped in a matching pair (including a lone quote character) is returned unchanged.
+    """
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        return value[1:-1]
+    return value
+
+
 def _parse_frontmatter(raw: str) -> dict:
     """Minimal YAML-like frontmatter parser: scalar, quoted-string, inline-list, block-list.
 
@@ -107,7 +119,7 @@ def _parse_frontmatter(raw: str) -> dict:
     for line in raw.splitlines():
         item = _BLOCK_ITEM_RE.match(line)
         if item is not None and current_list_key is not None:
-            value = item.group(1).strip().strip("\"'")
+            value = _strip_paired_quotes(item.group(1).strip())
             if value:
                 # The key held "" until its first item arrived; replace it with the list.
                 if not isinstance(result.get(current_list_key), list):
@@ -129,10 +141,10 @@ def _parse_frontmatter(raw: str) -> dict:
                 items = []
             else:
                 row = next(csv.reader(io.StringIO(inner), skipinitialspace=True))
-                items = [v.strip().strip("\"'") for v in row]
+                items = [_strip_paired_quotes(v.strip()) for v in row]
             result[key] = [i for i in items if i]
         else:
-            result[key] = value.strip("\"'")
+            result[key] = _strip_paired_quotes(value)
             # A bare "key:" may open a block list; the next line decides.
             if not value:
                 current_list_key = key

@@ -356,6 +356,39 @@ class TestBlockStyleLists:
             "aliases": ["Mood Tracker", "mood-tracker"]
         }
 
+    def test_a_trailing_unpaired_quote_is_preserved_in_a_scalar(self):
+        assert self._fm("title: Believin'") == {"title": "Believin'"}
+
+    def test_a_trailing_unpaired_quote_is_preserved_in_a_block_item(self):
+        assert self._fm("aliases:\n  - Believin'") == {"aliases": ["Believin'"]}
+
+    def test_a_trailing_unpaired_quote_is_preserved_in_an_inline_list_item(self):
+        assert self._fm("aliases: [Believin', Other]") == {"aliases": ["Believin'", "Other"]}
+
+    def test_internal_apostrophes_with_no_wrapping_quotes_are_untouched(self):
+        assert self._fm("title: Rock 'n' Roll") == {"title": "Rock 'n' Roll"}
+        assert self._fm("aliases:\n  - Rock 'n' Roll") == {"aliases": ["Rock 'n' Roll"]}
+        assert self._fm("aliases: [Rock 'n' Roll, Other]") == {
+            "aliases": ["Rock 'n' Roll", "Other"]
+        }
+
+    def test_paired_single_quotes_are_unwrapped_at_every_site(self):
+        assert self._fm("title: 'quoted'") == {"title": "quoted"}
+        assert self._fm("aliases:\n  - 'quoted'") == {"aliases": ["quoted"]}
+        assert self._fm("aliases: ['quoted', Other]") == {"aliases": ["quoted", "Other"]}
+
+    def test_paired_double_quotes_are_unwrapped_at_every_site(self):
+        assert self._fm('title: "quoted"') == {"title": "quoted"}
+        assert self._fm('aliases:\n  - "quoted"') == {"aliases": ["quoted"]}
+        assert self._fm('aliases: ["quoted", Other]') == {"aliases": ["quoted", "Other"]}
+
+    def test_mismatched_quote_pairs_are_not_unwrapped(self):
+        # A pair must be the SAME character at both ends; `"x'` is not a quoted value.
+        assert self._fm("title: \"x'") == {"title": "\"x'"}
+        assert self._fm("aliases:\n  - 'x\"") == {"aliases": ["'x\""]}
+        # Inline list starts with `'`, not `"`: a leading `"` is csv's own quote, not ours.
+        assert self._fm("aliases: ['x\", Other]") == {"aliases": ["'x\"", "Other"]}
+
     def test_empty_items_are_dropped(self):
         assert self._fm("aliases:\n  - One\n  -\n  - Two") == {"aliases": ["One", "Two"]}
 
