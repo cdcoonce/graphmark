@@ -6,16 +6,13 @@ No network access anywhere here — the real manifest is a static TOML checked i
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+from scripts.corpus.manifest import CorpusVault, load_manifest
 
-from scripts.corpus.manifest import CorpusVault, load_manifest  # noqa: E402
+REPO_ROOT = Path(__file__).parent.parent
 
 REAL_MANIFEST = REPO_ROOT / "docs" / "corpus" / "manifest.toml"
 

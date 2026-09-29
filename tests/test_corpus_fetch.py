@@ -8,17 +8,14 @@ No network access anywhere here — every test builds a real git repository unde
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+from scripts.corpus.fetch import _head_sha, fetch_vault
+from scripts.corpus.manifest import CorpusVault
 
-from scripts.corpus.fetch import _head_sha, fetch_vault  # noqa: E402
-from scripts.corpus.manifest import CorpusVault  # noqa: E402
+REPO_ROOT = Path(__file__).parent.parent
 
 
 def _git(args: list[str], cwd: Path) -> str:
