@@ -12,16 +12,11 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from scripts.corpus import cli  # noqa: E402
-from scripts.corpus.manifest import CorpusVault  # noqa: E402
-from scripts.corpus.report import build_vault_report, report_json  # noqa: E402
+from scripts.corpus import cli
+from scripts.corpus.manifest import CorpusVault
+from scripts.corpus.report import build_vault_report, report_json
 
 _SHA = "0123456789abcdef0123456789abcdef01234567"
 
