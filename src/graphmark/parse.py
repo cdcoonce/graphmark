@@ -17,7 +17,7 @@ from graphmark.model import Document
 # space/tab after either `---` (a paste or auto-format artifact) is tolerated for the same reason.
 # The whole capture group is optional so two adjacent `---` lines (an empty block) still split;
 # group(1) is then None, which the call site maps to "".
-_FM_RE = re.compile(r"^---[ \t]*\r?\n(.*?\r?\n)?---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
+_FM_RE = re.compile(r"^---[ \t]*\r?\n(.*?\r?\n)??---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
 _WIKILINK_RE = re.compile(r"\[\[(.+?)\]\]")
 _INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
 _FENCE_OPEN_RE = re.compile(r"^(`{3,}|~{3,})")

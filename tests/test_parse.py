@@ -343,6 +343,13 @@ class TestFrontmatterLineEndings:
         assert doc.frontmatter == {}
         assert doc.text == data.decode()
 
+    def test_empty_block_does_not_swallow_a_later_body_rule(self, tmp_path):
+        # The optional block must be lazy: an empty block followed by a `---` rule in the body
+        # must close at the second line, not stretch to the body's rule.
+        doc = self._parse(tmp_path, "empty_then_rule.md", b"---\n---\nBody\n---\nmore\n")
+        assert doc.frontmatter == {}
+        assert doc.text == "Body\n---\nmore\n"
+
 
 class TestBlockStyleLists:
     """`key:` followed by `  - item` lines — what Obsidian's Properties UI actually writes.
