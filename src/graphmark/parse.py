@@ -143,6 +143,10 @@ def _parse_frontmatter(raw: str) -> dict:
                 row = next(csv.reader(io.StringIO(inner), skipinitialspace=True))
                 items = [_strip_paired_quotes(v.strip()) for v in row]
             result[key] = [i for i in items if i]
+        elif value.startswith("["):
+            # A flow list that does not close on this line (wrapped across lines, or never
+            # closed) is unparseable: drop the key rather than store a truncated literal.
+            pass
         else:
             result[key] = _strip_paired_quotes(value)
             # A bare "key:" may open a block list; the next line decides.

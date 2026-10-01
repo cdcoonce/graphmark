@@ -430,6 +430,16 @@ class TestFrontmatterListParsing:
     def test_empty_inline_list_does_not_raise(self):
         assert self._fm("aliases: []") == {"aliases": []}
 
+    def test_a_multiline_inline_list_is_excluded_not_corrupted(self):
+        # A flow list wrapped across lines is unparseable here; the key is dropped rather than
+        # stored as the truncated literal "[one," (and the continuation line is not a key).
+        assert self._fm("tags: [one,\n  two]") == {}
+        assert self._fm("tags: [one,\n  two]\ndate: 2026-07-25") == {"date": "2026-07-25"}
+
+    def test_an_unterminated_inline_list_is_excluded(self):
+        assert self._fm("tags: [one, two") == {}
+        assert self._fm("tags: [one, two\ndate: 2026-07-25") == {"date": "2026-07-25"}
+
 
 class TestFixtureFrontmatterUnchanged:
     def test_no_fixture_note_uses_a_block_list(self):
