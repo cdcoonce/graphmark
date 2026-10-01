@@ -119,6 +119,10 @@ def _parse_frontmatter(raw: str) -> dict:
     current_list_key: str | None = None
     in_nested_mapping = False
     for line in raw.splitlines():
+        if not line.strip():
+            # A blank line is whitespace, not structure: it neither closes an open block list nor
+            # opens anything, so an item after it still belongs to the list.
+            continue
         item = _BLOCK_ITEM_RE.match(line)
         if item is not None:
             # A "- item" line is never a key/value pair. With no list open it is a stray: drop it
