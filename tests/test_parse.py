@@ -414,6 +414,49 @@ class TestBlockStyleLists:
         assert "Body" in doc.text
 
 
+class TestNestedMappingFrontmatter:
+    """`key:` followed by indented `subkey: value` lines (a nested YAML mapping) — see #264.
+
+    A nested mapping is not a supported shape, so it must yield nothing. It used to fall through
+    to the generic `key: value` branch, whose `partition` stripped the indent and promoted the
+    subkey to a spurious TOP-LEVEL key, silently overwriting a real key of the same name.
+    """
+
+    def _fm(self, raw: str) -> dict:
+        from graphmark.parse import _parse_frontmatter
+
+        return _parse_frontmatter(raw)
+
+    def test_nested_mapping_subkey_is_not_promoted(self):
+        # Outer key stays "" (an unparseable block value, as today); a real top-level key after
+        # the mapping still parses (folded companion assertion).
+        parsed = self._fm("cssclasses:\n  wide: true\ntitle: Real")
+        assert parsed == {"cssclasses": "", "title": "Real"}
+
+    def test_every_subkey_of_a_nested_mapping_is_dropped(self):
+        parsed = self._fm("cssclasses:\n  wide: true\n  narrow: false\ntitle: Real")
+        assert parsed == {"cssclasses": "", "title": "Real"}
+
+    def test_real_top_level_key_not_overwritten_by_nested_subkey(self):
+        # Real key FIRST, nested subkey of the same name AFTER: the nested value used to win.
+        parsed = self._fm("wide: real\ncssclasses:\n  wide: nested")
+        assert parsed == {"wide": "real", "cssclasses": ""}
+
+    def test_real_top_level_key_after_a_nested_subkey_of_the_same_name(self):
+        # Nested subkey FIRST, real key AFTER: the real key must win, and `wide` must not be
+        # present merely because of the nested line.
+        parsed = self._fm("cssclasses:\n  wide: nested\nwide: real")
+        assert parsed == {"cssclasses": "", "wide": "real"}
+
+    def test_a_colon_bearing_stray_item_still_drops_with_no_list_open(self):
+        # #222's construct: unaffected by this fix.
+        parsed = self._fm("aliases:\n  - One\ndate: 2026-07-25\n  - Note: Subtitle")
+        assert parsed == {"aliases": ["One"], "date": "2026-07-25"}
+
+    def test_an_unindented_key_after_a_bare_key_is_still_a_key(self):
+        assert self._fm("aliases:\ndate: 2026-07-25") == {"aliases": "", "date": "2026-07-25"}
+
+
 class TestFrontmatterListParsing:
     """Inline lists (`key: [a, b]`) split naively on every comma, including commas embedded
     inside a double-quoted item. A note declaring `aliases: ["Smith, John", "Doe, Jane"]` meant

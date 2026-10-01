@@ -116,6 +116,7 @@ def _parse_frontmatter(raw: str) -> dict:
     """
     result: dict = {}
     current_list_key: str | None = None
+    in_nested_mapping = False
     for line in raw.splitlines():
         item = _BLOCK_ITEM_RE.match(line)
         if item is not None:
@@ -129,6 +130,18 @@ def _parse_frontmatter(raw: str) -> dict:
                         result[current_list_key] = []
                     result[current_list_key].append(value)
             continue
+
+        # An indented non-item line straight after a bare "key:" is a nested mapping's subkey, an
+        # unsupported shape: drop it (and its siblings) rather than let the generic branch below
+        # promote it to a top-level key. Gated on a block having been open BEFORE the reset, so a
+        # stray line with no open block is left to the existing behavior.
+        if line[:1].isspace() and line.strip():
+            if current_list_key is not None or in_nested_mapping:
+                in_nested_mapping = True
+                current_list_key = None
+                continue
+        elif line.strip():
+            in_nested_mapping = False
 
         current_list_key = None
         if ":" not in line:
