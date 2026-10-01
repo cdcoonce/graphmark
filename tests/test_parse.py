@@ -463,6 +463,19 @@ class TestBlockStyleLists:
         # The same stray with a colon in its text: the dash decides, so it is not a "- Note" key.
         assert self._fm("title: x\n- Note: Subtitle") == {"title": "x"}
 
+    def test_a_blank_line_inside_a_list_does_not_truncate_it(self):
+        # A blank line must not close the open list: the item after it still belongs to it.
+        parsed = self._fm("aliases:\n  - One\n  - Two\n\n  - Three\ndate: X\n")
+        assert parsed == {"aliases": ["One", "Two", "Three"], "date": "X"}
+
+    def test_a_blank_line_between_two_block_lists_keeps_both_intact(self):
+        parsed = self._fm("aliases:\n  - A\n\ntags:\n  - x\n  - y\n")
+        assert parsed == {"aliases": ["A"], "tags": ["x", "y"]}
+
+    def test_a_blank_line_then_a_scalar_key_still_closes_the_list(self):
+        parsed = self._fm("aliases:\n  - A\n\ndate: 2026-07-25\n")
+        assert parsed == {"aliases": ["A"], "date": "2026-07-25"}
+
     def test_a_block_list_survives_a_real_note(self, tmp_path):
         note = tmp_path / "n.md"
         note.write_text(
