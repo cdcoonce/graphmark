@@ -125,6 +125,11 @@ def _parse_frontmatter(raw: str) -> dict:
             # A blank line is whitespace, not structure: it neither closes an open block list nor
             # opens anything, so an item after it still belongs to the list.
             continue
+        if line.lstrip().startswith("#"):
+            # A full-line YAML comment is not structure either: skip it without touching
+            # current_list_key, so a comment inside a block list does not end the list, and a
+            # colon in its text is never partitioned into a bogus key.
+            continue
         item = _BLOCK_ITEM_RE.match(line)
         if item is not None:
             # A "- item" line is never a key/value pair. With no list open it is a stray: drop it
