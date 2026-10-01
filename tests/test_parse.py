@@ -302,6 +302,28 @@ class TestFrontmatterLineEndings:
         assert doc.frontmatter == {"title": "Note"}
         assert doc.text == ""
 
+    def test_trailing_spaces_on_opening_delimiter(self, tmp_path):
+        # A paste or auto-format can leave `---  ` on the opening line; it is still a delimiter.
+        data = self.FM_BYTES_LF.replace(b"---\ntitle", b"---  \ntitle", 1)
+        assert data != self.FM_BYTES_LF
+        doc = self._parse(tmp_path, "open_space.md", data)
+        assert doc.frontmatter == {"title": "Note", "related": "[[Other Note]]"}
+        assert not doc.text.lstrip().startswith("---")
+
+    def test_trailing_tab_on_closing_delimiter(self, tmp_path):
+        data = self.FM_BYTES_LF.replace(b'"\n---\n', b'"\n---\t\n', 1)
+        assert data != self.FM_BYTES_LF
+        doc = self._parse(tmp_path, "close_tab.md", data)
+        assert doc.frontmatter == {"title": "Note", "related": "[[Other Note]]"}
+        assert doc.text.strip() == "Body with [[Real Link]]."
+
+    def test_trailing_whitespace_frontmatter_wikilink_is_not_a_phantom_link(self, tmp_path):
+        data = b'---  \ntitle: Note\nrelated: "[[Other Note]]"\n---\t\nBody with [[Real Link]].\n'
+        doc = self._parse(tmp_path, "both.md", data)
+        links = WikilinkExtractor().extract(doc.text)
+        assert "Other Note" not in links
+        assert links == ["Real Link"]
+
 
 class TestBlockStyleLists:
     """`key:` followed by `  - item` lines — what Obsidian's Properties UI actually writes.
