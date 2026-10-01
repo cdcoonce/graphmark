@@ -15,7 +15,9 @@ from graphmark.model import Document
 # sits at EOF with no trailing newline (a frontmatter-only note). A block that fails to split
 # would stay in the body, turning frontmatter wikilinks into phantom graph edges. Trailing ASCII
 # space/tab after either `---` (a paste or auto-format artifact) is tolerated for the same reason.
-_FM_RE = re.compile(r"^---[ \t]*\r?\n(.+?\r?\n)---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
+# The whole capture group is optional so two adjacent `---` lines (an empty block) still split;
+# group(1) is then None, which the call site maps to "".
+_FM_RE = re.compile(r"^---[ \t]*\r?\n(.*?\r?\n)?---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
 _WIKILINK_RE = re.compile(r"\[\[(.+?)\]\]")
 _INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
 _FENCE_OPEN_RE = re.compile(r"^(`{3,}|~{3,})")
@@ -272,7 +274,7 @@ def parse_document(path: Path, root: Path) -> Document:
     raw = raw.lstrip("﻿")
     m = _FM_RE.match(raw)
     if m:
-        frontmatter = _parse_frontmatter(m.group(1))
+        frontmatter = _parse_frontmatter(m.group(1) or "")
         body = raw[m.end() :]
     else:
         frontmatter = {}
