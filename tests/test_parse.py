@@ -402,6 +402,19 @@ class TestBlockStyleLists:
         # "- Note: A Subtitle" is an item, not a nested key — the dash decides.
         assert self._fm("aliases:\n  - Note: A Subtitle") == {"aliases": ["Note: A Subtitle"]}
 
+    def test_a_flush_left_block_list_parses_to_a_list(self):
+        # YAML permits "- item" at the parent key's own indentation; Obsidian-family tools write it.
+        parsed = self._fm("tags:\n- foo\n- bar\ntitle: x")
+        assert parsed == {"tags": ["foo", "bar"], "title": "x"}
+
+    def test_a_flush_left_item_with_no_open_list_is_still_dropped(self):
+        # #222's rule survives the regex broadening: no list open means the dash line is a stray.
+        assert self._fm("title: x\n- foo") == {"title": "x"}
+
+    def test_a_colon_bearing_flush_left_item_with_no_open_list_is_dropped(self):
+        # The same stray with a colon in its text: the dash decides, so it is not a "- Note" key.
+        assert self._fm("title: x\n- Note: Subtitle") == {"title": "x"}
+
     def test_a_block_list_survives_a_real_note(self, tmp_path):
         note = tmp_path / "n.md"
         note.write_text(

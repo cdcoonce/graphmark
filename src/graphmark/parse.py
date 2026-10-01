@@ -87,7 +87,7 @@ def _strip_non_link_regions(text: str) -> str:
 #: A block-list item line: leading whitespace, a dash, then the value. Checked before the
 #: key/value split because an item may itself contain a colon ("- Note: A Subtitle") — the dash
 #: decides, not the colon.
-_BLOCK_ITEM_RE = re.compile(r"^\s+-\s*(.*)$")
+_BLOCK_ITEM_RE = re.compile(r"^\s*-\s*(.*)$")
 
 
 def _strip_paired_quotes(value: str) -> str:
