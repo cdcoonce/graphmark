@@ -324,6 +324,32 @@ class TestFrontmatterLineEndings:
         assert "Other Note" not in links
         assert links == ["Real Link"]
 
+    def test_empty_frontmatter_block(self, tmp_path):
+        # Two adjacent `---` lines (a template stub or a cleared Properties block) are an empty
+        # frontmatter block: it must split off, not stay in the body.
+        doc = self._parse(tmp_path, "empty_fm.md", b"---\n---\nBody [[X]].\n")
+        assert doc.frontmatter == {}
+        assert doc.text == "Body [[X]].\n"
+
+    def test_empty_frontmatter_block_crlf(self, tmp_path):
+        doc = self._parse(tmp_path, "empty_fm_crlf.md", b"---\r\n---\r\nBody [[X]].\r\n")
+        assert doc.frontmatter == {}
+        assert doc.text == "Body [[X]].\r\n"
+
+    def test_bare_rule_without_closing_delimiter_is_not_frontmatter(self, tmp_path):
+        # A note opening with a horizontal rule and no closing `---` has no frontmatter at all.
+        data = b"---\nBody [[X]].\n"
+        doc = self._parse(tmp_path, "hr_open.md", data)
+        assert doc.frontmatter == {}
+        assert doc.text == data.decode()
+
+    def test_empty_block_does_not_swallow_a_later_body_rule(self, tmp_path):
+        # The optional block must be lazy: an empty block followed by a `---` rule in the body
+        # must close at the second line, not stretch to the body's rule.
+        doc = self._parse(tmp_path, "empty_then_rule.md", b"---\n---\nBody\n---\nmore\n")
+        assert doc.frontmatter == {}
+        assert doc.text == "Body\n---\nmore\n"
+
 
 class TestBlockStyleLists:
     """`key:` followed by `  - item` lines — what Obsidian's Properties UI actually writes.
