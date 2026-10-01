@@ -91,6 +91,16 @@ class TestAliasResolution:
         _write(tmp_path, "src.md", body=f"See [[{form}]].\n")
         assert _build(tmp_path).unresolved == {}
 
+    def test_a_flush_left_alias_list_resolves(self, tmp_path):
+        # `aliases:` with its "- item" lines at column 0 (valid YAML) must reach alias resolution.
+        (tmp_path / "n.md").write_text(
+            "---\naliases:\n- One\n- Two\ntitle: x\n---\n", encoding="utf-8"
+        )
+        (tmp_path / "src.md").write_text("See [[Two]].\n", encoding="utf-8")
+        graph = _build(tmp_path)
+        assert graph.unresolved == {}
+        assert graph.out_links["src.md"] == {"n.md"}
+
     def test_inline_alias_lists_work_too(self, tmp_path):
         (tmp_path / "n.md").write_text("---\naliases: [One, Two]\n---\n", encoding="utf-8")
         (tmp_path / "src.md").write_text("See [[Two]].\n", encoding="utf-8")
