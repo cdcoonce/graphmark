@@ -605,10 +605,9 @@ def resolve_markdown_target(
     name?" with no notion of a source.
 
     Relative is the **default markdown semantics** (CommonMark, mkdocs, GitHub) and deliberately
-    not the wikilink rule. Measured on `lyz-code/blue-book`: 5.8% of its links resolve this way
-    against 92.7% by basename-anywhere, because it runs the `mkdocs-autolinks` plugin. That dialect
-    is a separate decision, not a fallback to slip in here — silently trying a second rule when the
-    first fails is how a link resolves to the wrong note.
+    not the wikilink rule. The name-based dialect that `lyz-code/blue-book` follows (measured
+    above) is a separate decision, not a fallback to slip in here — silently trying a second rule
+    when the first fails is how a link resolves to the wrong note.
 
     A target beginning with ``/`` is vault-root-relative instead — the convention `mkdocs`,
     Docusaurus, Jekyll and Hugo vaults write. It resolves against the vault root directly: the
