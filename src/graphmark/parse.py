@@ -118,13 +118,16 @@ def _parse_frontmatter(raw: str) -> dict:
     current_list_key: str | None = None
     for line in raw.splitlines():
         item = _BLOCK_ITEM_RE.match(line)
-        if item is not None and current_list_key is not None:
-            value = _strip_paired_quotes(item.group(1).strip())
-            if value:
-                # The key held "" until its first item arrived; replace it with the list.
-                if not isinstance(result.get(current_list_key), list):
-                    result[current_list_key] = []
-                result[current_list_key].append(value)
+        if item is not None:
+            # A "- item" line is never a key/value pair. With no list open it is a stray: drop it
+            # rather than fall through, where a colon in its text would store a "- key" entry.
+            if current_list_key is not None:
+                value = _strip_paired_quotes(item.group(1).strip())
+                if value:
+                    # The key held "" until its first item arrived; replace it with the list.
+                    if not isinstance(result.get(current_list_key), list):
+                        result[current_list_key] = []
+                    result[current_list_key].append(value)
             continue
 
         current_list_key = None

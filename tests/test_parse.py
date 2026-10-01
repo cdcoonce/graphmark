@@ -347,6 +347,12 @@ class TestBlockStyleLists:
         parsed = self._fm("aliases:\n  - One\ndate: 2026-07-25\n  - Stray")
         assert parsed == {"aliases": ["One"], "date": "2026-07-25"}
 
+    def test_a_colon_bearing_stray_item_is_not_absorbed_as_a_key(self):
+        # Same junk as the colonless stray item, but its text holds a colon. With no list open it
+        # must still be dropped, not partitioned as "- Note": "Subtitle".
+        parsed = self._fm("aliases:\n  - One\ndate: 2026-07-25\n  - Note: Subtitle")
+        assert parsed == {"aliases": ["One"], "date": "2026-07-25"}
+
     def test_two_block_lists_in_one_document(self):
         parsed = self._fm("aliases:\n  - A\ntags:\n  - x\n  - y")
         assert parsed == {"aliases": ["A"], "tags": ["x", "y"]}
