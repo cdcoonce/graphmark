@@ -487,6 +487,26 @@ class TestBlockStyleLists:
         assert doc.frontmatter["tags"] == ["health"]
         assert "Body" in doc.text
 
+    def test_comment_line_inside_a_block_list_does_not_end_it(self):
+        # A full-line YAML comment is not structure: the item after it still belongs to the list.
+        parsed = self._fm("aliases:\n  - One\n# a note to self\n  - Two\ndate: X\n")
+        assert parsed == {"aliases": ["One", "Two"], "date": "X"}
+        # An indented comment behaves the same.
+        assert self._fm("aliases:\n  - One\n  # note\n  - Two") == {"aliases": ["One", "Two"]}
+
+    def test_comment_line_with_a_colon_is_not_stored_as_a_key(self):
+        assert self._fm("title: T\n# TODO: revisit\ndate: X") == {"title": "T", "date": "X"}
+        parsed = self._fm("aliases:\n  - One\n# TODO: revisit\n  - Two")
+        assert parsed == {"aliases": ["One", "Two"]}
+
+    def test_a_hash_inside_a_value_is_not_a_comment(self):
+        # Only a FULL-LINE comment is skipped. A `#` within a value stays untruncated, and
+        # trailing inline comments are deliberately not handled.
+        assert self._fm('color: "#ff0000"') == {"color": "#ff0000"}
+        assert self._fm("tag: #project") == {"tag": "#project"}
+        assert self._fm("tags: [#a, #b]") == {"tags": ["#a", "#b"]}
+        assert self._fm("aliases:\n  - #project") == {"aliases": ["#project"]}
+
 
 class TestNestedMappingFrontmatter:
     """`key:` followed by indented `subkey: value` lines (a nested YAML mapping) — see #264.
