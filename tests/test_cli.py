@@ -406,38 +406,71 @@ class TestSiloedCommand:
 # --- Closed stdout pipe (#206) -------------------------------------------------------------------
 
 _REPO_ROOT = Path(__file__).parent.parent
-_PIPE_COMMANDS = [["stats"], ["links"]]
+_PIPE_COMMANDS = [
+    ["stats"],
+    ["orphans"],
+    ["hubs"],
+    ["clusters"],
+    ["bridges"],
+    ["siloed"],
+    ["neighborhood", "--note", "brain/alpha.md"],
+    ["pagerank"],
+    ["export", "dot"],
+    ["links"],
+    ["check"],  # needs a [check] policy: see _config_for
+]
+_PIPE_IDS = ["-".join(a) for a in _PIPE_COMMANDS]
 
 
-def _spawn(argv: list[str]) -> subprocess.Popen[bytes]:
+def _config_for(argv: list[str], tmp_path: Path) -> Path:
+    """SIMPLE_CONFIG has no [check] policy, so `check` gets a generous (passing) one."""
+    if argv != ["check"]:
+        return SIMPLE_CONFIG
+    toml = tmp_path / "pass.toml"
+    toml.write_text(f'root = "{SIMPLE_VAULT}"\n[check]\nmax_orphans = 99\n')
+    return toml
+
+
+def _spawn(argv: list[str], config: Path = SIMPLE_CONFIG) -> subprocess.Popen[bytes]:
     return subprocess.Popen(
-        [sys.executable, "-m", "graphmark.cli", "--config", str(SIMPLE_CONFIG), *argv],
+        [sys.executable, "-m", "graphmark.cli", "--config", str(config), *argv],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         cwd=_REPO_ROOT,
     )
 
 
-@pytest.mark.parametrize("argv", _PIPE_COMMANDS, ids=lambda a: a[0])
-def test_open_pipe_positive_control(argv: list[str]) -> None:
+@pytest.mark.parametrize("argv", _PIPE_COMMANDS, ids=_PIPE_IDS)
+def test_open_pipe_positive_control(argv: list[str], tmp_path: Path) -> None:
     """Same command, stdout read normally: exits 0 with real output (so the closed test is real)."""
-    proc = _spawn(argv)
+    proc = _spawn(argv, _config_for(argv, tmp_path))
     out, _ = proc.communicate(timeout=30)
     assert proc.returncode == 0
     assert out.strip()
-    json.loads(out)
+    if argv != ["export", "dot"]:
+        json.loads(out)
 
 
-@pytest.mark.parametrize("argv", _PIPE_COMMANDS, ids=lambda a: a[0])
-def test_closed_stdout_pipe_exits_quietly(argv: list[str]) -> None:
+@pytest.mark.parametrize("argv", _PIPE_COMMANDS, ids=_PIPE_IDS)
+def test_closed_stdout_pipe_exits_quietly(argv: list[str], tmp_path: Path) -> None:
     """Reader closes its end without reading: exit 0, no traceback, no 'Exception ignored'."""
-    proc = _spawn(argv)
+    proc = _spawn(argv, _config_for(argv, tmp_path))
     assert proc.stdout is not None
     proc.stdout.close()  # deterministic EPIPE on flush
     _, stderr = proc.communicate(timeout=30)
     assert proc.returncode == 0, stderr
     assert b"Traceback" not in stderr
     assert b"Exception ignored" not in stderr
+
+
+def test_closed_stdout_pipe_keeps_links_summary_on_stderr() -> None:
+    """The links summary line goes to stderr even though the stdout print broke first."""
+    proc = _spawn(["links"])
+    assert proc.stdout is not None
+    proc.stdout.close()
+    _, stderr = proc.communicate(timeout=30)
+    assert b"resolved" in stderr
+    assert b"Traceback" not in stderr
 
 
 def _breaching_config(tmp_path: Path) -> Path:
@@ -472,5 +505,7 @@ def test_check_breach_keeps_exit_1_when_stdout_pipe_closed(tmp_path: Path) -> No
     proc.stdout.close()
     _, stderr = proc.communicate(timeout=30)
     assert proc.returncode == 1, stderr
+    assert b"max_orphans" in stderr
+    assert b"exceeds limit" in stderr
     assert b"Traceback" not in stderr
     assert b"Exception ignored" not in stderr
