@@ -438,3 +438,39 @@ def test_closed_stdout_pipe_exits_quietly(argv: list[str]) -> None:
     assert proc.returncode == 0, stderr
     assert b"Traceback" not in stderr
     assert b"Exception ignored" not in stderr
+
+
+def _breaching_config(tmp_path: Path) -> Path:
+    toml = tmp_path / "config.toml"
+    toml.write_text(
+        f'root = "{SIMPLE_VAULT}"\n[check]\nmax_orphans = 0\nmax_unresolved_links = 0\n'
+    )
+    return toml
+
+
+def _spawn_check(toml: Path) -> subprocess.Popen[bytes]:
+    return subprocess.Popen(
+        [sys.executable, "-m", "graphmark.cli", "--config", str(toml), "check"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=_REPO_ROOT,
+    )
+
+
+def test_check_breach_open_pipe_positive_control(tmp_path: Path) -> None:
+    """The config really breaches: open pipe exits 1 with a JSON report."""
+    proc = _spawn_check(_breaching_config(tmp_path))
+    out, _ = proc.communicate(timeout=30)
+    assert proc.returncode == 1
+    assert json.loads(out)["pass"] is False
+
+
+def test_check_breach_keeps_exit_1_when_stdout_pipe_closed(tmp_path: Path) -> None:
+    """A closed pipe must not turn a breach into a pass: README reserves exit 1 for a breach."""
+    proc = _spawn_check(_breaching_config(tmp_path))
+    assert proc.stdout is not None
+    proc.stdout.close()
+    _, stderr = proc.communicate(timeout=30)
+    assert proc.returncode == 1, stderr
+    assert b"Traceback" not in stderr
+    assert b"Exception ignored" not in stderr

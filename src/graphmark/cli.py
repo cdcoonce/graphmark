@@ -212,6 +212,7 @@ def main() -> None:
     if args.config is None and args.root is None:
         parser.error("--config or --root required")
 
+    exit_code = 0  # what a closed stdout pipe exits with; `check` raises it to 1 on a breach
     try:
         graph, config = _load(args)
 
@@ -257,17 +258,19 @@ def main() -> None:
                 # A misconfigured gate is a usage error (2), never a breach (1) — CI must be able
                 # to tell "your vault is unhealthy" from "your config is wrong".
                 _die(str(e))
+            exit_code = 0 if report["pass"] else 1
             print(to_json(report), flush=True)
             for line in breach_lines(report):
                 print(line, file=sys.stderr)
-            sys.exit(0 if report["pass"] else 1)
+            sys.exit(exit_code)
     except BrokenPipeError:
         # The reader closed early. stdout is flushed per print so the error surfaces here, not at
         # interpreter shutdown (which would exit 120). Point stdout at devnull so that final flush
-        # cannot raise again; the reader chose to stop, so this is a clean exit.
+        # cannot raise again. The reader chose to stop, so that is a clean exit, except that a
+        # `check` breach keeps its exit 1: CI must never see a breach as a pass.
         devnull = os.open(os.devnull, os.O_WRONLY)
         os.dup2(devnull, sys.stdout.fileno())
-        sys.exit(0)
+        sys.exit(exit_code)
 
 
 if __name__ == "__main__":
