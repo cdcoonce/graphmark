@@ -212,6 +212,7 @@ def main() -> None:
     if args.config is None and args.root is None:
         parser.error("--config or --root required")
 
+    report = None  # set by `links`/`check` before their stdout print, for the pipe handler
     exit_code = 0  # what a closed stdout pipe exits with; `check` raises it to 1 on a breach
     try:
         graph, config = _load(args)
@@ -270,6 +271,16 @@ def main() -> None:
         # `check` breach keeps its exit 1: CI must never see a breach as a pass.
         devnull = os.open(os.devnull, os.O_WRONLY)
         os.dup2(devnull, sys.stdout.fileno())
+        # The stderr lines that follow the stdout print never ran; stderr is a separate fd, so
+        # re-emit them (best effort: a dead stderr must not add a traceback).
+        try:
+            if report is not None and args.command == "links":
+                print(links_summary_line(report), file=sys.stderr)
+            elif report is not None and args.command == "check":
+                for line in breach_lines(report):
+                    print(line, file=sys.stderr)
+        except OSError:
+            pass
         sys.exit(exit_code)
 
 
