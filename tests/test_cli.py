@@ -1,11 +1,13 @@
 """CLI smoke tests: each subcommand emits valid JSON matching the metric function output.
 
-Uses sys.argv patching + capsys — no subprocess needed.
+Uses sys.argv patching + capsys — no subprocess needed, with one exception: the closed-stdout-pipe
+tests at the bottom spawn a real subprocess (the failure only exists at interpreter shutdown).
 """
 
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -399,3 +401,40 @@ class TestSiloedCommand:
     def test_matches_metric_output(self, simple_graph, capsys):
         out = _run_cli(["graphmark", "--config", str(SIMPLE_CONFIG), "siloed"], capsys)
         assert json.loads(out) == siloed_notes(simple_graph)
+
+
+# --- Closed stdout pipe (#206) -------------------------------------------------------------------
+
+_REPO_ROOT = Path(__file__).parent.parent
+_PIPE_COMMANDS = [["stats"], ["links"]]
+
+
+def _spawn(argv: list[str]) -> subprocess.Popen[bytes]:
+    return subprocess.Popen(
+        [sys.executable, "-m", "graphmark.cli", "--config", str(SIMPLE_CONFIG), *argv],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=_REPO_ROOT,
+    )
+
+
+@pytest.mark.parametrize("argv", _PIPE_COMMANDS, ids=lambda a: a[0])
+def test_open_pipe_positive_control(argv: list[str]) -> None:
+    """Same command, stdout read normally: exits 0 with real output (so the closed test is real)."""
+    proc = _spawn(argv)
+    out, _ = proc.communicate(timeout=30)
+    assert proc.returncode == 0
+    assert out.strip()
+    json.loads(out)
+
+
+@pytest.mark.parametrize("argv", _PIPE_COMMANDS, ids=lambda a: a[0])
+def test_closed_stdout_pipe_exits_quietly(argv: list[str]) -> None:
+    """Reader closes its end without reading: exit 0, no traceback, no 'Exception ignored'."""
+    proc = _spawn(argv)
+    assert proc.stdout is not None
+    proc.stdout.close()  # deterministic EPIPE on flush
+    _, stderr = proc.communicate(timeout=30)
+    assert proc.returncode == 0, stderr
+    assert b"Traceback" not in stderr
+    assert b"Exception ignored" not in stderr

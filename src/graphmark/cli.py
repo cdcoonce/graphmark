@@ -212,54 +212,62 @@ def main() -> None:
     if args.config is None and args.root is None:
         parser.error("--config or --root required")
 
-    graph, config = _load(args)
+    try:
+        graph, config = _load(args)
 
-    if args.command == "stats":
-        print(to_json(stats(graph)))
-    elif args.command == "orphans":
-        print(to_json(orphans(graph, config)))
-    elif args.command == "hubs":
-        try:
-            result = hubs(graph, n=args.n)
-        except ValueError as e:
-            _die(str(e))
-        print(to_json(result))
-    elif args.command == "clusters":
-        print(to_json(clusters(graph)))
-    elif args.command == "bridges":
-        print(to_json(bridges(graph)))
-    elif args.command == "siloed":
-        print(to_json(siloed_notes(graph)))
-    elif args.command == "neighborhood":
-        try:
-            result = neighborhood(graph, args.note, depth=args.depth)
-        except ValueError as e:
-            _die(str(e))
-        print(to_json(result))
-    elif args.command == "pagerank":
-        try:
-            result = pagerank(graph, n=args.n, alpha=args.alpha)
-        except (ValueError, nx.PowerIterationFailedConvergence) as e:
-            _die(str(e))
-        print(to_json(result))
-    elif args.command == "export" and args.format == "dot":
-        print(to_dot(graph))
-    elif args.command == "links":
-        report = links_report(graph)
-        print(to_json(report))
-        # stdout stays pipeable JSON; the at-a-glance line goes to stderr, as breach_lines does.
-        print(links_summary_line(report), file=sys.stderr)
-    elif args.command == "check":
-        try:
-            report = run_check(graph, config)
-        except ValueError as e:
-            # A misconfigured gate is a usage error (2), never a breach (1) — CI must be able
-            # to tell "your vault is unhealthy" from "your config is wrong".
-            _die(str(e))
-        print(to_json(report))
-        for line in breach_lines(report):
-            print(line, file=sys.stderr)
-        sys.exit(0 if report["pass"] else 1)
+        if args.command == "stats":
+            print(to_json(stats(graph)), flush=True)
+        elif args.command == "orphans":
+            print(to_json(orphans(graph, config)), flush=True)
+        elif args.command == "hubs":
+            try:
+                result = hubs(graph, n=args.n)
+            except ValueError as e:
+                _die(str(e))
+            print(to_json(result), flush=True)
+        elif args.command == "clusters":
+            print(to_json(clusters(graph)), flush=True)
+        elif args.command == "bridges":
+            print(to_json(bridges(graph)), flush=True)
+        elif args.command == "siloed":
+            print(to_json(siloed_notes(graph)), flush=True)
+        elif args.command == "neighborhood":
+            try:
+                result = neighborhood(graph, args.note, depth=args.depth)
+            except ValueError as e:
+                _die(str(e))
+            print(to_json(result), flush=True)
+        elif args.command == "pagerank":
+            try:
+                result = pagerank(graph, n=args.n, alpha=args.alpha)
+            except (ValueError, nx.PowerIterationFailedConvergence) as e:
+                _die(str(e))
+            print(to_json(result), flush=True)
+        elif args.command == "export" and args.format == "dot":
+            print(to_dot(graph), flush=True)
+        elif args.command == "links":
+            report = links_report(graph)
+            print(to_json(report), flush=True)
+            # stdout stays pipeable JSON; the at-a-glance line goes to stderr, as breach_lines does.
+            print(links_summary_line(report), file=sys.stderr)
+        elif args.command == "check":
+            try:
+                report = run_check(graph, config)
+            except ValueError as e:
+                # A misconfigured gate is a usage error (2), never a breach (1) — CI must be able
+                # to tell "your vault is unhealthy" from "your config is wrong".
+                _die(str(e))
+            print(to_json(report), flush=True)
+            for line in breach_lines(report):
+                print(line, file=sys.stderr)
+            sys.exit(0 if report["pass"] else 1)
+    except BrokenPipeError:
+        # The reader closed early. stdout is flushed per print so the error surfaces here, not at
+        # interpreter shutdown (which would exit 120). Point stdout at devnull so that final flush
+        # cannot raise again; the reader chose to stop, so this is a clean exit.
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        sys.exit(0)
 
 
 if __name__ == "__main__":
