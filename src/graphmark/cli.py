@@ -280,7 +280,9 @@ def main() -> None:
                 for line in breach_lines(report):
                     print(line, file=sys.stderr)
         except OSError:
-            pass
+            # stderr is dead too: unwritten bytes would stay buffered and the shutdown flush would
+            # override the exit code with 120, so point stderr at devnull as well.
+            os.dup2(devnull, sys.stderr.fileno())
         sys.exit(exit_code)
 
 

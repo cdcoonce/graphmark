@@ -509,3 +509,19 @@ def test_check_breach_keeps_exit_1_when_stdout_pipe_closed(tmp_path: Path) -> No
     assert b"exceeds limit" in stderr
     assert b"Traceback" not in stderr
     assert b"Exception ignored" not in stderr
+
+
+def _close_both_and_wait(proc: subprocess.Popen[bytes]) -> int:
+    assert proc.stdout is not None and proc.stderr is not None
+    proc.stdout.close()
+    proc.stderr.close()
+    return proc.wait(timeout=30)
+
+
+def test_check_breach_keeps_exit_1_when_stdout_and_stderr_closed(tmp_path: Path) -> None:
+    """Dead stderr must not let the shutdown flush override the breach exit code (120)."""
+    assert _close_both_and_wait(_spawn_check(_breaching_config(tmp_path))) == 1
+
+
+def test_links_keeps_exit_0_when_stdout_and_stderr_closed() -> None:
+    assert _close_both_and_wait(_spawn(["links"])) == 0
