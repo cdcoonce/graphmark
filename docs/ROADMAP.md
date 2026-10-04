@@ -38,7 +38,12 @@ story** — the priority consumer is the owner's vault seam (`graph_cli.py`), no
 - **`gaps()` with injected similarity** — graphmark owns the deterministic ranking/filtering
   (already-linked / self / threshold / max-score / prefix / dismissed filters; reciprocal dedup;
   novelty-first ordering); the embedding source is injected by the caller. The gate stays
-  fastembed-free.
+  fastembed-free. **Deprecation path recorded 2026-08-02** (the-vault#143): the gap _policy_ —
+  the `GAPS_DEFAULT_*` banding constants, filtering, ranking, and the content-hash dismissal-store
+  semantics — migrates into the sibling package `ragmark`; `gaps()` and the CLI `gaps`
+  guidance-exit deprecate when ragmark's gap module lands, and not before. Until then this surface
+  is **frozen**: do not extend it and do not remove it. The injected-`Similarity` seam survives as
+  API shape; graphmark keeps the deterministic graph that ragmark consumes as a dependency.
 - **Packaging** — PyPI Trusted Publishing on `v*` tags; networkx-only runtime dependency.
 - **Reintegration** — the-vault's `graph_cli.py` consumes the package and injects the vault's
   similarity function; /connect and /garden run on it.
@@ -272,7 +277,11 @@ _Not in this track:_ choosing which new corpora to add and vetting their license
 
 ## Non-goals (CLOSED as dropped 2026-07-19 — do not propose)
 
-Evaluated against the ecosystem and dropped for zero consumer pull; do not re-litigate:
+Evaluated against the ecosystem and dropped for zero consumer pull; do not re-litigate.
+**Re-examined and REAFFIRMED 2026-08-02** (vault-local-RAG blueprint, the-vault#136 / the-vault#139):
+the embeddings clause and the MCP/retrieval clause below were deliberately re-opened against fresh
+evidence and reaffirmed first-class — retrieval lives in the sibling package **`ragmark`**, which
+consumes graphmark as its graph dependency. graphmark grows no embeddings and no retrieval surface.
 
 - Embeddings / semantic search / any similarity backend **inside** the package.
 - Betweenness centrality, Louvain/Leiden community detection.

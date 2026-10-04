@@ -42,6 +42,34 @@ permission_mode = "acceptEdits"
 #    origin/main`. Ask the API, not the checkout.
 trunk_branch = "dev"
 
+# CORRECTION 2026-08-08, then RE-CORRECTED the same hour. The paragraph above is
+# wrong where it says trunk_branch "governs BOTH the branch a slice forks from and
+# the branch its PR targets" — it does not; `integration_target` governs the PR
+# base and defaults to "main". That much is real: PR #196 was opened against
+# `main` carrying `Closes #176`, which would have landed a slice on `main` AND
+# left #176 open (GitHub only auto-closes on a merge into the DEFAULT branch,
+# `dev` here).
+#
+# But `integration_target = "dev"` is NOT the fix, and was briefly set here before
+# being reverted. afk treats any non-"main" integration_target as a STAGING-MODE
+# SELECTOR, not as "which branch to target":
+#
+#   executor.py — `if config.integration_target == "main"` opens a draft PR;
+#                 otherwise the slice returns `kind="ready"`, commits only, opens
+#                 NO PR, and waits for the merge-queue to land the branch ref.
+#   cli.py      — a non-"main" target makes the drain build a Staging worktree on
+#                 that branch and call `freshen_from_main()` on it.
+#   substrate.py— force-updates are refused outside the `afk/` namespace.
+#
+# So setting it to "dev" would have flipped this repo into the F2 merge-queue path
+# with the repo's real trunk as the staging branch: no review PR, the merge queue
+# landing slices straight onto `dev`. Strictly worse than the bug it was meant to
+# fix. Tracked upstream as afk#1089.
+#
+# THE ACTUAL WORKAROUND until afk#1089 lands: before any `--execute` drain here,
+# `git branch -f main origin/main` (slices fork the LOCAL `main` ref), and retarget
+# each resulting PR with `gh pr edit --base dev`. #196 has already been retargeted.
+
 # #1048: forwarded to the headless agent as `--allowedTools`. Load-bearing, not decoration.
 # A slice runs in a fresh worktree, and Claude Code DISCARDS every `permissions.allow` entry
 # in a workspace it has not trusted — argv is the only grant channel that survives. Without
@@ -84,7 +112,14 @@ cheap = "sonnet"
 frontier = "opus"
 default_tier = "cheap"
 
-# Scheduled --cycle: read-only producers (scout files proposals from docs/ROADMAP.md;
-# harvest mines merged-PR review comments for prompt-rules). Executor runs on promoted issues.
+# Scheduled --cycle: read-only producers (harvest mines merged-PR review comments
+# for prompt-rules). Executor runs on promoted issues.
+#
+# scout MUTED 2026-09-05. It filed at its ~5/day cap on 19 of 24 active days
+# regardless of drain throughput: 104 of the 105 open issues are producer-filed,
+# none older than 35 days, while the executor landed a handful in the same window.
+# It also re-proposed already-completed work (#276 and #283 verified done in the
+# tree). Re-enable once the open count is under the executor's actual weekly
+# throughput. harvest stays on — it is PR-review-derived and self-limiting.
 [cycle]
-producers = ["scout", "harvest"]
+producers = ["harvest"]

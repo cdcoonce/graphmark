@@ -8,17 +8,14 @@ No network access anywhere here — every test builds a real git repository unde
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+from scripts.corpus.fetch import _head_sha, fetch_vault
+from scripts.corpus.manifest import CorpusVault
 
-from scripts.corpus.fetch import fetch_vault  # noqa: E402
-from scripts.corpus.manifest import CorpusVault  # noqa: E402
+REPO_ROOT = Path(__file__).parent.parent
 
 
 def _git(args: list[str], cwd: Path) -> str:
@@ -151,6 +148,57 @@ class TestWrongSha:
         assert (target / "note.md").read_text(encoding="utf-8") == "# third\n"
 
 
+class TestDirtyTrackedFile:
+    def test_cache_entry_with_a_dirty_tracked_file_is_force_corrected(
+        self, tmp_path, remote, first_sha, second_sha
+    ):
+        """A locally-modified tracked file must not block correction to the pinned SHA.
+
+        The cache is machine-owned and disposable, so ``fetch_vault`` must force the checkout
+        rather than aborting the way a plain ``git checkout`` would on a dirty tracked file.
+        """
+        cache_root = tmp_path / "cache"
+        fetch_vault(_vault(remote, second_sha), cache_root)
+
+        target = cache_root / "example-vault"
+        (target / "note.md").write_text("locally modified, not committed\n", encoding="utf-8")
+        assert _git(["status", "--porcelain"], target) != ""
+
+        fetch_vault(_vault(remote, first_sha), cache_root)
+
+        assert _git(["rev-parse", "HEAD"], target) == first_sha
+        assert (target / "note.md").read_text(encoding="utf-8") == "# first\n"
+        assert _git(["status", "--porcelain"], target) == ""
+
+
+class TestHeadShaNoRepo:
+    def test_returns_none_for_a_plain_directory_with_no_git_entry(self, tmp_path):
+        """Unchanged behavior: a directory that was never a git repo yields ``None``, not an
+
+        error -- this is the "needs clone/reinit" signal, distinct from a real git failure.
+        """
+        target = tmp_path / "not-a-repo"
+        target.mkdir()
+        assert _head_sha(target) is None
+
+
+class TestHeadShaGitFailure:
+    def test_raises_value_error_when_git_rev_parse_fails_inside_an_existing_repo(self, tmp_path):
+        """A ``target`` with a ``.git`` entry where ``git rev-parse HEAD`` still fails (here: a
+
+        freshly-initialized repo with no commits yet, so ``HEAD`` is unresolvable) is a real
+        error, not "not populated yet" -- it must raise, not silently collapse to ``None``.
+        """
+        target = tmp_path / "existing-repo-no-commits"
+        target.mkdir()
+        _git(["init", "-q", "-b", "main"], target)
+
+        with pytest.raises(ValueError) as excinfo:
+            _head_sha(target)
+
+        assert str(target) in str(excinfo.value)
+
+
 class TestShallowFetchFallback:
     def test_falls_back_to_a_full_by_sha_fetch(self, tmp_path, monkeypatch, remote, first_sha):
         """A remote that refuses ``--depth 1 <sha>`` must still land on the pinned commit.
@@ -185,7 +233,383 @@ class TestShallowFetchFallback:
         assert (target / "note.md").read_text(encoding="utf-8") == "# third\n"
 
 
+class TestNonDirectoryTarget:
+    def test_raises_value_error_naming_vault_and_path_when_target_is_a_file(
+        self, tmp_path, remote, first_sha
+    ):
+        """A stray file at the cache target must fail loudly with a ValueError, not surface the
+
+        raw ``NotADirectoryError``/``OSError`` that ``subprocess.run`` would otherwise raise deep
+        inside ``_fetch_pinned_commit``. The message must name both the vault and the path so the
+        error is actionable, not just correctly typed.
+        """
+        cache_root = tmp_path / "cache"
+        cache_root.mkdir()
+        target = cache_root / "example-vault"
+        target.write_text("not a directory\n", encoding="utf-8")
+
+        vault = _vault(remote, first_sha)
+
+        with pytest.raises(ValueError) as excinfo:
+            fetch_vault(vault, cache_root)
+
+        assert vault.name in str(excinfo.value)
+        assert str(target) in str(excinfo.value)
+
+
+class TestNestedInUnrelatedRepo:
+    """`target` is a stray non-repo directory nested inside an unrelated (enclosing) git repo --
+
+    mirroring ``.corpus-cache/``'s real nesting inside the graphmark repo itself. Because git walks
+    up the directory tree looking for ``.git``, commands run with ``cwd=target`` would otherwise
+    silently operate on the enclosing repo instead of failing.
+    """
+
+    def test_raises_and_leaves_the_enclosing_repo_untouched_when_its_history_has_the_sha(
+        self, tmp_path
+    ):
+        """The teeth-bearing case: the enclosing repo's own history actually contains the pinned
+
+        SHA (just not at its current HEAD). A test using a SHA absent from the enclosing repo's
+        history (see the sibling test below) would pass on today's unfixed code too, via the
+        unrelated ``git fetch`` failure path -- it would not prove the identity check exists. This
+        one does: without the identity check, ``_fetch_pinned_commit``/``git checkout`` would run
+        against the enclosing repo (whose ``origin`` can resolve the SHA locally) and land a
+        detached-HEAD checkout onto it.
+        """
+        outer = tmp_path / "outer"
+        outer.mkdir()
+        _git(["init", "-q", "-b", "main"], outer)
+        _git(["config", "user.email", "outer@example.test"], outer)
+        _git(["config", "user.name", "outer test"], outer)
+
+        (outer / "outer.md").write_text("# outer first\n", encoding="utf-8")
+        _git(["add", "outer.md"], outer)
+        _git(["commit", "-q", "-m", "outer first"], outer)
+        pinned_sha = _git(["rev-parse", "HEAD"], outer)
+
+        (outer / "outer.md").write_text("# outer second\n", encoding="utf-8")
+        _git(["add", "outer.md"], outer)
+        _git(["commit", "-q", "-m", "outer second"], outer)
+        outer_head_before = _git(["rev-parse", "HEAD"], outer)
+        assert outer_head_before != pinned_sha
+
+        _git(["remote", "add", "origin", str(outer)], outer)
+
+        cache_root = outer / ".corpus-cache"
+        cache_root.mkdir()
+        target = cache_root / "example-vault"
+        target.mkdir()
+
+        vault = CorpusVault(
+            name="example-vault",
+            clone_url="https://example.invalid/unused.git",
+            sha=pinned_sha,
+            license="MIT",
+            excluded_dirs=(".git", ".obsidian"),
+        )
+
+        with pytest.raises(ValueError) as excinfo:
+            fetch_vault(vault, cache_root)
+
+        assert vault.name in str(excinfo.value)
+        assert str(target) in str(excinfo.value)
+        assert _git(["rev-parse", "HEAD"], outer) == outer_head_before
+        assert _git(["status", "--porcelain"], outer) == ""
+        assert not (target / ".git").exists()
+
+    def test_fails_loudly_without_damage_when_its_history_lacks_the_sha(
+        self, tmp_path, remote, first_sha
+    ):
+        """The realistic sub-case for graphmark's actual corpus layout: the enclosing repo's
+
+        history does NOT contain the pinned SHA. This already fails loudly today via the unrelated
+        ``git fetch`` failure path; pinned here so the identity check doesn't change this outcome's
+        shape (still a ``ValueError``, still no damage to the enclosing repo).
+        """
+        outer = tmp_path / "outer"
+        outer.mkdir()
+        _git(["init", "-q", "-b", "main"], outer)
+        _git(["config", "user.email", "outer@example.test"], outer)
+        _git(["config", "user.name", "outer test"], outer)
+        (outer / "outer.md").write_text("# outer only\n", encoding="utf-8")
+        _git(["add", "outer.md"], outer)
+        _git(["commit", "-q", "-m", "outer only"], outer)
+        outer_head_before = _git(["rev-parse", "HEAD"], outer)
+
+        cache_root = outer / ".corpus-cache"
+        cache_root.mkdir()
+        target = cache_root / "example-vault"
+        target.mkdir()
+
+        vault = _vault(remote, first_sha)
+
+        with pytest.raises(ValueError):
+            fetch_vault(vault, cache_root)
+
+        assert _git(["rev-parse", "HEAD"], outer) == outer_head_before
+        assert _git(["status", "--porcelain"], outer) == ""
+
+
+class TestSymlinkedCacheRoot:
+    def test_a_valid_cache_entry_reached_through_a_symlink_is_still_corrected(
+        self, tmp_path, remote, first_sha, second_sha
+    ):
+        # ``git rev-parse --show-toplevel`` reports the symlink-resolved path, so the identity
+        # check must resolve ``target`` too; comparing unresolved paths would reject this real,
+        # correctly-rooted cache entry as "not its own repo root".
+        real_cache = tmp_path / "real-cache"
+        fetch_vault(_vault(remote, second_sha), real_cache)
+        linked_cache = tmp_path / "linked-cache"
+        linked_cache.symlink_to(real_cache, target_is_directory=True)
+
+        fetch_vault(_vault(remote, first_sha), linked_cache)
+
+        assert _git(["rev-parse", "HEAD"], real_cache / "example-vault") == first_sha
+
+
 class TestGitignore:
     def test_corpus_cache_is_gitignored(self):
         entries = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
         assert ".corpus-cache/" in entries
+
+
+class TestFreshEntryInitFailureWrapping:
+    def test_failing_init_raises_value_error_naming_vault_and_chained_to_the_original(
+        self, tmp_path, monkeypatch, remote, first_sha
+    ):
+        """A failing fresh-entry ``git init`` must surface as a chained ``ValueError``, not a
+
+        bare ``CalledProcessError`` -- same contract the old clone-failure wrapping proved,
+        retargeted onto the fresh-entry ``git init`` call now that population no longer clones.
+        """
+        cache_root = tmp_path / "cache"
+        vault = _vault(remote, first_sha)
+
+        real_run = subprocess.run
+
+        def spy(args, *rest, **kwargs):
+            if args[:2] == ["git", "init"]:
+                return real_run(["git", "init", "--separate-git-dir"], *rest, **kwargs)
+            return real_run(args, *rest, **kwargs)
+
+        monkeypatch.setattr("scripts.corpus.fetch.subprocess.run", spy)
+
+        with pytest.raises(ValueError) as excinfo:
+            fetch_vault(vault, cache_root)
+
+        assert isinstance(excinfo.value, ValueError)
+        assert vault.name in str(excinfo.value)
+        assert isinstance(excinfo.value.__cause__, subprocess.CalledProcessError)
+
+
+class TestFreshEntryNoFullHistoryClone:
+    def test_fresh_fetch_never_clones_and_lands_less_than_full_history(
+        self, tmp_path, monkeypatch, remote, first_sha
+    ):
+        """Populating a fresh cache entry must not run a full-history ``git clone`` -- it must
+
+        init + remote-add + a pinned-SHA fetch instead, landing strictly less history than the
+        remote holds. ``first_sha`` is deliberately the remote's non-tip commit: pinning to it
+        proves the cache entry holds only what was fetched for that SHA, not the full history a
+        ``git clone`` of ``HEAD`` (or a naive full fetch) would have pulled in.
+        """
+        cache_root = tmp_path / "cache"
+        vault = _vault(remote, first_sha)
+
+        calls: list[list[str]] = []
+        real_run = subprocess.run
+
+        def spy(args, *rest, **kwargs):
+            calls.append(list(args))
+            return real_run(args, *rest, **kwargs)
+
+        monkeypatch.setattr("scripts.corpus.fetch.subprocess.run", spy)
+        fetch_vault(vault, cache_root)
+
+        assert ["git", "clone", str(remote), vault.name] not in calls
+        assert not any(call[:2] == ["git", "clone"] for call in calls)
+
+        target = cache_root / "example-vault"
+        remote_commit_count = int(_git(["rev-list", "--all", "--count"], remote))
+        cache_commit_count = int(_git(["rev-list", "--all", "--count"], target))
+        assert cache_commit_count < remote_commit_count
+        assert _git(["rev-parse", "HEAD"], target) == first_sha
+
+
+class TestCheckoutFailureWrapping:
+    def test_failing_checkout_raises_value_error_naming_vault_and_chained_to_the_original(
+        self, tmp_path, monkeypatch, remote, first_sha
+    ):
+        cache_root = tmp_path / "cache"
+        vault = _vault(remote, first_sha)
+
+        real_run = subprocess.run
+
+        def spy(args, *rest, **kwargs):
+            if args[:2] == ["git", "checkout"]:
+                return real_run(["git", "checkout", "not-a-real-sha-at-all"], *rest, **kwargs)
+            return real_run(args, *rest, **kwargs)
+
+        monkeypatch.setattr("scripts.corpus.fetch.subprocess.run", spy)
+
+        with pytest.raises(ValueError) as excinfo:
+            fetch_vault(vault, cache_root)
+
+        assert isinstance(excinfo.value, ValueError)
+        assert vault.name in str(excinfo.value)
+        assert isinstance(excinfo.value.__cause__, subprocess.CalledProcessError)
+
+
+class TestOriginReconciliation:
+    def test_fetch_reconciles_origin_before_pulling_a_pinned_sha_from_a_new_remote(
+        self, tmp_path, remote, first_sha
+    ):
+        """A manifest entry's ``clone_url`` can change to a genuinely different repository while
+        the cache directory persists -- ``origin`` must be reconciled before the fetch, not left
+        pointing at the stale URL.
+
+        The second remote below shares no history with the first, so this test is load-bearing:
+        without the reconciliation, ``_fetch_pinned_commit``'s ``git fetch origin <sha>`` cannot
+        resolve a SHA the stale ``origin`` never had, and ``fetch_vault`` raises ``ValueError``
+        instead of succeeding.
+        """
+        cache_root = tmp_path / "cache"
+        fetch_vault(_vault(remote, first_sha), cache_root)
+        target = cache_root / "example-vault"
+        assert _git(["remote", "get-url", "origin"], target) == str(remote)
+
+        other_remote = tmp_path / "other-remote"
+        other_remote.mkdir()
+        _git(["init", "-q", "-b", "main"], other_remote)
+        _git(["config", "user.email", "corpus@example.test"], other_remote)
+        _git(["config", "user.name", "corpus test"], other_remote)
+        (other_remote / "note.md").write_text("# other\n", encoding="utf-8")
+        _git(["add", "note.md"], other_remote)
+        _git(["commit", "-q", "-m", "other"], other_remote)
+        other_sha = _git(["rev-parse", "HEAD"], other_remote)
+
+        other_vault = CorpusVault(
+            name="example-vault",
+            clone_url=str(other_remote),
+            sha=other_sha,
+            license="MIT",
+            excluded_dirs=(".git", ".obsidian"),
+        )
+
+        fetch_vault(other_vault, cache_root)
+
+        assert _git(["remote", "get-url", "origin"], target) == str(other_remote)
+        assert _git(["rev-parse", "HEAD"], target) == other_sha
+        assert (target / "note.md").read_text(encoding="utf-8") == "# other\n"
+
+
+class TestSetUrlFailureWrapping:
+    def test_failing_set_url_raises_value_error_naming_vault_and_chained(
+        self, tmp_path, monkeypatch, remote, first_sha, second_sha
+    ):
+        cache_root = tmp_path / "cache"
+        fetch_vault(_vault(remote, first_sha), cache_root)
+        vault = _vault(remote, second_sha)
+
+        real_run = subprocess.run
+
+        def spy(args, *rest, **kwargs):
+            if args[:3] == ["git", "remote", "set-url"]:
+                return real_run(
+                    ["git", "remote", "set-url", "no-such-remote", vault.clone_url],
+                    *rest,
+                    **kwargs,
+                )
+            return real_run(args, *rest, **kwargs)
+
+        monkeypatch.setattr("scripts.corpus.fetch.subprocess.run", spy)
+
+        with pytest.raises(ValueError) as excinfo:
+            fetch_vault(vault, cache_root)
+
+        assert isinstance(excinfo.value, ValueError)
+        assert vault.name in str(excinfo.value)
+        assert isinstance(excinfo.value.__cause__, subprocess.CalledProcessError)
+
+
+class TestSkipsFetchWhenTargetShaIsAlreadyLocal:
+    def test_correcting_to_a_locally_present_sha_issues_no_fetch(
+        self, tmp_path, monkeypatch, remote, first_sha, second_sha
+    ):
+        """Correcting to a SHA already present in the cache entry's local objects (e.g. a pin
+        rolled back to one this entry was populated at earlier) must not touch the network --
+        only ``git checkout`` (and origin reconciliation) is needed.
+
+        Checkout flags and whether an ``origin`` reconciliation call fires are owned by sibling
+        issues and may vary by build order, so this only asserts the absence of any ``git fetch``
+        call and the correct end-state SHA -- not the full call list.
+        """
+        cache_root = tmp_path / "cache"
+        # Populate at second_sha, then re-pin to first_sha: second_sha's objects stay local. A
+        # fresh entry fetches only its pinned commit (#214), so an earlier pin is the realistic
+        # way a SHA is already local -- not a full-history clone.
+        fetch_vault(_vault(remote, second_sha), cache_root)
+        fetch_vault(_vault(remote, first_sha), cache_root)
+
+        target = cache_root / "example-vault"
+        assert _git(["rev-parse", "HEAD"], target) == first_sha
+        probe = subprocess.run(
+            ["git", "cat-file", "-e", f"{second_sha}^{{commit}}"],
+            cwd=target,
+            capture_output=True,
+        )
+        assert probe.returncode == 0
+
+        calls: list[list[str]] = []
+        real_run = subprocess.run
+
+        def spy(args, *rest, **kwargs):
+            calls.append(list(args))
+            return real_run(args, *rest, **kwargs)
+
+        monkeypatch.setattr("scripts.corpus.fetch.subprocess.run", spy)
+        fetch_vault(_vault(remote, second_sha), cache_root)
+
+        assert not any(call[:2] == ["git", "fetch"] for call in calls)
+        assert _git(["rev-parse", "HEAD"], target) == second_sha
+        assert (target / "note.md").read_text(encoding="utf-8") == "# second\n"
+
+
+class TestFullFetchFallbackFailureWrapping:
+    def test_failing_full_fetch_fallback_raises_value_error_naming_vault_and_chained(
+        self, tmp_path, monkeypatch, remote, first_sha
+    ):
+        """Both the shallow attempt and the full-by-SHA fallback fail; the fallback's
+
+        ``check=True`` failure must be wrapped into a chained ``ValueError``.
+        """
+        cache_root = tmp_path / "cache"
+        vault = _vault(remote, first_sha)
+        fetch_vault(vault, cache_root)
+
+        (remote / "note.md").write_text("# third\n", encoding="utf-8")
+        _git(["add", "note.md"], remote)
+        _git(["commit", "-q", "-m", "third"], remote)
+        third_sha = _git(["rev-parse", "HEAD"], remote)
+        third_vault = _vault(remote, third_sha)
+
+        real_run = subprocess.run
+
+        def spy(args, *rest, **kwargs):
+            if "--depth" in args:
+                return subprocess.CompletedProcess(args, 1, stdout="", stderr="denied\n")
+            if args[:3] == ["git", "fetch", "origin"]:
+                return real_run(
+                    ["git", "fetch", "origin", "not-a-real-sha-at-all"], *rest, **kwargs
+                )
+            return real_run(args, *rest, **kwargs)
+
+        monkeypatch.setattr("scripts.corpus.fetch.subprocess.run", spy)
+
+        with pytest.raises(ValueError) as excinfo:
+            fetch_vault(third_vault, cache_root)
+
+        assert isinstance(excinfo.value, ValueError)
+        assert third_vault.name in str(excinfo.value)
+        assert isinstance(excinfo.value.__cause__, subprocess.CalledProcessError)

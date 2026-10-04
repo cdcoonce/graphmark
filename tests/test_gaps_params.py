@@ -152,3 +152,86 @@ class TestKPassthrough:
         graph = _graph("a/one.md", "b/two.md", "c/three.md")
         fn = _RecordingSimilarity({"a/one.md": [("b/two.md", 0.9), ("c/three.md", 0.8)]})
         assert len(gaps(graph, fn, note="a/one.md", k=k)) == expected
+
+
+class TestCrossFolder:
+    """Folder-locality in _rank_key: two root-level notes (no "/" in rel_path) must compare as
+    same-folder, and any note with a folder component must keep comparing by its existing
+    top-level path segment (issue #216)."""
+
+    def test_root_level_notes_are_not_cross_folder(self):
+        # "one.md" and "two.md" are both root-level (no "/"), so they must rank as same-folder
+        # despite "two.md" scoring higher. "sub/three.md" is genuinely cross-folder and, despite
+        # its lower score, must rank first. Equal scores would fall through to the a/b tie-break
+        # and pass even under the pre-fix bug, so the scores are deliberately unequal.
+        graph = _graph("one.md", "two.md", "sub/three.md")
+        fn = _RecordingSimilarity({"one.md": [("two.md", 0.9), ("sub/three.md", 0.5)]})
+        result = gaps(graph, fn, note="one.md")
+        assert [frozenset({r["a"], r["b"]}) for r in result] == [
+            frozenset({"one.md", "sub/three.md"}),
+            frozenset({"one.md", "two.md"}),
+        ]
+
+    def test_two_level_nesting_still_ranks_by_top_level_segment(self):
+        # Both "docs/sub1/x.md" and "docs/sub2/y.md" share the top-level segment "docs", so they
+        # must keep ranking as same-folder today -- a dirname-based comparison would instead see
+        # "docs/sub1" != "docs/sub2" and treat them as cross-folder, reversing this order.
+        graph = _graph("docs/sub1/x.md", "docs/sub2/y.md", "other/z.md")
+        fn = _RecordingSimilarity(
+            {"docs/sub1/x.md": [("docs/sub2/y.md", 0.9), ("other/z.md", 0.5)]}
+        )
+        result = gaps(graph, fn, note="docs/sub1/x.md")
+        assert [frozenset({r["a"], r["b"]}) for r in result] == [
+            frozenset({"docs/sub1/x.md", "other/z.md"}),
+            frozenset({"docs/sub1/x.md", "docs/sub2/y.md"}),
+        ]
+
+
+class TestHubDegree:
+    """hub_degree DEMOTES (never filters) a hub-touching pair below a non-hub pair, regardless
+    of score (_hub/_rank_key in metrics.py). All nodes here are root-level so cross-folder
+    ranking never interferes -- only the hub_degree sort term differs between the two pairs."""
+
+    def _graph_with_hub(self, hub_neighbors: int) -> VaultGraph:
+        neighbors = [f"n{i}.md" for i in range(hub_neighbors)]
+        return _graph(
+            "hub.md",
+            "d.md",
+            "e.md",
+            *neighbors,
+            edges={"hub.md": set(neighbors)},
+        )
+
+    def test_hub_pair_demoted_below_lower_scoring_non_hub_pair(self):
+        # hub.md has degree 3 (>= hub_degree=3); the hub<->d pair scores 0.9, the non-hub d<->e
+        # pair only 0.5 -- yet the non-hub pair must rank first, and the hub pair must still be
+        # present (demoted, not excluded).
+        graph = self._graph_with_hub(3)
+        fn = _RecordingSimilarity({"d.md": [("hub.md", 0.9), ("e.md", 0.5)]})
+        result = gaps(graph, fn, note="d.md", hub_degree=3)
+        assert _pairs(result) == {frozenset({"d.md", "hub.md"}), frozenset({"d.md", "e.md"})}
+        assert [frozenset({r["a"], r["b"]}) for r in result] == [
+            frozenset({"d.md", "e.md"}),
+            frozenset({"d.md", "hub.md"}),
+        ]
+
+    def test_boundary_is_inclusive_at_degree_equal_to_hub_degree(self):
+        # hub.md's degree (2) is exactly equal to hub_degree (2) -- ">=" must still demote it.
+        graph = self._graph_with_hub(2)
+        fn = _RecordingSimilarity({"d.md": [("hub.md", 0.9), ("e.md", 0.5)]})
+        result = gaps(graph, fn, note="d.md", hub_degree=2)
+        assert [frozenset({r["a"], r["b"]}) for r in result] == [
+            frozenset({"d.md", "e.md"}),
+            frozenset({"d.md", "hub.md"}),
+        ]
+
+    def test_hub_degree_none_never_demotes(self):
+        # Same shape as the first test, but hub_degree=None (the default) -- ranking falls back
+        # to plain score-desc, so the higher-scoring hub pair ranks first.
+        graph = self._graph_with_hub(3)
+        fn = _RecordingSimilarity({"d.md": [("hub.md", 0.9), ("e.md", 0.5)]})
+        result = gaps(graph, fn, note="d.md", hub_degree=None)
+        assert [frozenset({r["a"], r["b"]}) for r in result] == [
+            frozenset({"d.md", "hub.md"}),
+            frozenset({"d.md", "e.md"}),
+        ]

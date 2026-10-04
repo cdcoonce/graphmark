@@ -29,8 +29,14 @@ from pathlib import Path
 import pytest
 
 from graphmark.config import VaultConfig
-from graphmark.graph import NormalizeResolver, VaultGraph, diagnose
-from graphmark.parse import WikilinkExtractor
+from graphmark.graph import (
+    NormalizeResolver,
+    VaultGraph,
+    build_aliases,
+    build_catalog,
+    diagnose,
+)
+from graphmark.parse import WikilinkExtractor, parse_document
 
 
 def _write(root: Path, rel: str, aliases: list[str] | None = None, body: str = "") -> None:
@@ -84,6 +90,16 @@ class TestAliasResolution:
         _write(tmp_path, "n.md", aliases=["Alias Name"])
         _write(tmp_path, "src.md", body=f"See [[{form}]].\n")
         assert _build(tmp_path).unresolved == {}
+
+    def test_a_flush_left_alias_list_resolves(self, tmp_path):
+        # `aliases:` with its "- item" lines at column 0 (valid YAML) must reach alias resolution.
+        (tmp_path / "n.md").write_text(
+            "---\naliases:\n- One\n- Two\ntitle: x\n---\n", encoding="utf-8"
+        )
+        (tmp_path / "src.md").write_text("See [[Two]].\n", encoding="utf-8")
+        graph = _build(tmp_path)
+        assert graph.unresolved == {}
+        assert graph.out_links["src.md"] == {"n.md"}
 
     def test_inline_alias_lists_work_too(self, tmp_path):
         (tmp_path / "n.md").write_text("---\naliases: [One, Two]\n---\n", encoding="utf-8")
@@ -242,6 +258,41 @@ class TestConfigKnob:
     def test_the_default_is_on(self, tmp_path):
         cfg = VaultConfig(root=tmp_path)
         assert cfg.resolve_aliases is True
+
+
+class TestOutOfScopeCollisions:
+    """An alias colliding with an out-of-scope note's name must be dropped too (#269).
+
+    ``build_aliases``'s collision check only tested against ``catalog`` (in-scope notes), so an
+    alias claiming the stem of an out-of-scope note (e.g. a ``rules_files`` entry like
+    ``CLAUDE.md``) survived indexing and let ``_diagnose``'s alias check win before its
+    out-of-scope check was ever reached — hijacking the real file's identity.
+    """
+
+    def test_an_alias_colliding_with_an_out_of_scope_note_diagnoses_as_out_of_scope(self, tmp_path):
+        _write(tmp_path, "CLAUDE.md")
+        _write(tmp_path, "aliasing-note.md", aliases=["CLAUDE"])
+        graph = _build(tmp_path, rules_files=["CLAUDE.md"])
+        d = diagnose(graph, "CLAUDE")
+        assert d.reason == "out-of-scope-note"
+        assert d.via is None
+
+    def test_an_alias_colliding_with_an_out_of_scope_note_is_dropped_from_the_alias_map(
+        self, tmp_path
+    ):
+        _write(tmp_path, "CLAUDE.md")
+        _write(tmp_path, "aliasing-note.md", aliases=["CLAUDE"])
+        graph = _build(tmp_path, rules_files=["CLAUDE.md"])
+        assert "claude" not in graph.aliases
+
+    def test_out_of_scope_is_an_optional_keyword_so_two_argument_calls_keep_working(self, tmp_path):
+        # build_aliases is public API (graphmark.__all__): existing two-argument callers must keep
+        # their exact behavior, and the new guard applies only when out_of_scope is passed.
+        _write(tmp_path, "aliasing-note.md", aliases=["CLAUDE"])
+        docs = [parse_document(tmp_path / "aliasing-note.md", tmp_path)]
+        catalog = build_catalog(docs)
+        assert build_aliases(docs, catalog) == {"claude": "aliasing-note.md"}
+        assert build_aliases(docs, catalog, out_of_scope={"claude": ["CLAUDE.md"]}) == {}
 
 
 class TestFixtureParity:

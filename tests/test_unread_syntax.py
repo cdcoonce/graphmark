@@ -57,8 +57,18 @@ class TestCounting:
         # Same exclusion the wikilink extractor applies; a documented example is not a link.
         assert count_markdown_links("```\n[a](note.md)\n```\n") == 0
 
+    def test_counts_a_link_after_a_fence_line_with_trailing_content(self):
+        # A same-length fence run followed by an info string (e.g. a nested ```python line
+        # documenting Markdown syntax) must not close the outer fence early.
+        text = "```\nHow to open a python block:\n```python\ncode here\n```\n[a](note.md)\n"
+        assert count_markdown_links(text) == 1
+
     def test_ignores_a_link_inside_an_inline_code_span(self):
         assert count_markdown_links("`[a](note.md)`") == 0
+
+    def test_counts_an_uppercase_extension(self):
+        # #261: a `.MD` extension must be counted exactly like a lowercase `.md` one.
+        assert count_markdown_links("[a](note.MD)") == 1
 
 
 class TestWarning:

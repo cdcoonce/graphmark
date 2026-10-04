@@ -80,6 +80,8 @@ def orphans(graph: VaultGraph, config: VaultConfig) -> list[str]:
 
 def hubs(graph: VaultGraph, n: int = 10) -> list[list]:
     """Return top-n nodes by undirected degree (degree > 0), ties broken by path order."""
+    if n < 0:
+        raise ValueError(f"n must be >= 0, got {n}")
     G = _undirected(graph)
     degree_pairs = [(node, G.degree(node)) for node in G.nodes if G.degree(node) > 0]
     degree_pairs.sort(key=lambda x: (-x[1], x[0]))
@@ -87,10 +89,15 @@ def hubs(graph: VaultGraph, n: int = 10) -> list[list]:
 
 
 def clusters(graph: VaultGraph) -> list[list[str]]:
-    """Return connected components with >1 node, size-desc, members sorted."""
+    """Return connected components with >1 node, size-desc, members sorted.
+
+    Equal-size components break ties by their (already-sorted) member lists, not by
+    nx.connected_components' incidental traversal order (itself inherited from node-insertion
+    order). NOTE: this tie-break is graphmark's own defined convention, mirroring siloed_notes().
+    """
     G = _undirected(graph)
     components = [sorted(c) for c in nx.connected_components(G) if len(c) > 1]
-    components.sort(key=lambda c: -len(c))
+    components.sort(key=lambda c: (-len(c), c))
     return components
 
 
@@ -137,6 +144,8 @@ def pagerank(graph: VaultGraph, n: int = 10, alpha: float = 0.85) -> list[list]:
     """
     if not 0.0 < alpha < 1.0:
         raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+    if n < 0:
+        raise ValueError(f"n must be >= 0, got {n}")
 
     nodes = list(graph.nodes.keys())
     N = len(nodes)
@@ -240,11 +249,17 @@ def gaps(
             key = frozenset({rel, other})
             if key not in dedup_map or score > dedup_map[key][2]:
                 dedup_map[key] = (rel, other, score, sig)
+            elif score == dedup_map[key][2]:
+                dedup_map[key] = (*sorted((rel, other)), score, sig)
+
+    def _top(p: str) -> str:
+        head, sep, _ = p.partition("/")
+        return head if sep else ""
 
     def _rank_key(item):
         a, b, score, _sig = item
         hubby = _hub(a) or _hub(b)
-        cross = a.split("/", 1)[0] != b.split("/", 1)[0]
+        cross = _top(a) != _top(b)
         return (hubby, not cross, -score, a, b)
 
     candidates = sorted(dedup_map.values(), key=_rank_key)

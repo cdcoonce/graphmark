@@ -7,6 +7,7 @@ import re
 import string
 import sys
 import unicodedata
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
@@ -82,6 +83,16 @@ def _normalize(text: str) -> str:
 _FILE_SUFFIX_RE = re.compile(r"\.(?=[A-Za-z0-9]{1,10}$)[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]*$")
 
 
+def _strip_alias_and_anchor(display: str) -> str:
+    """Strip a wikilink display's alias (``|alias``) and anchor (``#Section``), then trim.
+
+    Obsidian treats ``[[Note|alias]]`` and ``[[Note#Section]]`` as targeting ``Note``, so every
+    place that asks "which note does this display name?" must strip the same two things the same
+    way. Shared by the resolver and the out-of-scope check so they cannot drift.
+    """
+    return display.split("|")[0].split("#")[0].strip()
+
+
 def _strip_display(display: str) -> str:
     """Reduce a raw wikilink display to its note part: no alias, no anchor, no ``.md``.
 
@@ -89,7 +100,7 @@ def _strip_display(display: str) -> str:
     the same link, so every place that asks "which note does this display name?" must strip the
     same three things. Shared by the resolver and the out-of-scope check so they cannot drift.
     """
-    target = display.split("|")[0].split("#")[0].strip()
+    target = _strip_alias_and_anchor(display)
     if target.lower().endswith(".md"):
         target = target[: -len(".md")]
     return target
@@ -105,7 +116,7 @@ def _targets_non_note_file(display: str) -> bool:
     Only ever consulted after the resolver has already failed, so a note that genuinely
     resolves (say a real ``report.v2.md`` linked as ``[[report.v2]]``) is never suppressed.
     """
-    target = display.split("|")[0].split("#")[0].strip()
+    target = _strip_alias_and_anchor(display)
     match = _FILE_SUFFIX_RE.search(target)
     return bool(match) and match.group(0).lower() != ".md"
 
@@ -161,7 +172,12 @@ def candidates_for(display: str, catalog: dict[str, list[str]]) -> list[str]:
     return list(catalog.get(_normalize(target), ()))
 
 
-def build_aliases(docs: list[Document], catalog: dict[str, list[str]]) -> dict[str, str]:
+def build_aliases(
+    docs: list[Document],
+    catalog: dict[str, list[str]],
+    *,
+    out_of_scope: dict[str, list[str]] | None = None,
+) -> dict[str, str]:
     """Map normalized alias → rel_path, for aliases that unambiguously name one note.
 
     Obsidian's ``aliases:`` property declares additional real names for a note, so a link written
@@ -169,7 +185,13 @@ def build_aliases(docs: list[Document], catalog: dict[str, list[str]]) -> dict[s
 
     * **An alias that collides with any real note name is dropped entirely** — not merely
       outranked. A note's own title must never be hijackable by someone else's alias, and an
-      already-ambiguous basename must not be rescued into resolving by a third note's alias.
+      already-ambiguous basename must not be rescued into resolving by a third note's alias. This
+      also covers a name claimed by an out-of-scope note (e.g. a ``rules_files`` entry like
+      ``CLAUDE.md``): such a note is real markdown, just excluded from the graph, so an alias
+      claiming its stem must be dropped the same way — otherwise the alias resolves before
+      ``_diagnose`` ever reaches its out-of-scope check, hijacking the real file's identity.
+      ``out_of_scope`` is keyword-only and optional so existing two-argument callers keep their
+      behavior; ``VaultGraph.build`` always passes it.
     * **An alias claimed by two or more notes resolves to nothing** — the same refusal graphmark
       already applies to colliding basenames. Ambiguity stays ambiguous.
 
@@ -192,7 +214,7 @@ def build_aliases(docs: list[Document], catalog: dict[str, list[str]]) -> dict[s
             if "/" in alias:
                 continue
             key = _normalize(alias)
-            if not key or key in catalog:
+            if not key or key in catalog or key in (out_of_scope or {}):
                 continue
             claims.setdefault(key, set()).add(doc.rel_path)
     return {key: paths.pop() for key, paths in claims.items() if len(paths) == 1}
@@ -205,24 +227,29 @@ def _is_intra_note_reference(display: str) -> bool:
     neither an edge nor a broken link, so it must not be recorded as unresolved — otherwise
     a note that navigates itself heavily looks like the vault's worst offender.
     """
-    return not display.split("|")[0].split("#")[0].strip()
+    return not _strip_alias_and_anchor(display)
+
+
+def _group_sorted(pairs: Iterable[tuple[str, str]]) -> dict[str, list[str]]:
+    """Group ``(key, rel_path)`` pairs by key, each value list sorted by rel_path.
+
+    Shared by ``build_catalog`` and ``VaultGraph.build``'s out-of-scope mapping: both need the
+    same "walk order in, rel_path string order out" guarantee (``Path`` ordering and rel_path
+    string ordering disagree where a separator meets punctuation, e.g. ``a-b/x.md`` vs
+    ``a/b.md``), and both feed byte-stable reports, so the order is established here rather than
+    inherited from whatever produced ``pairs``.
+    """
+    grouped: dict[str, list[str]] = {}
+    for key, rel_path in pairs:
+        grouped.setdefault(key, []).append(rel_path)
+    for values in grouped.values():
+        values.sort()
+    return grouped
 
 
 def build_catalog(docs: list[Document]) -> dict[str, list[str]]:
-    """Map normalized stem → list of rel_paths (len > 1 means ambiguous).
-
-    Value lists are sorted by rel_path. ``build`` already walks in path order, but ``Path``
-    ordering and rel_path string ordering disagree where a separator meets punctuation
-    (``a-b/x.md`` vs ``a/b.md``), and this mapping is public state feeding byte-stable reports —
-    so the order is established here rather than inherited.
-    """
-    catalog: dict[str, list[str]] = {}
-    for doc in docs:
-        key = _normalize(Path(doc.rel_path).stem)
-        catalog.setdefault(key, []).append(doc.rel_path)
-    for paths in catalog.values():
-        paths.sort()
-    return catalog
+    """Map normalized stem → list of rel_paths (len > 1 means ambiguous)."""
+    return _group_sorted((_normalize(Path(doc.rel_path).stem), doc.rel_path) for doc in docs)
 
 
 #: A normalized final component → the paths ending with it, each paired with its precomputed
@@ -362,6 +389,9 @@ def _suggestion_keys(catalog: dict[str, list[str]]) -> list[tuple[str, frozenset
         for rel in paths:
             path = Path(rel)
             name = path.parent.name if path.stem.lower() in GENERIC_STEMS else path.stem
+            # A generic stem at the vault root has no parent folder to be keyed by
+            # (path.parent.name == "") — fall back to the note's own stem rather than dropping it.
+            name = name if name else path.stem
             tokens = _content_tokens(name)
             if tokens:
                 keys.append((rel, tokens))
@@ -460,6 +490,8 @@ def _diagnose(
     out_of_scope: dict[str, list[str]],
     resolver: Resolver,
     aliases: dict[str, str] | None = None,
+    *,
+    exact_paths: Collection[str] | None = None,
 ) -> LinkDiagnosis:
     """Classify one display against already-built resolution state.
 
@@ -467,9 +499,23 @@ def _diagnose(
     exists to pass), and the public ``diagnose`` wraps it for callers holding a built graph. Two
     independent classifiers would drift from each other inside the package, which is the exact
     failure this surface exists to remove.
+
+    ``exact_paths``, when not ``None``, is the set of in-scope note rel_paths (#270). It exists
+    because a relative markdown target is a *path*, not a name, but both branches of the shared
+    resolver are name-like (normalized-stem or path-*suffix*), so a target that lands on a real
+    file can still be misreported ``ambiguous`` by a same-stem or same-suffix collision elsewhere
+    in the vault. Checked before ``resolver.resolve`` so a genuine exact-path hit is never shadowed
+    by that collision; strictly additive, since a display with no exact-path match falls through to
+    the unchanged classification below. Callers decide eligibility per display — see
+    ``VaultGraph.build`` — never as a blanket, build-wide gate.
     """
     if _is_intra_note_reference(display):
         return LinkDiagnosis(display=display, reason="intra-note")
+
+    if exact_paths is not None:
+        candidate = _strip_display(display) + ".md"
+        if candidate in exact_paths:
+            return LinkDiagnosis(display=display, target=candidate, reason="resolved", via="stem")
 
     target = resolver.resolve(display, catalog)
     if target is not None:
@@ -559,20 +605,31 @@ def resolve_markdown_target(
     name?" with no notion of a source.
 
     Relative is the **default markdown semantics** (CommonMark, mkdocs, GitHub) and deliberately
-    not the wikilink rule. Measured on `lyz-code/blue-book`: 5.8% of its links resolve this way
-    against 92.7% by basename-anywhere, because it runs the `mkdocs-autolinks` plugin. That dialect
-    is a separate decision, not a fallback to slip in here — silently trying a second rule when the
-    first fails is how a link resolves to the wrong note.
+    not the wikilink rule. The name-based dialect that `lyz-code/blue-book` follows (measured
+    above) is a separate decision, not a fallback to slip in here — silently trying a second rule
+    when the first fails is how a link resolves to the wrong note.
+
+    A target beginning with ``/`` is vault-root-relative instead — the convention `mkdocs`,
+    Docusaurus, Jekyll and Hugo vaults write. It resolves against the vault root directly: the
+    leading ``/`` is stripped and the remainder normalized, with no join against
+    ``source_rel_path``'s folder. Joining would silently discard that folder anyway — pathlib's
+    ``/`` operator drops its left-hand side entirely when the right-hand operand is absolute — so
+    root-relative targets are handled as their own case up front rather than falling into that
+    join.
 
     Without ``autolinks``, or for any target containing ``/``: ``None`` when the target escapes the
     vault root. That is not an error and not a resolution —
     a link out of the vault names no note in the graph, so it is reported ``missing`` like any other
-    target that is not there.
+    target that is not there. A root-relative target that normalizes above the root is ``None`` by
+    the same rule, with no second rule attempted when it is.
     """
     if autolinks and "/" not in target:
         return target
-    combined = PurePosixPath(source_rel_path).parent / target
-    normalized = posixpath.normpath(str(combined))
+    if target.startswith("/"):
+        normalized = posixpath.normpath(target[1:])
+    else:
+        combined = PurePosixPath(source_rel_path).parent / target
+        normalized = posixpath.normpath(str(combined))
     # normpath leaves leading "..", which is the only way to express "above the root".
     if normalized == ".." or normalized.startswith("../"):
         return None
@@ -671,7 +728,7 @@ class VaultGraph:
         # Markdown that exists but is out of scope, normalized stem → rel_paths. Collected in
         # this same walk (no extra I/O) so a link to one can be told apart from a link to a note
         # that exists nowhere at all.
-        out_of_scope: dict[str, list[str]] = {}
+        out_of_scope_pairs: list[tuple[str, str]] = []
         for path in sorted(root.rglob("*.md")):
             rel = path.relative_to(root)
             rel_parts = rel.parts
@@ -680,17 +737,26 @@ class VaultGraph:
                 or any(p in excluded for p in rel_parts[:-1])
                 or path.name in rules
             ):
-                out_of_scope.setdefault(_normalize(path.stem), []).append(rel.as_posix())
+                out_of_scope_pairs.append((_normalize(path.stem), rel.as_posix()))
                 continue
             md_files.append(path)
 
-        for paths in out_of_scope.values():
-            paths.sort()  # same rel_path ordering guarantee as build_catalog
+        out_of_scope = _group_sorted(out_of_scope_pairs)
 
-        docs = [parse_document(p, root) for p in md_files]
+        docs: list[Document] = []
+        for p in md_files:
+            try:
+                docs.append(parse_document(p, root))
+            except OSError:
+                rel_path = p.relative_to(root).as_posix()
+                print(f"graphmark: warning: {rel_path}: unreadable, skipped", file=sys.stderr)
         nodes = {doc.rel_path: doc for doc in docs}
         catalog = build_catalog(docs)
-        aliases = build_aliases(docs, catalog) if config.resolve_aliases else {}
+        aliases = (
+            build_aliases(docs, catalog, out_of_scope=out_of_scope)
+            if config.resolve_aliases
+            else {}
+        )
 
         out_links: dict[str, set[str]] = {rel: set() for rel in nodes}
         back_links: dict[str, set[str]] = {rel: set() for rel in nodes}
@@ -715,17 +781,32 @@ class VaultGraph:
         md_extractor = MarkdownLinkExtractor() if read_markdown else None
 
         for doc in docs:
-            displays = list(extractor.extract(doc.text)) if read_wikilinks else []
+            # Eligibility for the #270 exact-path rule (`exact_paths`) is a per-display property,
+            # not a per-build one: `link_syntax="both"` interleaves wikilink-derived and
+            # markdown-derived strings in this same list, and only a markdown target that went
+            # through the relative rule may take the exact-path shortcut. A wikilink display, an
+            # autolinks bare passthrough, or an escaped target (raw target, `resolved is None`)
+            # is diagnosed exactly as before — no `exact_paths` argument at all, so a caller that
+            # still monkeypatches `_diagnose`'s old fixed positional signature is unaffected.
+            displays: list[tuple[str, bool]] = (
+                [(d, False) for d in extractor.extract(doc.text)] if read_wikilinks else []
+            )
             if md_extractor is not None:
                 for target in md_extractor.extract(doc.text):
                     resolved = resolve_markdown_target(target, doc.rel_path, autolinks=autolinks)
+                    eligible = resolved is not None and not (autolinks and "/" not in target)
                     # A target above the vault root names no note here. Kept in the stream as the
                     # raw target so it is counted and reported `missing`, never silently dropped —
                     # the conservation law holds for every syntax that is read.
-                    displays.append(resolved if resolved is not None else target)
+                    displays.append((resolved if resolved is not None else target, eligible))
 
-            for display in displays:
-                d = _diagnose(display, catalog, out_of_scope, resolver, aliases)
+            for display, eligible in displays:
+                if eligible:
+                    d = _diagnose(
+                        display, catalog, out_of_scope, resolver, aliases, exact_paths=nodes
+                    )
+                else:
+                    d = _diagnose(display, catalog, out_of_scope, resolver, aliases)
                 link_counts[d.reason] += 1
                 if d.via == "alias":
                     alias_resolved += 1

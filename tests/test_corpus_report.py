@@ -9,12 +9,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+from scripts.corpus.manifest import CorpusVault
+from scripts.corpus.report import build_vault_report, report_json
 
-from scripts.corpus.manifest import CorpusVault  # noqa: E402
-from scripts.corpus.report import build_vault_report, report_json  # noqa: E402
+REPO_ROOT = Path(__file__).parent.parent
 
 
 def _write_synthetic_vault(cache_root: Path, name: str) -> CorpusVault:
@@ -32,6 +30,109 @@ def _write_synthetic_vault(cache_root: Path, name: str) -> CorpusVault:
     )
 
 
+def _write_markdown_link_vault(cache_root: Path, name: str) -> CorpusVault:
+    """Write a vault whose only link is markdown-style ``[text](note.md)``, no wikilinks.
+
+    Scanned with the default ``link_syntax="wikilink"``, this link is invisible to the parser
+    (0 links total), so it cannot prove the fix — a report threading ``link_syntax`` through
+    correctly must instead see it and resolve it, matching the real
+    ``lyz-code/blue-book``-style failure mode described in the issue.
+    """
+    vault_dir = cache_root / name
+    vault_dir.mkdir(parents=True)
+    (vault_dir / "alpha.md").write_text("See [beta](beta.md).\n")
+    (vault_dir / "beta.md").write_text("# Beta\n")
+
+    return CorpusVault(
+        name=name,
+        clone_url="https://github.com/example/vault",
+        sha="0123456789abcdef0123456789abcdef01234567",
+        license="MIT",
+        excluded_dirs=(),
+        link_syntax="markdown",
+    )
+
+
+def _write_vault_with_excluded_subdir(
+    cache_root: Path, name: str
+) -> tuple[CorpusVault, CorpusVault]:
+    """Write one vault with a note/link inside `archive/` and one outside it.
+
+    Returns a `(excluded_vault, included_vault)` pair of `CorpusVault`s that both point at the
+    same on-disk vault directory but differ only in `excluded_dirs`, so the two reports can be
+    compared to prove `build_vault_report` actually threads `excluded_dirs` through.
+    """
+    vault_dir = cache_root / name
+    vault_dir.mkdir(parents=True)
+    (vault_dir / "alpha.md").write_text("See [[beta]].\n")
+    (vault_dir / "beta.md").write_text("# Beta\n")
+    archive_dir = vault_dir / "archive"
+    archive_dir.mkdir()
+    (archive_dir / "old.md").write_text("See [[alpha]].\n")
+
+    excluded_vault = CorpusVault(
+        name=name,
+        clone_url="https://github.com/example/vault",
+        sha="0123456789abcdef0123456789abcdef01234567",
+        license="MIT",
+        excluded_dirs=("archive",),
+    )
+    included_vault = CorpusVault(
+        name=name,
+        clone_url="https://github.com/example/vault",
+        sha="0123456789abcdef0123456789abcdef01234567",
+        license="MIT",
+        excluded_dirs=(),
+    )
+    return excluded_vault, included_vault
+
+
+def _write_vault_with_alias_resolved_link(cache_root: Path, name: str) -> CorpusVault:
+    """Write a vault with one alias-resolved link and one plain-stem-resolved link.
+
+    Gives `build_vault_report`'s new `alias_resolved` field a genuine non-zero count to assert
+    against, matching the `aliases:` frontmatter pattern used by
+    `TestAliasResolved.test_alias_hits_are_counted_separately` in `tests/test_link_counts.py`. The
+    second, non-alias resolved link (`[[beta]]`) keeps `alias_resolved` (1) strictly less than both
+    `links` (2) and the `resolved` bucket count (2), so a mutation that substitutes either of those
+    for `alias_resolved` is distinguishable from the correct value, not just from zero.
+    """
+    vault_dir = cache_root / name
+    vault_dir.mkdir(parents=True)
+    (vault_dir / "beta.md").write_text("---\naliases:\n  - Nickname\n---\n# Beta\n")
+    (vault_dir / "alpha.md").write_text("See [[Nickname]].\n")
+    (vault_dir / "gamma.md").write_text("See [[beta]].\n")
+
+    return CorpusVault(
+        name=name,
+        clone_url="https://github.com/example/vault",
+        sha="0123456789abcdef0123456789abcdef01234567",
+        license="MIT",
+        excluded_dirs=(),
+    )
+
+
+def test_build_vault_report_includes_alias_resolved(tmp_path):
+    vault = _write_vault_with_alias_resolved_link(tmp_path, "alias-vault")
+
+    report = build_vault_report(vault, tmp_path)
+
+    assert report["alias_resolved"] == 1
+    assert report["links"] == 2
+    assert report["buckets"]["resolved"] == {"count": 2, "share": 1.0}
+
+
+def test_build_vault_report_applies_excluded_dirs(tmp_path):
+    excluded_vault, included_vault = _write_vault_with_excluded_subdir(
+        tmp_path, "vault-with-archive"
+    )
+
+    excluded_report = build_vault_report(excluded_vault, tmp_path)
+    included_report = build_vault_report(included_vault, tmp_path)
+
+    assert excluded_report["notes"] < included_report["notes"]
+
+
 def test_build_vault_report_counts(tmp_path):
     vault = _write_synthetic_vault(tmp_path, "synthetic-vault")
 
@@ -44,6 +145,28 @@ def test_build_vault_report_counts(tmp_path):
     assert report["buckets"]["missing"] == {"count": 1, "share": 0.5}
     for reason in ("ambiguous", "non-note-file", "out-of-scope-note", "intra-note"):
         assert report["buckets"][reason] == {"count": 0, "share": 0.0}
+
+
+def test_build_vault_report_threads_link_syntax_for_markdown_links(tmp_path):
+    # Proves build_vault_report actually passes vault.link_syntax into the VaultConfig it
+    # constructs: scanned as the default wikilink syntax, the markdown-style link below would
+    # never be extracted at all (0 links, 0 resolved) — exactly the silent, misleading-report
+    # failure mode this issue describes for markdown-link vaults like lyz-code/blue-book.
+    vault = _write_markdown_link_vault(tmp_path, "markdown-vault")
+
+    report = build_vault_report(vault, tmp_path)
+
+    assert report["links"] > 0
+    assert report["buckets"]["resolved"]["count"] > 0
+
+
+def test_build_vault_report_accepts_str_cache_root(tmp_path):
+    vault = _write_synthetic_vault(tmp_path, "synthetic-vault")
+
+    path_report = build_vault_report(vault, tmp_path)
+    str_report = build_vault_report(vault, str(tmp_path))
+
+    assert str_report == path_report
 
 
 def test_report_json_is_byte_stable_across_calls(tmp_path):
@@ -84,3 +207,5 @@ def test_report_json_is_byte_stable_across_subprocesses(tmp_path):
     )
 
     assert first.stdout == second.stdout
+    assert first.stdout == report_json(vault, tmp_path)
+    assert first.stdout != ""

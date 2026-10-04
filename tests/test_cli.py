@@ -1,11 +1,13 @@
 """CLI smoke tests: each subcommand emits valid JSON matching the metric function output.
 
-Uses sys.argv patching + capsys — no subprocess needed.
+Uses sys.argv patching + capsys — no subprocess needed, with one exception: the closed-stdout-pipe
+tests at the bottom spawn a real subprocess (the failure only exists at interpreter shutdown).
 """
 
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -123,6 +125,8 @@ class TestVersionAndHelp:
             ("neighborhood", "Vault-relative path"),
             ("pagerank", "Damping factor"),
             ("export", "Output format"),
+            ("stats", "TOML config file"),
+            ("stats", "Vault root (overrides --config root)"),
         ],
     )
     def test_subcommand_help_documents_its_flags(self, command, needle, capsys):
@@ -215,6 +219,17 @@ class TestHubsCommand:
     def test_matches_metric_output(self, simple_graph, capsys):
         out = _run_cli(["graphmark", "--config", str(SIMPLE_CONFIG), "hubs"], capsys)
         assert json.loads(out) == hubs(simple_graph)
+
+    def test_bad_n_exits_2_with_stderr_and_no_stdout(self, capsys):
+        from graphmark.cli import main
+
+        argv = ["graphmark", "--config", str(SIMPLE_CONFIG), "hubs", "--n", "-1"]
+        with patch.object(sys, "argv", argv), pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "n" in captured.err
 
 
 class TestClustersCommand:
@@ -321,6 +336,17 @@ class TestPagerankCommand:
         assert captured.out == ""
         assert "alpha" in captured.err
 
+    def test_bad_n_exits_2_with_stderr_and_no_stdout(self, capsys):
+        from graphmark.cli import main
+
+        argv = ["graphmark", "--config", str(SIMPLE_CONFIG), "pagerank", "--n", "-1"]
+        with patch.object(sys, "argv", argv), pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "n" in captured.err
+
 
 class TestExportDotCommand:
     def test_emits_dot_output(self, capsys):
@@ -353,6 +379,19 @@ class TestGapsCommand:
         assert "injected similarity source" in captured.err
         assert "graphmark.metrics.gaps" in captured.err
 
+    def test_bare_invocation_exits_2_with_gaps_guidance_not_generic_usage_error(self, capsys):
+        from graphmark.cli import main
+
+        argv = ["graphmark", "gaps"]
+        with patch.object(sys, "argv", argv), pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "injected similarity source" in captured.err
+        assert "graphmark.metrics.gaps" in captured.err
+        assert "--config or --root required" not in captured.err
+
 
 class TestSiloedCommand:
     def test_emits_valid_json(self, capsys):
@@ -362,3 +401,127 @@ class TestSiloedCommand:
     def test_matches_metric_output(self, simple_graph, capsys):
         out = _run_cli(["graphmark", "--config", str(SIMPLE_CONFIG), "siloed"], capsys)
         assert json.loads(out) == siloed_notes(simple_graph)
+
+
+# --- Closed stdout pipe (#206) -------------------------------------------------------------------
+
+_REPO_ROOT = Path(__file__).parent.parent
+_PIPE_COMMANDS = [
+    ["stats"],
+    ["orphans"],
+    ["hubs"],
+    ["clusters"],
+    ["bridges"],
+    ["siloed"],
+    ["neighborhood", "--note", "brain/alpha.md"],
+    ["pagerank"],
+    ["export", "dot"],
+    ["links"],
+    ["check"],  # needs a [check] policy: see _config_for
+]
+_PIPE_IDS = ["-".join(a) for a in _PIPE_COMMANDS]
+
+
+def _config_for(argv: list[str], tmp_path: Path) -> Path:
+    """SIMPLE_CONFIG has no [check] policy, so `check` gets a generous (passing) one."""
+    if argv != ["check"]:
+        return SIMPLE_CONFIG
+    toml = tmp_path / "pass.toml"
+    toml.write_text(f'root = "{SIMPLE_VAULT}"\n[check]\nmax_orphans = 99\n')
+    return toml
+
+
+def _spawn(argv: list[str], config: Path = SIMPLE_CONFIG) -> subprocess.Popen[bytes]:
+    return subprocess.Popen(
+        [sys.executable, "-m", "graphmark.cli", "--config", str(config), *argv],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=_REPO_ROOT,
+    )
+
+
+@pytest.mark.parametrize("argv", _PIPE_COMMANDS, ids=_PIPE_IDS)
+def test_open_pipe_positive_control(argv: list[str], tmp_path: Path) -> None:
+    """Same command, stdout read normally: exits 0 with real output (so the closed test is real)."""
+    proc = _spawn(argv, _config_for(argv, tmp_path))
+    out, _ = proc.communicate(timeout=30)
+    assert proc.returncode == 0
+    assert out.strip()
+    if argv != ["export", "dot"]:
+        json.loads(out)
+
+
+@pytest.mark.parametrize("argv", _PIPE_COMMANDS, ids=_PIPE_IDS)
+def test_closed_stdout_pipe_exits_quietly(argv: list[str], tmp_path: Path) -> None:
+    """Reader closes its end without reading: exit 0, no traceback, no 'Exception ignored'."""
+    proc = _spawn(argv, _config_for(argv, tmp_path))
+    assert proc.stdout is not None
+    proc.stdout.close()  # deterministic EPIPE on flush
+    _, stderr = proc.communicate(timeout=30)
+    assert proc.returncode == 0, stderr
+    assert b"Traceback" not in stderr
+    assert b"Exception ignored" not in stderr
+
+
+def test_closed_stdout_pipe_keeps_links_summary_on_stderr() -> None:
+    """The links summary line goes to stderr even though the stdout print broke first."""
+    proc = _spawn(["links"])
+    assert proc.stdout is not None
+    proc.stdout.close()
+    _, stderr = proc.communicate(timeout=30)
+    assert b"resolved" in stderr
+    assert b"Traceback" not in stderr
+
+
+def _breaching_config(tmp_path: Path) -> Path:
+    toml = tmp_path / "config.toml"
+    toml.write_text(
+        f'root = "{SIMPLE_VAULT}"\n[check]\nmax_orphans = 0\nmax_unresolved_links = 0\n'
+    )
+    return toml
+
+
+def _spawn_check(toml: Path) -> subprocess.Popen[bytes]:
+    return subprocess.Popen(
+        [sys.executable, "-m", "graphmark.cli", "--config", str(toml), "check"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=_REPO_ROOT,
+    )
+
+
+def test_check_breach_open_pipe_positive_control(tmp_path: Path) -> None:
+    """The config really breaches: open pipe exits 1 with a JSON report."""
+    proc = _spawn_check(_breaching_config(tmp_path))
+    out, _ = proc.communicate(timeout=30)
+    assert proc.returncode == 1
+    assert json.loads(out)["pass"] is False
+
+
+def test_check_breach_keeps_exit_1_when_stdout_pipe_closed(tmp_path: Path) -> None:
+    """A closed pipe must not turn a breach into a pass: README reserves exit 1 for a breach."""
+    proc = _spawn_check(_breaching_config(tmp_path))
+    assert proc.stdout is not None
+    proc.stdout.close()
+    _, stderr = proc.communicate(timeout=30)
+    assert proc.returncode == 1, stderr
+    assert b"max_orphans" in stderr
+    assert b"exceeds limit" in stderr
+    assert b"Traceback" not in stderr
+    assert b"Exception ignored" not in stderr
+
+
+def _close_both_and_wait(proc: subprocess.Popen[bytes]) -> int:
+    assert proc.stdout is not None and proc.stderr is not None
+    proc.stdout.close()
+    proc.stderr.close()
+    return proc.wait(timeout=30)
+
+
+def test_check_breach_keeps_exit_1_when_stdout_and_stderr_closed(tmp_path: Path) -> None:
+    """Dead stderr must not let the shutdown flush override the breach exit code (120)."""
+    assert _close_both_and_wait(_spawn_check(_breaching_config(tmp_path))) == 1
+
+
+def test_links_keeps_exit_0_when_stdout_and_stderr_closed() -> None:
+    assert _close_both_and_wait(_spawn(["links"])) == 0

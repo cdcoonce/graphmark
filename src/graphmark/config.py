@@ -1,12 +1,13 @@
 """Vault configuration — the domain seam that makes the engine general.
 
 ``VaultConfig`` holds every vault-specific policy the engine consults. ``load_config`` reads a
-TOML file into a ``VaultConfig`` (paths resolved relative to the TOML's directory). Fixture tests
-may construct ``VaultConfig`` directly.
+TOML file into a ``VaultConfig`` (a relative ``root`` is resolved against the TOML file's directory;
+an absolute ``root`` is used as-is). Fixture tests may construct ``VaultConfig`` directly.
 """
 
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -14,6 +15,21 @@ from pathlib import Path
 #: Every value ``VaultConfig.link_syntax`` accepts. A consumer may switch on these, so the set is
 #: part of the config contract.
 LINK_SYNTAXES = frozenset({"wikilink", "markdown", "both", "markdown-autolinks"})
+
+#: The four ``VaultConfig`` fields that must be a list (or tuple) of strings. A bare string is
+#: itself iterable character-by-character, so every consumer that does ``set(config.<field>)``
+#: would silently scope on individual characters instead — see #332.
+_STR_LIST_FIELDS = ("scoped_folders", "excluded_dirs", "rules_files", "transient_prefixes")
+
+
+def _check_str_list(name: str, value: object) -> None:
+    """Raise unless ``value`` is a list or tuple of strings.
+
+    Checking ``(list, tuple)`` first matters: a bare string would otherwise pass
+    ``all(isinstance(item, str) for item in value)`` by iterating itself one character at a time.
+    """
+    if not isinstance(value, (list, tuple)) or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"{name} must be a list of strings, got {value!r}")
 
 
 @dataclass(frozen=True)
@@ -38,12 +54,28 @@ class CheckPolicy:
             for f in fields(self)  # noqa: B009 - dataclass
         )
 
+    def __post_init__(self) -> None:
+        # Mirrors _parse_check's invariant (config.py) so direct construction is exactly as
+        # strict as the TOML path: a non-negative int, or None for "not enforced". bool is an
+        # int subclass in Python, so it needs its own exclusion rather than falling out of the
+        # int check for free.
+        for f in fields(self):  # noqa: B009 - dataclass
+            value = getattr(self, f.name)
+            if value is None:
+                continue
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError(f"{f.name} must be a non-negative integer, got {value!r}")
+
 
 @dataclass
 class VaultConfig:
     """All vault-specific behavior, parametrized."""
 
     root: Path
+    # Include-list of top-level folder names a note must live under to be in scope. Empty
+    # means no restriction (everything is in scope). A root-level note has no folder segment,
+    # so it can never match once this list is non-empty — it is always out-of-scope, with no
+    # way to opt in.
     scoped_folders: list[str] = field(default_factory=list)
     excluded_dirs: list[str] = field(default_factory=list)
     rules_files: list[str] = field(default_factory=lambda: ["CLAUDE.md", "CLAUDE.local.md"])
@@ -66,7 +98,15 @@ class VaultConfig:
         # A string root would otherwise survive construction and fail much later with an
         # obscure AttributeError on the first Path operation.
         if not isinstance(self.root, Path):
+            if not isinstance(self.root, (str, os.PathLike)):
+                raise ValueError(f"root must be a string, Path, or os.PathLike, got {self.root!r}")
             self.root = Path(self.root)
+        # A bare string is a valid sequence of one-character strings, so every consumer that
+        # does set(config.<field>) would silently scope on individual characters (#332).
+        _check_str_list("scoped_folders", self.scoped_folders)
+        _check_str_list("excluded_dirs", self.excluded_dirs)
+        _check_str_list("rules_files", self.rules_files)
+        _check_str_list("transient_prefixes", self.transient_prefixes)
         # Fail loudly rather than silently reading nothing: a typo here would produce an empty
         # graph, which is exactly the failure #151 exists to make visible.
         if self.link_syntax not in LINK_SYNTAXES:
@@ -110,10 +150,11 @@ def _parse_check(data: dict, path: Path) -> CheckPolicy:
 def load_config(path: str | Path, *, root_override: str | Path | None = None) -> VaultConfig:
     """Load a VaultConfig from a TOML file.
 
-    ``root`` is the only required key (resolved relative to the TOML's directory). Every other
-    key that maps to a ``VaultConfig`` field is optional and falls back to the dataclass default;
-    any other key in the TOML is silently ignored. A TOML missing ``root`` raises ``ValueError``
-    naming the file and the missing key.
+    ``root`` is the only required key. A relative ``root`` is resolved against the TOML file's
+    directory; an absolute ``root`` is used as-is. Every other key that maps to a ``VaultConfig``
+    field is optional and falls back to the dataclass default; any other key in the TOML is
+    silently ignored. A TOML missing ``root`` raises ``ValueError`` naming the file and the missing
+    key.
 
     The one exception to that leniency is the optional ``[check]`` table (see ``CheckPolicy``):
     an unknown key or a non-negative-integer value there raises, because a silently-ignored
@@ -130,15 +171,29 @@ def load_config(path: str | Path, *, root_override: str | Path | None = None) ->
     if root_override is not None:
         root = Path(root_override)
     elif "root" in data:
+        if not isinstance(data["root"], str):
+            raise ValueError(f"config {path}: root must be a string, got {data['root']!r}")
         root = path.parent / data["root"]
     else:
         raise ValueError(f"config {path}: missing required key 'root'")
+
+    # Validated on the raw TOML value, before construction: transient_prefixes in particular
+    # must be checked before tuple(...) below, which would otherwise silently turn a bare
+    # string into a valid-looking tuple of single characters (#332).
+    for key in _STR_LIST_FIELDS:
+        if key in data:
+            try:
+                _check_str_list(key, data[key])
+            except ValueError as exc:
+                raise ValueError(f"config {path}: {exc}") from exc
 
     return VaultConfig(
         root=root,
         scoped_folders=data.get("scoped_folders", []),
         excluded_dirs=data.get("excluded_dirs", []),
-        rules_files=data.get("rules_files", ["CLAUDE.md", "CLAUDE.local.md"]),
+        rules_files=data.get(
+            "rules_files", VaultConfig.__dataclass_fields__["rules_files"].default_factory()
+        ),
         transient_prefixes=tuple(data.get("transient_prefixes", [])),
         resolve_aliases=bool(data.get("resolve_aliases", True)),
         link_syntax=data.get("link_syntax", "wikilink"),

@@ -12,10 +12,15 @@
 into a list of ``CorpusVault``. This is a sibling harness module, not part of the graphmark
 engine, but follows ``graphmark/config.py``'s style (frozen dataclass, ``tomllib``, ``Path``-based
 loader) for consistency.
+
+An entry may also set an optional ``link_syntax`` key (``"wikilink"`` | ``"markdown"`` |
+``"both"`` | ``"markdown-autolinks"``, see ``graphmark.config.LINK_SYNTAXES``); it defaults to
+``"wikilink"`` when absent, matching every entry in the manifest today.
 """
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass, fields
 from pathlib import Path
@@ -32,6 +37,7 @@ class CorpusVault:
     sha: str
     license: str
     excluded_dirs: tuple[str, ...]
+    link_syntax: str = "wikilink"
 
 
 def load_manifest(path: Path) -> list[CorpusVault]:
@@ -44,9 +50,11 @@ def load_manifest(path: Path) -> list[CorpusVault]:
     with open(path, "rb") as f:
         data = tomllib.load(f)
 
-    required = [f.name for f in fields(CorpusVault)]
+    # link_syntax is optional (defaults to "wikilink" below) and must stay excluded here: every
+    # dataclass field is otherwise required, and none of the real manifest entries set it.
+    required = [f.name for f in fields(CorpusVault) if f.name != "link_syntax"]
     vaults: list[CorpusVault] = []
-    seen_names: set[str] = set()
+    seen_names_casefold: dict[str, str] = {}
 
     for entry in data.get("vault", []):
         missing = [key for key in required if key not in entry]
@@ -58,9 +66,40 @@ def load_manifest(path: Path) -> list[CorpusVault]:
                 raise ValueError(f"manifest {path}: vault entry has empty required field '{key}'")
 
         name = entry["name"]
-        if name in seen_names:
-            raise ValueError(f"manifest {path}: duplicate vault name '{name}'")
-        seen_names.add(name)
+        if "/" in name or "\\" in name or ".." in name or name == ".":
+            raise ValueError(
+                f"manifest {path}: vault entry has invalid vault name {name!r} "
+                "(must not contain '/', '\\', or '..', and must not be '.')"
+            )
+
+        if not re.fullmatch(r"[0-9a-f]{40}", entry["sha"]):
+            raise ValueError(
+                f"manifest {path}: vault entry has malformed sha '{entry['sha']}' "
+                "(expected 40 lowercase hex characters)"
+            )
+
+        if entry["clone_url"].startswith("-"):
+            raise ValueError(
+                f"manifest {path}: vault entry has clone_url starting with '-': "
+                f"'{entry['clone_url']}'"
+            )
+
+        excluded_dirs = entry["excluded_dirs"]
+        if not isinstance(excluded_dirs, list) or not all(
+            isinstance(item, str) for item in excluded_dirs
+        ):
+            raise ValueError(
+                f"manifest {path}: vault entry has excluded_dirs that is not a list of "
+                f"strings: {excluded_dirs!r}"
+            )
+
+        name_casefold = name.casefold()
+        if name_casefold in seen_names_casefold:
+            other = seen_names_casefold[name_casefold]
+            raise ValueError(
+                f"manifest {path}: duplicate vault name '{name}' (collides with '{other}')"
+            )
+        seen_names_casefold[name_casefold] = name
 
         vaults.append(
             CorpusVault(
@@ -69,6 +108,7 @@ def load_manifest(path: Path) -> list[CorpusVault]:
                 sha=entry["sha"],
                 license=entry["license"],
                 excluded_dirs=tuple(entry["excluded_dirs"]),
+                link_syntax=entry.get("link_syntax", "wikilink"),
             )
         )
 

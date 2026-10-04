@@ -15,8 +15,8 @@ _2026-07-25. Method and results, so the numbers below can be cited instead of re
 > exists to remove.
 >
 > **The gap is one vault.** Under manifest semantics archvault, BugBountyKnowledgeBase and
-> Obsidian-Vault-Template change note count only; their link distributions are identical. The
-> four other vaults are unaffected entirely. Only kepano-obsidian moves, because its `Templates/`
+> Obsidian-Vault-Template change note count only (79 → 85, 9 → 12, 9 → 14); their link
+> distributions are identical. The four other vaults are unaffected entirely. Only kepano-obsidian moves, because its `Templates/`
 > is 52 of its 103 notes:
 >
 > | kepano-obsidian                   | notes | links | resolved | missing | non-note-file |
@@ -27,6 +27,12 @@ _2026-07-25. Method and results, so the numbers below can be cited instead of re
 > No conclusion below changes. The #101 evidence — kepano's vault being dominated by `.base`
 > links — gets _stronger_ at 81.3%. The 1.8%–27% missing range is set by ArchVault (24.3%) and
 > Obsidian-Vault-Structure (27.4%), neither of which moves; kepano shifts inward.
+>
+> **Frozen 2026-09-27** from `dev` at `e5bdb19`, with every cache entry checked out clean at its
+> manifest SHA. As a cross-check, the same cache re-run with this page's four template
+> exclusions added back reproduces every third-party row of the Results table below exactly,
+> note counts included. The harness and this hand run therefore differ only in exclusion policy: no engine
+> change between 2026-07-25 and the freeze moved a third-party number.
 
 ## Why
 

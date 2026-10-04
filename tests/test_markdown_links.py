@@ -23,7 +23,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from graphmark.config import VaultConfig
-from graphmark.graph import NormalizeResolver, VaultGraph
+from graphmark.graph import NormalizeResolver, VaultGraph, diagnose
 from graphmark.parse import MarkdownLinkExtractor, WikilinkExtractor
 
 
@@ -59,6 +59,37 @@ class TestExtractor:
     def test_decodes_percent_encoding(self):
         # Real markdown encodes spaces; the vault stores them literally.
         assert MarkdownLinkExtractor().extract("[x](my%20note.md)") == ["my note.md"]
+
+    def test_recognizes_a_plain_target_unchanged(self):
+        # #239 regression: the plain form's extraction must stay byte-identical.
+        assert MarkdownLinkExtractor().extract("[text](note.md)") == ["note.md"]
+
+    def test_recognizes_a_titled_link(self):
+        # #239: a link title (`"Some Title"`) after the target must not swallow the whole match.
+        assert MarkdownLinkExtractor().extract('[text](note.md "A Title")') == ["note.md"]
+
+    def test_recognizes_an_angle_bracket_target(self):
+        # #239: the standard CommonMark escape for a target containing spaces/parens.
+        assert MarkdownLinkExtractor().extract("[text](<my note.md>)") == ["my note.md"]
+
+    def test_recognizes_a_combined_angle_bracket_and_titled_target(self):
+        # #239: angle-bracket target and title together.
+        assert MarkdownLinkExtractor().extract('[text](<my note.md> "A Title")') == ["my note.md"]
+
+    def test_an_anchor_containing_spaces_still_extracts(self):
+        # Regression guard for #239: the pre-#239 pattern accepted any anchor text up to ")",
+        # spaces included, with or without a trailing title. Supporting titles must not drop it.
+        assert MarkdownLinkExtractor().extract("[text](note.md#My Section)") == ["note.md"]
+        assert MarkdownLinkExtractor().extract('[text](note.md#My Section "T")') == ["note.md"]
+
+    def test_extracts_an_uppercase_extension(self):
+        # #261: `.MD` must match exactly like `.md`, matching the wikilink case-insensitive check.
+        assert MarkdownLinkExtractor().extract("[text](Note.MD)") == ["Note.MD"]
+
+    def test_extracts_a_mixed_case_extension_titled_and_angle_bracket(self):
+        # #261, combined with #239 syntax: a titled, angle-bracket-escaped target with a mixed-case
+        # extension must still match, and the target's original casing is preserved verbatim.
+        assert MarkdownLinkExtractor().extract('[text](<my note.Md> "A Title")') == ["my note.Md"]
 
 
 class TestDefaultIsUnchanged:
@@ -119,6 +150,108 @@ class TestRelativeResolution:
         assert graph.out_links["a.md"] == set()
         assert graph.link_counts["resolved"] == 1
 
+    def test_a_root_level_source_resolves_the_exact_sibling(self, tmp_path):
+        # #270: PurePosixPath("b.md").parent is "." for a root-level source, so the join used to
+        # degenerate to the slash-less "c.md" and get looked up by stem anywhere in the vault.
+        _write(tmp_path, "b.md", "[x](c.md)\n")
+        _write(tmp_path, "c.md")
+        _write(tmp_path, "docs/c.md")
+        graph = _build(tmp_path, link_syntax="markdown")
+        assert graph.out_links["b.md"] == {"c.md"}
+        assert graph.link_counts["ambiguous"] == 0
+
+    def test_a_nested_source_resolves_the_exact_sibling(self, tmp_path):
+        # Same defect one level down: a one-component suffix match is still a global basename
+        # search, so the path-suffix branch collides too without the exact-path rule.
+        _write(tmp_path, "docs/b.md", "[x](c.md)\n")
+        _write(tmp_path, "docs/c.md")
+        _write(tmp_path, "x/docs/c.md")
+        graph = _build(tmp_path, link_syntax="markdown")
+        assert graph.out_links["docs/b.md"] == {"docs/c.md"}
+        assert graph.link_counts["ambiguous"] == 0
+
+    def test_wikilinks_are_not_affected_by_the_exact_path_rule(self, tmp_path):
+        # The exact-path rule is markdown-only: the same colliding shapes, linked with [[...]]
+        # instead, must still be reported ambiguous.
+        root_case = tmp_path / "root_case"
+        _write(root_case, "b.md", "[[c]]\n")
+        _write(root_case, "c.md")
+        _write(root_case, "docs/c.md")
+        graph = _build(root_case, link_syntax="wikilink")
+        assert graph.link_counts["ambiguous"] == 1
+        assert graph.out_links["b.md"] == set()
+
+        nested_case = tmp_path / "nested_case"
+        _write(nested_case, "docs/b.md", "[[docs/c]]\n")
+        _write(nested_case, "docs/c.md")
+        _write(nested_case, "x/docs/c.md")
+        graph = _build(nested_case, link_syntax="wikilink")
+        assert graph.link_counts["ambiguous"] == 1
+        assert graph.out_links["docs/b.md"] == set()
+
+    def test_autolinks_bare_targets_are_not_affected_by_the_exact_path_rule(self, tmp_path):
+        # The autolinks passthrough is name-based by design; a bare target must not gain the
+        # relative-rule's exact-path resolution.
+        _write(tmp_path, "b.md", "[x](c.md)\n")
+        _write(tmp_path, "c.md")
+        _write(tmp_path, "docs/c.md")
+        graph = _build(tmp_path, link_syntax="markdown-autolinks")
+        assert graph.link_counts["ambiguous"] == 1
+        assert graph.out_links["b.md"] == set()
+
+    def test_diagnose_never_applies_the_exact_path_rule(self, tmp_path):
+        # The public diagnose() has no source note to be relative to, so it must keep reporting
+        # this collision exactly as before, regardless of what build() did with exact_paths.
+        _write(tmp_path, "b.md", "[x](c.md)\n")
+        _write(tmp_path, "c.md")
+        _write(tmp_path, "docs/c.md")
+        graph = _build(tmp_path, link_syntax="markdown")
+        assert diagnose(graph, "c.md").reason == "ambiguous"
+
+
+class TestRootRelativeResolution:
+    # #205: pathlib's `/` operator discards the left-hand side entirely when the right-hand
+    # operand is absolute, so a leading-slash target used to have the linking note's folder
+    # silently dropped and could never match any catalog entry.
+
+    def test_a_root_relative_target_resolves_to_an_existing_note(self, tmp_path):
+        _write(tmp_path, "blog/post.md", "[x](/notes/foo.md)\n")
+        _write(tmp_path, "notes/foo.md")
+        graph = _build(tmp_path, link_syntax="markdown")
+        assert graph.out_links["blog/post.md"] == {"notes/foo.md"}
+        assert graph.link_counts["missing"] == 0
+
+    def test_a_root_relative_target_to_a_missing_note_stays_missing(self, tmp_path):
+        # The basename "gone.md" exists elsewhere in the vault, so a basename-fallback regression
+        # (resolving via name anywhere in the tree instead of strictly at the root-relative path)
+        # would turn this green for the wrong reason.
+        _write(tmp_path, "blog/post.md", "[x](/notes/gone.md)\n")
+        _write(tmp_path, "other/gone.md")
+        graph = _build(tmp_path, link_syntax="markdown")
+        assert graph.out_links["blog/post.md"] == set()
+        assert graph.link_counts["missing"] == 1
+
+    def test_root_relative_resolution_is_the_same_from_the_vault_root_and_nested(self, tmp_path):
+        root_case = tmp_path / "root_case"
+        _write(root_case, "a.md", "[x](/notes/foo.md)\n")
+        _write(root_case, "notes/foo.md")
+        root_graph = _build(root_case, link_syntax="markdown")
+
+        nested_case = tmp_path / "nested_case"
+        _write(nested_case, "x/y/z/a.md", "[x](/notes/foo.md)\n")
+        _write(nested_case, "notes/foo.md")
+        nested_graph = _build(nested_case, link_syntax="markdown")
+
+        assert root_graph.out_links["a.md"] == {"notes/foo.md"}
+        assert nested_graph.out_links["x/y/z/a.md"] == {"notes/foo.md"}
+        assert root_graph.link_counts["missing"] == nested_graph.link_counts["missing"] == 0
+
+    def test_a_root_relative_target_escaping_the_vault_is_missing(self, tmp_path):
+        _write(tmp_path, "a.md", "[out](/../outside.md)\n")
+        graph = _build(tmp_path, link_syntax="markdown")
+        assert graph.link_counts["missing"] == 1
+        assert graph.out_links["a.md"] == set()
+
 
 class TestBothModes:
     def test_both_syntaxes_are_counted_and_conserved(self, tmp_path):
@@ -129,6 +262,22 @@ class TestBothModes:
         assert graph.link_counts["resolved"] == 2
         assert graph.link_counts["missing"] == 1
         assert graph.out_links["a.md"] == {"b.md"}
+
+    def test_a_colliding_wikilink_stays_ambiguous_alongside_a_resolvable_markdown_link(
+        self, tmp_path
+    ):
+        # #270's exact-path eligibility must be decided per display, not by whether markdown
+        # reading is on for the build: a wikilink display sharing the build with a resolvable
+        # markdown link must not pick up the markdown-only exact-path rule.
+        _write(tmp_path, "a.md", "[[c]]\n")
+        _write(tmp_path, "c.md")
+        _write(tmp_path, "docs/c.md")
+        _write(tmp_path, "other.md")
+        _write(tmp_path, "b.md", "[x](other.md)\n")
+        graph = _build(tmp_path, link_syntax="both")
+        assert graph.link_counts["ambiguous"] == 1
+        assert graph.out_links["a.md"] == set()
+        assert graph.out_links["b.md"] == {"other.md"}
 
     def test_the_unread_syntax_warning_is_silent_once_markdown_is_read(self, tmp_path, capsys):
         _write(tmp_path, "a.md", "[1](b.md)\n[2](b.md)\n[3](b.md)\n")

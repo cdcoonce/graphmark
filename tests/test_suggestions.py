@@ -188,6 +188,15 @@ class TestFolderNamedNotes:
         d = diagnose(_build(tmp_path), "Personal Index", suggest=5)
         assert d.candidates == ("personal/Index.md",)
 
+    def test_a_root_level_generic_stem_falls_back_to_its_own_stem(self, tmp_path):
+        # README.md directly at the vault root has no parent folder to be keyed by —
+        # Path("README.md").parent.name is "". Without a fallback to the note's own stem, this
+        # note is silently dropped from suggestions entirely, unlike every other note (nested
+        # generic-stem, or non-generic-stem-at-root).
+        _write(tmp_path, "README.md")
+        d = diagnose(_build(tmp_path), "readme file", suggest=5)
+        assert d.candidates == ("README.md",)
+
 
 class TestOrderingAndLimits:
     def test_k_limits_the_result(self, tmp_path):

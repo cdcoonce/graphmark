@@ -1,0 +1,32 @@
+{
+  "alias_resolved": 0,
+  "buckets": {
+    "ambiguous": {
+      "count": 0,
+      "share": 0.0
+    },
+    "intra-note": {
+      "count": 0,
+      "share": 0.0
+    },
+    "missing": {
+      "count": 9,
+      "share": 0.2432
+    },
+    "non-note-file": {
+      "count": 1,
+      "share": 0.027
+    },
+    "out-of-scope-note": {
+      "count": 0,
+      "share": 0.0
+    },
+    "resolved": {
+      "count": 27,
+      "share": 0.7297
+    }
+  },
+  "links": 37,
+  "notes": 85,
+  "vault": "archvault"
+}

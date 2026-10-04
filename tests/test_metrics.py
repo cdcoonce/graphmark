@@ -66,6 +66,19 @@ class TestStats:
         result = stats(graph)
         assert set(result.keys()) == {"notes", "edges", "orphans", "clusters", "density"}
 
+    def test_orphans_diverges_from_stats_when_transient_prefix_set(self, graph):
+        """Pins current, intentional behavior — not a claim that it is "correct" design.
+
+        stats() takes no VaultConfig and never consults transient_prefixes (its "orphans"
+        field is pinned to tests/fixtures/simple/expected.json), while orphans() filters
+        degree-0 nodes matching config.transient_prefixes. So the two can legitimately
+        disagree for the same graph once transient_prefixes is set: stats() still counts
+        every degree-0 node, but orphans() excludes the ones under "reference/".
+        """
+        cfg = VaultConfig(root=FIXTURE_VAULT, transient_prefixes=("reference/",))
+        assert stats(graph)["orphans"] == 2
+        assert orphans(graph, cfg) == []
+
 
 class TestOrphans:
     def test_matches_oracle(self, graph, config):
@@ -115,6 +128,10 @@ class TestHubs:
         # fixture has 4 non-orphan nodes; all should appear with default n=10
         assert len(result) == 4
 
+    def test_negative_n_raises_value_error(self, graph):
+        with pytest.raises(ValueError, match="n"):
+            hubs(graph, n=-1)
+
 
 class TestClusters:
     def test_matches_oracle(self, graph):
@@ -135,6 +152,30 @@ class TestClusters:
         result = clusters(graph)
         sizes = [len(c) for c in result]
         assert sizes == sorted(sizes, reverse=True)
+
+    def test_equal_size_components_tie_break_is_deterministic(self):
+        # Two 2-node components {a.md, b.md} and {y.md, z.md} tie for largest. Build the same
+        # graph twice with the components inserted in reversed order, so any dependence on
+        # nx.connected_components' incidental traversal order (itself inherited from
+        # node-insertion order) would flip which component comes first. The tie-break must make
+        # both graphs agree on the same, lexicographically-ordered result regardless.
+        nodes_forward = {"a.md": None, "b.md": None, "y.md": None, "z.md": None}
+        out_links_forward = {"a.md": {"b.md"}, "b.md": set(), "y.md": {"z.md"}, "z.md": set()}
+        back_links_forward = {"b.md": {"a.md"}, "a.md": set(), "z.md": {"y.md"}, "y.md": set()}
+        g_forward = VaultGraph(
+            nodes=nodes_forward, out_links=out_links_forward, back_links=back_links_forward
+        )
+
+        nodes_reversed = {"y.md": None, "z.md": None, "a.md": None, "b.md": None}
+        out_links_reversed = {"y.md": {"z.md"}, "z.md": set(), "a.md": {"b.md"}, "b.md": set()}
+        back_links_reversed = {"z.md": {"y.md"}, "y.md": set(), "b.md": {"a.md"}, "a.md": set()}
+        g_reversed = VaultGraph(
+            nodes=nodes_reversed, out_links=out_links_reversed, back_links=back_links_reversed
+        )
+
+        expected = [["a.md", "b.md"], ["y.md", "z.md"]]
+        assert clusters(g_forward) == expected
+        assert clusters(g_reversed) == expected
 
 
 class TestBridges:
@@ -213,3 +254,25 @@ class TestSiloedNotes:
         first = siloed_notes(g)
         assert first == ["b.md"]
         assert siloed_notes(g) == first  # deterministic across runs
+
+
+class TestUndirectedAsymmetricPin:
+    def test_orphans_uses_out_links_only_when_back_links_diverges(self):
+        # CLAUDE.md's documented degree contract: "Degree: undirected —
+        # neighbors(n) = out_links[n] ∪ back_links[n]". _undirected (metrics.py) currently
+        # constructs edges solely from out_links; VaultGraph.build() always makes back_links an
+        # exact mirror of out_links, so nothing ever exercises the divergent case. Hand-build a
+        # VaultGraph with a genuinely asymmetric out_links/back_links pair — back_links["b.md"]
+        # includes "c.md" with no corresponding out_links edge — to pin today's out_links-only
+        # reality. If _undirected is ever changed to also union back_links (to honor the
+        # documented contract), c.md gains an edge from b.md and stops being an orphan, so this
+        # assertion must go red.
+        nodes = {"a.md": None, "b.md": None, "c.md": None}
+        out_links = {"a.md": {"b.md"}, "b.md": set(), "c.md": set()}
+        back_links = {"a.md": set(), "b.md": {"c.md"}, "c.md": set()}
+        g = VaultGraph(nodes=nodes, out_links=out_links, back_links=back_links)
+        config = VaultConfig(root=Path("."))
+
+        result = orphans(g, config)
+
+        assert result == ["c.md"]

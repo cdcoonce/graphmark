@@ -15,9 +15,21 @@ from graphmark.graph import DIAGNOSIS_REASONS, VaultGraph
 from graphmark.metrics import orphans, siloed_notes
 
 
-def unresolved_link_count(graph: VaultGraph) -> int:
-    """Total unresolved link OCCURRENCES across the vault (not distinct targets)."""
-    return sum(len(displays) for displays in graph.unresolved.values())
+def unresolved_link_count(graph: VaultGraph, *, config: VaultConfig | None = None) -> int:
+    """Total unresolved link OCCURRENCES across the vault (not distinct targets).
+
+    With no ``config`` (the default), every occurrence counts — byte-identical to this
+    function's behavior before issue #256. With ``config`` given, occurrences whose source
+    note (the key in ``graph.unresolved``) starts with any ``config.transient_prefixes`` entry
+    are excluded, the same ``str.startswith`` test ``orphans`` uses (metrics.py).
+    """
+    if config is None:
+        return sum(len(displays) for displays in graph.unresolved.values())
+    return sum(
+        len(displays)
+        for note, displays in graph.unresolved.items()
+        if not any(note.startswith(prefix) for prefix in config.transient_prefixes)
+    )
 
 
 def links_report(graph: VaultGraph) -> dict:
@@ -46,15 +58,20 @@ def links_summary_line(report: dict) -> str:
     return " · ".join(parts)
 
 
+# Maps a CheckPolicy field name to the callable that computes its "actual" value. Honors
+# transient_prefixes for max_orphans (scratch/daily notes do not fail the gate) and passes
+# config= through to unresolved_link_count for the same reason (issue #256). An unwired field
+# name raises the dict's natural KeyError; TestDispatchMappingWired (tests/test_check.py) is what
+# makes an unwired CheckPolicy field visible at test time rather than at first real invocation.
+_DISPATCH = {
+    "max_orphans": lambda g, c: len(orphans(g, c)),
+    "max_unresolved_links": lambda g, c: unresolved_link_count(g, config=c),
+    "max_siloed": lambda g, c: len(siloed_notes(g)),
+}
+
+
 def _actual(name: str, graph: VaultGraph, config: VaultConfig) -> int:
-    if name == "max_orphans":
-        # Honors transient_prefixes, so scratch/daily notes do not fail the gate.
-        return len(orphans(graph, config))
-    if name == "max_unresolved_links":
-        return unresolved_link_count(graph)
-    if name == "max_siloed":
-        return len(siloed_notes(graph))
-    raise AssertionError(f"no metric wired for threshold {name!r}")  # pragma: no cover
+    return _DISPATCH[name](graph, config)
 
 
 def run_check(graph: VaultGraph, config: VaultConfig) -> dict:
@@ -65,9 +82,10 @@ def run_check(graph: VaultGraph, config: VaultConfig) -> dict:
     """
     policy = config.check
     if not policy.is_configured():
+        names = ", ".join(f.name for f in fields(config.check))
         raise ValueError(
             "no [check] policy configured: set at least one threshold in the config's "
-            "[check] table (max_orphans, max_unresolved_links, max_siloed)"
+            f"[check] table ({names})"
         )
 
     checks = []

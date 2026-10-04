@@ -3,7 +3,12 @@
 from pathlib import Path
 
 from graphmark.model import Document
-from graphmark.parse import WikilinkExtractor, parse_document
+from graphmark.parse import (
+    MarkdownLinkExtractor,
+    WikilinkExtractor,
+    count_markdown_links,
+    parse_document,
+)
 
 FIXTURE_VAULT = Path(__file__).parent / "fixtures" / "simple" / "vault"
 
@@ -48,6 +53,61 @@ class TestWikilinkExtractor:
         # A 4-backtick outer fence wrapping a 3-backtick example: the inner 3-backtick
         # lines must NOT close the outer fence, so [[hidden]] stays inside code.
         text = "````\n```\ninner [[hidden]]\n```\n````\nAfter [[real]].\n"
+        result = self.extractor.extract(text)
+        assert "hidden" not in result
+        assert result == ["real"]
+
+    def test_fence_line_with_trailing_content_does_not_close_the_block(self):
+        # A same-length fence run followed by an info string (e.g. a nested ```python line
+        # documenting Markdown syntax) is not a closer — only the true closer below it is.
+        text = "```\nHow to open a python block:\n```python\ncode here\n```\nAfter [[real]].\n"
+        assert self.extractor.extract(text) == ["real"]
+
+    def test_fence_closer_with_trailing_whitespace_still_closes(self):
+        text = "```\n[[hidden]]\n```   \nAfter [[real]].\n"
+        result = self.extractor.extract(text)
+        assert "hidden" not in result
+        assert result == ["real"]
+
+    def test_four_space_indented_unbalanced_fence_does_not_swallow_a_later_link(self):
+        # False-open (#260): a 4+-space-indented ``` run is an indented code block, not a
+        # fence delimiter, per CommonMark's 0-3-space budget. Left unbalanced (no matching
+        # false-positive close), it must not swallow every remaining line to EOF.
+        text = "    ```\nAfter [[real]].\n"
+        assert self.extractor.extract(text) == ["real"]
+
+    def test_four_space_indented_line_does_not_close_a_real_fence(self):
+        # False-close (#260), symmetric to the above: once a real (0-3 space) fence is open,
+        # a 4+-space-indented ``` line inside it is not a closer either — it is ordinary
+        # fenced content, dropped like any other line inside the block. Only the true
+        # (0-indent) closer below it ends the block.
+        text = (
+            "```\n[[hidden]]\n    ```\n[[still-hidden-if-fence-stayed-open]]\n```\nSee [[real]].\n"
+        )
+        result = self.extractor.extract(text)
+        assert "hidden" not in result
+        assert "still-hidden-if-fence-stayed-open" not in result
+        assert result == ["real"]
+
+    def test_fence_indented_two_spaces_still_opens_and_closes(self):
+        text = "  ```\n[[hidden]]\n  ```\nAfter [[real]].\n"
+        result = self.extractor.extract(text)
+        assert "hidden" not in result
+        assert result == ["real"]
+
+    def test_fence_indented_exactly_three_spaces_still_opens_and_closes(self):
+        # The CommonMark boundary: 3 raw characters of leading whitespace is still within the
+        # 0-3 budget on both the open and the close side.
+        text = "   ```\n[[hidden]]\n   ```\nAfter [[real]].\n"
+        result = self.extractor.extract(text)
+        assert "hidden" not in result
+        assert result == ["real"]
+
+    def test_tab_indented_fence_counts_as_one_raw_character_and_still_opens_and_closes(self):
+        # A tab is counted as a single raw character of indentation (not expanded to a
+        # CommonMark 4-column tab stop) — a documented simplification. 1 <= 3, so this is
+        # still a real fence on both the open and the close side.
+        text = "\t```\n[[hidden]]\n\t```\nAfter [[real]].\n"
         result = self.extractor.extract(text)
         assert "hidden" not in result
         assert result == ["real"]
@@ -118,6 +178,83 @@ class TestParseDocument:
         captured = capsys.readouterr()
         assert captured.err == ""
 
+    def test_unterminated_fence_warns_exactly_once(self, tmp_path, capsys):
+        note = tmp_path / "unterminated.md"
+        note.write_text(
+            "See [[before]].\n```\ncode line\n[[inside]]\nSee [[after]].\n",
+            encoding="utf-8",
+        )
+        doc = parse_document(note, tmp_path)
+        assert isinstance(doc, Document)
+        # Existing behavior unchanged: parse_document's own body is unaffected (fence stripping
+        # is the extractor's job, not parse_document's) -- content after the unclosed fence is
+        # still dropped only once an extractor runs, exactly as before this change.
+        assert "[[after]]" not in WikilinkExtractor().extract(doc.text)
+        captured = capsys.readouterr()
+        assert captured.out == ""  # never pollute stdout / the JSON surface
+        warning_lines = [line for line in captured.err.splitlines() if line]
+        assert len(warning_lines) == 1
+        assert warning_lines[0] == (
+            "graphmark: warning: unterminated.md: unterminated fenced code block, "
+            "trailing content dropped"
+        )
+
+    def test_closed_fence_emits_no_unterminated_fence_warning(self, tmp_path, capsys):
+        note = tmp_path / "closed.md"
+        note.write_text(
+            "See [[before]].\n```\ncode line\n```\nSee [[after]].\n",
+            encoding="utf-8",
+        )
+        doc = parse_document(note, tmp_path)
+        assert "[[after]]" in doc.text
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err == ""
+
+    def test_no_fence_at_all_emits_no_unterminated_fence_warning(self, tmp_path, capsys):
+        note = tmp_path / "plain.md"
+        note.write_text("Just prose with [[a-link]], no fences at all.\n", encoding="utf-8")
+        parse_document(note, tmp_path)
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    def test_unterminated_fence_warning_fires_once_under_default_link_syntax(
+        self, tmp_path, capsys
+    ):
+        # Simulates a real build under the default `link_syntax="wikilink"`: parse_document
+        # runs once, then WikilinkExtractor.extract and count_markdown_links each run over the
+        # same body (VaultGraph.build calls WikilinkExtractor per config, and
+        # _warn_if_unread_syntax_dominates calls count_markdown_links unconditionally). All
+        # three call `_strip_fenced_blocks` on the same unterminated-fence body, but only
+        # parse_document's own call may ever print the warning.
+        note = tmp_path / "unterminated.md"
+        body = "See [[before]].\n```\ncode line\n[[inside]]\nSee [[after]].\n"
+        note.write_text(body, encoding="utf-8")
+
+        doc = parse_document(note, tmp_path)
+        WikilinkExtractor().extract(doc.text)
+        count_markdown_links(doc.text)
+
+        captured = capsys.readouterr()
+        warning_lines = [line for line in captured.err.splitlines() if line]
+        assert len(warning_lines) == 1
+
+    def test_unterminated_fence_warning_fires_once_under_link_syntax_both(self, tmp_path, capsys):
+        # Same simulation, but for `link_syntax="both"`: MarkdownLinkExtractor also runs over
+        # the same body, for a third call into `_strip_fenced_blocks`.
+        note = tmp_path / "unterminated.md"
+        body = "See [[before]].\n```\ncode line\n[[inside]]\nSee [[after]].\n"
+        note.write_text(body, encoding="utf-8")
+
+        doc = parse_document(note, tmp_path)
+        WikilinkExtractor().extract(doc.text)
+        MarkdownLinkExtractor().extract(doc.text)
+        count_markdown_links(doc.text)
+
+        captured = capsys.readouterr()
+        warning_lines = [line for line in captured.err.splitlines() if line]
+        assert len(warning_lines) == 1
+
 
 class TestFrontmatterLineEndings:
     """CRLF notes (Windows / git autocrlf vaults) must parse identically to their LF twins.
@@ -165,6 +302,54 @@ class TestFrontmatterLineEndings:
         assert doc.frontmatter == {"title": "Note"}
         assert doc.text == ""
 
+    def test_trailing_spaces_on_opening_delimiter(self, tmp_path):
+        # A paste or auto-format can leave `---  ` on the opening line; it is still a delimiter.
+        data = self.FM_BYTES_LF.replace(b"---\ntitle", b"---  \ntitle", 1)
+        assert data != self.FM_BYTES_LF
+        doc = self._parse(tmp_path, "open_space.md", data)
+        assert doc.frontmatter == {"title": "Note", "related": "[[Other Note]]"}
+        assert not doc.text.lstrip().startswith("---")
+
+    def test_trailing_tab_on_closing_delimiter(self, tmp_path):
+        data = self.FM_BYTES_LF.replace(b'"\n---\n', b'"\n---\t\n', 1)
+        assert data != self.FM_BYTES_LF
+        doc = self._parse(tmp_path, "close_tab.md", data)
+        assert doc.frontmatter == {"title": "Note", "related": "[[Other Note]]"}
+        assert doc.text.strip() == "Body with [[Real Link]]."
+
+    def test_trailing_whitespace_frontmatter_wikilink_is_not_a_phantom_link(self, tmp_path):
+        data = b'---  \ntitle: Note\nrelated: "[[Other Note]]"\n---\t\nBody with [[Real Link]].\n'
+        doc = self._parse(tmp_path, "both.md", data)
+        links = WikilinkExtractor().extract(doc.text)
+        assert "Other Note" not in links
+        assert links == ["Real Link"]
+
+    def test_empty_frontmatter_block(self, tmp_path):
+        # Two adjacent `---` lines (a template stub or a cleared Properties block) are an empty
+        # frontmatter block: it must split off, not stay in the body.
+        doc = self._parse(tmp_path, "empty_fm.md", b"---\n---\nBody [[X]].\n")
+        assert doc.frontmatter == {}
+        assert doc.text == "Body [[X]].\n"
+
+    def test_empty_frontmatter_block_crlf(self, tmp_path):
+        doc = self._parse(tmp_path, "empty_fm_crlf.md", b"---\r\n---\r\nBody [[X]].\r\n")
+        assert doc.frontmatter == {}
+        assert doc.text == "Body [[X]].\r\n"
+
+    def test_bare_rule_without_closing_delimiter_is_not_frontmatter(self, tmp_path):
+        # A note opening with a horizontal rule and no closing `---` has no frontmatter at all.
+        data = b"---\nBody [[X]].\n"
+        doc = self._parse(tmp_path, "hr_open.md", data)
+        assert doc.frontmatter == {}
+        assert doc.text == data.decode()
+
+    def test_empty_block_does_not_swallow_a_later_body_rule(self, tmp_path):
+        # The optional block must be lazy: an empty block followed by a `---` rule in the body
+        # must close at the second line, not stretch to the body's rule.
+        doc = self._parse(tmp_path, "empty_then_rule.md", b"---\n---\nBody\n---\nmore\n")
+        assert doc.frontmatter == {}
+        assert doc.text == "Body\n---\nmore\n"
+
 
 class TestBlockStyleLists:
     """`key:` followed by `  - item` lines — what Obsidian's Properties UI actually writes.
@@ -210,6 +395,12 @@ class TestBlockStyleLists:
         parsed = self._fm("aliases:\n  - One\ndate: 2026-07-25\n  - Stray")
         assert parsed == {"aliases": ["One"], "date": "2026-07-25"}
 
+    def test_a_colon_bearing_stray_item_is_not_absorbed_as_a_key(self):
+        # Same junk as the colonless stray item, but its text holds a colon. With no list open it
+        # must still be dropped, not partitioned as "- Note": "Subtitle".
+        parsed = self._fm("aliases:\n  - One\ndate: 2026-07-25\n  - Note: Subtitle")
+        assert parsed == {"aliases": ["One"], "date": "2026-07-25"}
+
     def test_two_block_lists_in_one_document(self):
         parsed = self._fm("aliases:\n  - A\ntags:\n  - x\n  - y")
         assert parsed == {"aliases": ["A"], "tags": ["x", "y"]}
@@ -219,12 +410,71 @@ class TestBlockStyleLists:
             "aliases": ["Mood Tracker", "mood-tracker"]
         }
 
+    def test_a_trailing_unpaired_quote_is_preserved_in_a_scalar(self):
+        assert self._fm("title: Believin'") == {"title": "Believin'"}
+
+    def test_a_trailing_unpaired_quote_is_preserved_in_a_block_item(self):
+        assert self._fm("aliases:\n  - Believin'") == {"aliases": ["Believin'"]}
+
+    def test_a_trailing_unpaired_quote_is_preserved_in_an_inline_list_item(self):
+        assert self._fm("aliases: [Believin', Other]") == {"aliases": ["Believin'", "Other"]}
+
+    def test_internal_apostrophes_with_no_wrapping_quotes_are_untouched(self):
+        assert self._fm("title: Rock 'n' Roll") == {"title": "Rock 'n' Roll"}
+        assert self._fm("aliases:\n  - Rock 'n' Roll") == {"aliases": ["Rock 'n' Roll"]}
+        assert self._fm("aliases: [Rock 'n' Roll, Other]") == {
+            "aliases": ["Rock 'n' Roll", "Other"]
+        }
+
+    def test_paired_single_quotes_are_unwrapped_at_every_site(self):
+        assert self._fm("title: 'quoted'") == {"title": "quoted"}
+        assert self._fm("aliases:\n  - 'quoted'") == {"aliases": ["quoted"]}
+        assert self._fm("aliases: ['quoted', Other]") == {"aliases": ["quoted", "Other"]}
+
+    def test_paired_double_quotes_are_unwrapped_at_every_site(self):
+        assert self._fm('title: "quoted"') == {"title": "quoted"}
+        assert self._fm('aliases:\n  - "quoted"') == {"aliases": ["quoted"]}
+        assert self._fm('aliases: ["quoted", Other]') == {"aliases": ["quoted", "Other"]}
+
+    def test_mismatched_quote_pairs_are_not_unwrapped(self):
+        # A pair must be the SAME character at both ends; `"x'` is not a quoted value.
+        assert self._fm("title: \"x'") == {"title": "\"x'"}
+        assert self._fm("aliases:\n  - 'x\"") == {"aliases": ["'x\""]}
+        # Inline list starts with `'`, not `"`: a leading `"` is csv's own quote, not ours.
+        assert self._fm("aliases: ['x\", Other]") == {"aliases": ["'x\"", "Other"]}
+
     def test_empty_items_are_dropped(self):
         assert self._fm("aliases:\n  - One\n  -\n  - Two") == {"aliases": ["One", "Two"]}
 
     def test_items_containing_a_colon_are_not_read_as_keys(self):
         # "- Note: A Subtitle" is an item, not a nested key — the dash decides.
         assert self._fm("aliases:\n  - Note: A Subtitle") == {"aliases": ["Note: A Subtitle"]}
+
+    def test_a_flush_left_block_list_parses_to_a_list(self):
+        # YAML permits "- item" at the parent key's own indentation; Obsidian-family tools write it.
+        parsed = self._fm("tags:\n- foo\n- bar\ntitle: x")
+        assert parsed == {"tags": ["foo", "bar"], "title": "x"}
+
+    def test_a_flush_left_item_with_no_open_list_is_still_dropped(self):
+        # #222's rule survives the regex broadening: no list open means the dash line is a stray.
+        assert self._fm("title: x\n- foo") == {"title": "x"}
+
+    def test_a_colon_bearing_flush_left_item_with_no_open_list_is_dropped(self):
+        # The same stray with a colon in its text: the dash decides, so it is not a "- Note" key.
+        assert self._fm("title: x\n- Note: Subtitle") == {"title": "x"}
+
+    def test_a_blank_line_inside_a_list_does_not_truncate_it(self):
+        # A blank line must not close the open list: the item after it still belongs to it.
+        parsed = self._fm("aliases:\n  - One\n  - Two\n\n  - Three\ndate: X\n")
+        assert parsed == {"aliases": ["One", "Two", "Three"], "date": "X"}
+
+    def test_a_blank_line_between_two_block_lists_keeps_both_intact(self):
+        parsed = self._fm("aliases:\n  - A\n\ntags:\n  - x\n  - y\n")
+        assert parsed == {"aliases": ["A"], "tags": ["x", "y"]}
+
+    def test_a_blank_line_then_a_scalar_key_still_closes_the_list(self):
+        parsed = self._fm("aliases:\n  - A\n\ndate: 2026-07-25\n")
+        assert parsed == {"aliases": ["A"], "date": "2026-07-25"}
 
     def test_a_block_list_survives_a_real_note(self, tmp_path):
         note = tmp_path / "n.md"
@@ -236,6 +486,102 @@ class TestBlockStyleLists:
         assert doc.frontmatter["aliases"] == ["Mood Tracker"]
         assert doc.frontmatter["tags"] == ["health"]
         assert "Body" in doc.text
+
+    def test_comment_line_inside_a_block_list_does_not_end_it(self):
+        # A full-line YAML comment is not structure: the item after it still belongs to the list.
+        parsed = self._fm("aliases:\n  - One\n# a note to self\n  - Two\ndate: X\n")
+        assert parsed == {"aliases": ["One", "Two"], "date": "X"}
+        # An indented comment behaves the same.
+        assert self._fm("aliases:\n  - One\n  # note\n  - Two") == {"aliases": ["One", "Two"]}
+
+    def test_comment_line_with_a_colon_is_not_stored_as_a_key(self):
+        assert self._fm("title: T\n# TODO: revisit\ndate: X") == {"title": "T", "date": "X"}
+        parsed = self._fm("aliases:\n  - One\n# TODO: revisit\n  - Two")
+        assert parsed == {"aliases": ["One", "Two"]}
+
+    def test_a_hash_inside_a_value_is_not_a_comment(self):
+        # Only a FULL-LINE comment is skipped. A `#` within a value stays untruncated, and
+        # trailing inline comments are deliberately not handled.
+        assert self._fm('color: "#ff0000"') == {"color": "#ff0000"}
+        assert self._fm("tag: #project") == {"tag": "#project"}
+        assert self._fm("tags: [#a, #b]") == {"tags": ["#a", "#b"]}
+        assert self._fm("aliases:\n  - #project") == {"aliases": ["#project"]}
+
+
+class TestNestedMappingFrontmatter:
+    """`key:` followed by indented `subkey: value` lines (a nested YAML mapping) — see #264.
+
+    A nested mapping is not a supported shape, so it must yield nothing. It used to fall through
+    to the generic `key: value` branch, whose `partition` stripped the indent and promoted the
+    subkey to a spurious TOP-LEVEL key, silently overwriting a real key of the same name.
+    """
+
+    def _fm(self, raw: str) -> dict:
+        from graphmark.parse import _parse_frontmatter
+
+        return _parse_frontmatter(raw)
+
+    def test_nested_mapping_subkey_is_not_promoted(self):
+        # Outer key stays "" (an unparseable block value, as today); a real top-level key after
+        # the mapping still parses (folded companion assertion).
+        parsed = self._fm("cssclasses:\n  wide: true\ntitle: Real")
+        assert parsed == {"cssclasses": "", "title": "Real"}
+
+    def test_every_subkey_of_a_nested_mapping_is_dropped(self):
+        parsed = self._fm("cssclasses:\n  wide: true\n  narrow: false\ntitle: Real")
+        assert parsed == {"cssclasses": "", "title": "Real"}
+
+    def test_real_top_level_key_not_overwritten_by_nested_subkey(self):
+        # Real key FIRST, nested subkey of the same name AFTER: the nested value used to win.
+        parsed = self._fm("wide: real\ncssclasses:\n  wide: nested")
+        assert parsed == {"wide": "real", "cssclasses": ""}
+
+    def test_real_top_level_key_after_a_nested_subkey_of_the_same_name(self):
+        # Nested subkey FIRST, real key AFTER: the real key must win, and `wide` must not be
+        # present merely because of the nested line.
+        parsed = self._fm("cssclasses:\n  wide: nested\nwide: real")
+        assert parsed == {"cssclasses": "", "wide": "real"}
+
+    def test_a_colon_bearing_stray_item_still_drops_with_no_list_open(self):
+        # #222's construct: unaffected by this fix.
+        parsed = self._fm("aliases:\n  - One\ndate: 2026-07-25\n  - Note: Subtitle")
+        assert parsed == {"aliases": ["One"], "date": "2026-07-25"}
+
+    def test_an_unindented_key_after_a_bare_key_is_still_a_key(self):
+        assert self._fm("aliases:\ndate: 2026-07-25") == {"aliases": "", "date": "2026-07-25"}
+
+
+class TestFrontmatterListParsing:
+    """Inline lists (`key: [a, b]`) split naively on every comma, including commas embedded
+    inside a double-quoted item. A note declaring `aliases: ["Smith, John", "Doe, Jane"]` meant
+    two aliases but silently got four bogus, wrong ones fed into `build_aliases` — see #227.
+    """
+
+    def _fm(self, raw: str) -> dict:
+        from graphmark.parse import _parse_frontmatter
+
+        return _parse_frontmatter(raw)
+
+    def test_quoted_comma_bearing_items_are_preserved(self):
+        assert self._fm('aliases: ["Smith, John", "Doe, Jane"]') == {
+            "aliases": ["Smith, John", "Doe, Jane"]
+        }
+
+    def test_unquoted_apostrophe_is_not_a_quote_delimiter(self):
+        assert self._fm("aliases: [O'Brien, Smith]") == {"aliases": ["O'Brien", "Smith"]}
+
+    def test_empty_inline_list_does_not_raise(self):
+        assert self._fm("aliases: []") == {"aliases": []}
+
+    def test_a_multiline_inline_list_is_excluded_not_corrupted(self):
+        # A flow list wrapped across lines is unparseable here; the key is dropped rather than
+        # stored as the truncated literal "[one," (and the continuation line is not a key).
+        assert self._fm("tags: [one,\n  two]") == {}
+        assert self._fm("tags: [one,\n  two]\ndate: 2026-07-25") == {"date": "2026-07-25"}
+
+    def test_an_unterminated_inline_list_is_excluded(self):
+        assert self._fm("tags: [one, two") == {}
+        assert self._fm("tags: [one, two\ndate: 2026-07-25") == {"date": "2026-07-25"}
 
 
 class TestFixtureFrontmatterUnchanged:
