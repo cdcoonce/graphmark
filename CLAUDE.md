@@ -54,6 +54,30 @@ This file governs autonomous (afk) work in this repo. It is the contract.
   auto-closed a linked issue without checking that issue's actual state afterward
   (`gh issue view <n> --json state`). When `Depends on #N` gating is used, it checks `#N`'s
   closure state directly after each promote rather than assuming it closed.
+- **Pin accepted inputs before changing a parser.** Before a slice changes an existing regex,
+  parser, or input-handling path, list the input forms the current code accepts and add or confirm
+  a test pinning each one's current output, then make the change. Narrowing accepted input (a
+  stricter regex, rejecting forms that used to be accepted) needs explicit direction in the issue
+  and must be called out in the PR body. Do not change how a value is stored beyond what the issue
+  asks (see the next bullet). Examples: #351 narrowed the anchor group `#[^)]*` to `#[^)\s]*` and
+  silently dropped `[t](note.md#My Section)`; #353 (below) rewrote a stored value. A pinning test
+  written first would have gone red in the slice's own TDD loop.
+- **Normalize for comparison; store the value as given.** When a value is normalized or
+  canonicalized purely to drive a comparison, dedup, or lookup (path-normalize, case-fold,
+  whitespace-collapse, regex-normalize), use a separate local for the comparison key. The
+  normalized form never flows into the value that is stored, returned, or written out unless the
+  issue explicitly says to persist it. Grounding case #353: arg reconciliation did
+  `setattr(args, name, distinct[0])` (the `normpath`-normalized value) instead of `given[0]`
+  (the verbatim one), rewriting `--root link/../vault` to `vault`, which is wrong across a
+  symlink. Keep the user's `--root` exactly as given.
+- **Docs examples agree with their section and their own arithmetic.** A slice that edits a worked
+  docs example (README JSON or CLI output) checks every value against the config and inputs shown
+  in the same section (e.g. a `max_unresolved_links = 0` config block above it) and recomputes
+  derived fields from their inputs rather than hand-editing them: each `actual` from its counts,
+  each `pass` as `actual <= limit`, the top-level `pass` as the AND of the others, each total as
+  the sum of its parts. The PR body states that this cross-check was done and how. Example: in #365
+  (implementing #235) the first commit set the example limit to 20 against the config's 0; it was
+  caught and fixed only before merge.
 
 ## The gate
 
