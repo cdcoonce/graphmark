@@ -195,6 +195,14 @@ suggestions = graphmark.gaps(
 )
 ```
 
+A signature has two formats. When neither path contains `|`, it is `weaklink|` plus the two paths,
+sorted and joined with `|`, with no escaping; this is the format existing stores already hold, so
+they stay valid. When either path contains `|`, it is `weaklink2|` plus the two paths escaped (`\`
+becomes `\\`, then `|` becomes `\|`), sorted and joined with `|`, so a pipe in a path cannot make
+two different pairs collide. The prefixes differ, so the formats never overlap.
+`active_dismissed_sigs` recomputes each signature from the stored pair, so a pipe-path entry written
+before the second format existed is still honoured.
+
 The store lives under the vault root at `.claude/data/connect-dismissed.json`; pass `path=` to put
 it elsewhere.
 
