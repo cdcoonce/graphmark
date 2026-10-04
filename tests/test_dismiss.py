@@ -42,6 +42,169 @@ class TestWeaklinkSig:
         assert dismiss.weaklink_sig("a.md", "b.md") == dismiss.weaklink_sig("b.md", "a.md")
 
 
+class TestWeaklinkSigOrdinaryPathsPinned:
+    """Pin the exact sig for paths with neither '|' nor backslash (issue #271 / ragmark#204).
+
+    Stored keys are shared on disk, so these byte strings must never change.
+    """
+
+    @pytest.mark.parametrize(
+        ("a", "b", "expected"),
+        [
+            ("a.md", "b.md", "weaklink|a.md|b.md"),
+            ("b.md", "a.md", "weaklink|a.md|b.md"),
+            ("docs/a.md", "refs/b.md", "weaklink|docs/a.md|refs/b.md"),
+            (
+                "My Notes/Daily Log.md",
+                "Projects/Plan v2.md",
+                "weaklink|My Notes/Daily Log.md|Projects/Plan v2.md",
+            ),
+            (
+                "caf\u00e9/r\u00e9sum\u00e9.md",
+                "\u65e5\u672c/\u30e1\u30e2.md",
+                "weaklink|caf\u00e9/r\u00e9sum\u00e9.md|\u65e5\u672c/\u30e1\u30e2.md",
+            ),
+            ("a/b/c/d/deep.md", "a/b/shallow.md", "weaklink|a/b/c/d/deep.md|a/b/shallow.md"),
+            ("same.md", "same.md", "weaklink|same.md|same.md"),
+            ("notes/a-b_c.2026.md", "notes/A.md", "weaklink|notes/A.md|notes/a-b_c.2026.md"),
+        ],
+    )
+    def test_ordinary_sig_is_byte_stable(self, a, b, expected):
+        assert dismiss.weaklink_sig(a, b) == expected
+
+
+class TestWeaklinkSigPipeFormatPinned:
+    """Exact bytes for pairs where a path contains '|' (ragmark copies these bytes)."""
+
+    @pytest.mark.parametrize(
+        ("a", "b", "expected"),
+        [
+            ("x", "y|z", "weaklink2|x|y\\|z"),
+            ("y|z", "x", "weaklink2|x|y\\|z"),
+            ("x|y", "z", "weaklink2|x\\|y|z"),
+            ("|", "x", "weaklink2|\\||x"),
+            ("x", "|", "weaklink2|\\||x"),
+            ("a|b", "c|d", "weaklink2|a\\|b|c\\|d"),
+            ("x", "|\\", "weaklink2|\\|\\\\|x"),
+        ],
+    )
+    def test_pipe_pair_bytes(self, a, b, expected):
+        assert dismiss.weaklink_sig(a, b) == expected
+
+    @pytest.mark.parametrize(
+        ("a", "b", "expected"),
+        [
+            ("a\\b", "c", "weaklink|a\\b|c"),
+            ("c", "a\\b", "weaklink|a\\b|c"),
+            ("x\\", "y", "weaklink|x\\|y"),
+            ("\\", "\\\\", "weaklink|\\|\\\\"),
+        ],
+    )
+    def test_backslash_only_pair_keeps_legacy_format(self, a, b, expected):
+        assert dismiss.weaklink_sig(a, b) == expected
+
+
+def _strings(alphabet="a|\\", max_len=3):
+    import itertools
+
+    out = [""]
+    for n in range(1, max_len + 1):
+        out.extend("".join(t) for t in itertools.product(alphabet, repeat=n))
+    return out
+
+
+_TRICKY = _strings()
+
+
+class TestWeaklinkSigInjective:
+    def test_pipe_split_does_not_collide(self):
+        assert dismiss.weaklink_sig("x", "y|z") != dismiss.weaklink_sig("x|y", "z")
+
+    def test_backslash_escape_is_load_bearing(self):
+        # Without escaping "\\" in the pipe format these two pairs would both join to
+        # "weaklink2|\\|\\|x".
+        assert dismiss.weaklink_sig("x", "|\\") != dismiss.weaklink_sig("|x", "\\")
+
+    def test_order_independent(self):
+        for a in _TRICKY:
+            for b in _TRICKY:
+                assert dismiss.weaklink_sig(a, b) == dismiss.weaklink_sig(b, a)
+
+    def test_distinct_unordered_pairs_give_distinct_sigs(self):
+        seen: dict[str, frozenset[str]] = {}
+        for a in _TRICKY:
+            for b in _TRICKY:
+                pair = frozenset((a, b))
+                sig = dismiss.weaklink_sig(a, b)
+                assert seen.setdefault(sig, pair) == pair, (sig, seen[sig], pair)
+
+    def test_pairs_without_a_pipe_use_the_legacy_format_exactly(self):
+        for a in _TRICKY:
+            for b in _TRICKY:
+                if "|" in a or "|" in b:
+                    continue
+                assert dismiss.weaklink_sig(a, b) == "weaklink|" + "|".join(sorted([a, b]))
+
+    def test_legacy_and_pipe_formats_are_disjoint(self):
+        legacy, piped = set(), set()
+        for a in _TRICKY:
+            for b in _TRICKY:
+                sig = dismiss.weaklink_sig(a, b)
+                (piped if "|" in a or "|" in b else legacy).add(sig)
+        assert legacy and piped
+        assert legacy.isdisjoint(piped)
+        assert all(s.startswith("weaklink|") for s in legacy)
+        assert all(s.startswith("weaklink2|") for s in piped)
+
+
+class TestPipePathDismissalRoundTrip:
+    def _graph(self, names):
+        from graphmark.graph import VaultGraph
+
+        return VaultGraph(
+            nodes={n: None for n in names},
+            out_links={n: set() for n in names},
+            back_links={n: set() for n in names},
+        )
+
+    def test_dismissing_one_pipe_pair_does_not_suppress_the_other(self, tmp_path):
+        from graphmark.metrics import gaps
+
+        for name in ("x", "y|z", "x|y", "z"):
+            (tmp_path / name).write_text(f"content of {name}")
+        graph = self._graph(["x", "y|z", "x|y", "z"])
+        scores = {("x", "y|z"): 0.8, ("x|y", "z"): 0.8}
+
+        def similar(rel, k):
+            return [(o, s) for (r, o), s in scores.items() if r == rel]
+
+        dismiss.record_dismissal(tmp_path, "x", "y|z")
+        active = dismiss.active_dismissed_sigs(tmp_path)
+        remaining = gaps(graph, similar, dismissed=active)
+        assert [(g["a"], g["b"]) for g in remaining] == [("x|y", "z")]
+
+    def test_legacy_unescaped_pipe_key_is_still_honoured(self, tmp_path):
+        """A store written by the old encoding keys a pipe pair as 'weaklink|x|y|z'; the
+        active sig is recomputed from the record's a/b, so it migrates to the new key."""
+        (tmp_path / "x").write_text("x content")
+        (tmp_path / "y|z").write_text("yz content")
+        store = tmp_path / ".claude" / "data" / "connect-dismissed.json"
+        store.parent.mkdir(parents=True)
+        store.write_text(
+            json.dumps(
+                {
+                    "weaklink|x|y|z": {
+                        "a": "x",
+                        "a_hash": dismiss.content_hash(tmp_path / "x"),
+                        "b": "y|z",
+                        "b_hash": dismiss.content_hash(tmp_path / "y|z"),
+                    }
+                }
+            )
+        )
+        assert dismiss.active_dismissed_sigs(tmp_path) == {dismiss.weaklink_sig("x", "y|z")}
+
+
 class TestRecordDismissalRoundTrip:
     def test_record_then_active(self, tmp_path):
         (tmp_path / "x.md").write_text("x content")
