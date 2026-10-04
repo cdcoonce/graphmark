@@ -1,6 +1,1028 @@
 # CHANGELOG
 
 
+## v0.10.0 (2026-10-04)
+
+### Bug Fixes
+
+- **afk**: Set integration_target to dev so slices stop targeting main
+  ([#220](https://github.com/cdcoonce/graphmark/pull/220),
+  [`2a4ddce`](https://github.com/cdcoonce/graphmark/commit/2a4ddcee5905cea07d2b95f50836e391814ac9cd))
+
+trunk_branch does not govern where a slice's PR is opened; integration_target does, and it defaults
+  to "main". This file set the former and never the latter, so load_config resolved
+  trunk_branch="dev" alongside integration_target="main" and every slice PR went to `main` — the one
+  thing the policy comment in this file forbids.
+
+Not inferred: PR #196 (AFK recovery for #176) has base `main` and carries `Closes #176`. Merging it
+  would have landed a slice on `main` AND left #176 open, because GitHub only auto-closes on a merge
+  into the DEFAULT branch and this repo's default is `dev`.
+
+Corrects the claim in the comment above trunk_branch that it 'governs BOTH the branch a slice forks
+  from and the branch its PR targets'.
+
+- **check**: Derive unconfigured-policy error's threshold names from CheckPolicy fields
+  ([#344](https://github.com/cdcoonce/graphmark/pull/344),
+  [`048fcdd`](https://github.com/cdcoonce/graphmark/commit/048fcdd07118df642cb83adbbe14a07ae4959c5e))
+
+* fix(check): derive unconfigured-policy error's threshold names from CheckPolicy fields
+
+run_check's "no [check] policy configured" ValueError hardcoded the three threshold names as a
+  literal string, so adding a field to CheckPolicy without updating the message would leave it
+  silently stale. Build the name list from fields(config.check) instead, reproducing today's text
+  byte-for-byte for the current three fields.
+
+* test(check): pin the unconfigured-policy message text byte-for-byte
+
+- **check**: Honor transient_prefixes in unresolved_link_count
+  ([#323](https://github.com/cdcoonce/graphmark/pull/323),
+  [`8bab2fd`](https://github.com/cdcoonce/graphmark/commit/8bab2fdd65361fc6cc14970bd7f07409de8f7c1c))
+
+max_orphans already excludes transient_prefixes-matched notes via orphans(), but
+  max_unresolved_links counted every unresolved-link occurrence unfiltered. Add an optional
+  keyword-only config to unresolved_link_count that, when given, excludes occurrences whose source
+  note starts with a transient_prefixes entry, and pass config through at the check._actual call
+  site. Omitting config keeps prior behavior byte-identical.
+
+Closes #256
+
+- **cli**: Document subcommand-trailing --config/--root in --help
+  ([#361](https://github.com/cdcoonce/graphmark/pull/361),
+  [`3e53b41`](https://github.com/cdcoonce/graphmark/commit/3e53b41fc292377b71035a3be8b637be3aedc055))
+
+trailing_globals attaches --config/--root to every subcommand parser without help= text, so e.g.
+  `graphmark stats --help` showed the flags with no description even though the top-level flags
+  document them. Add the same help= text used by the top-level declarations.
+
+- **cli**: Exit quietly with the right code when stdout's reader closes early
+  ([#386](https://github.com/cdcoonce/graphmark/pull/386),
+  [`b279819`](https://github.com/cdcoonce/graphmark/commit/b279819d9c3f304908160b46e4e0283175865e8f))
+
+* fix(cli): exit 0 quietly when stdout's reader closes early
+
+Closes #206
+
+* fix(cli): keep check's breach exit code when stdout's reader closes early
+
+* fix(cli): keep check and links stderr diagnostics when stdout's reader closes early
+
+* test(cli): cover every stdout subcommand under a closed pipe
+
+* fix(cli): keep exit codes when both stdout and stderr readers close early
+
+- **cli**: Normalize --config/--root values with normpath before conflict check
+  ([#353](https://github.com/cdcoonce/graphmark/pull/353),
+  [`931b9c8`](https://github.com/cdcoonce/graphmark/commit/931b9c8ff18b7f647e742cd63cb4e5629f41cf29))
+
+* fix(cli): normalize --config/--root values with normpath before conflict check
+
+_reconcile_globals compared the raw strings a user typed, so a trailing slash or a redundant ./
+  segment on an otherwise identical --root/--config value was reported as a conflict (exit 2) even
+  though the same value repeated verbatim is explicitly supported. Dedupe now normalizes each value
+  with os.path.normpath only (no resolve()/expanduser()/symlink following) before comparing, so
+  equivalent spellings of the same path are treated as one value while a relative-vs-absolute
+  spelling of the same location remains a deliberate conflict.
+
+* fix(cli): keep the reconciled global as given; normalize only for the comparison
+
+- **cli**: Show gaps guidance before generic --config/--root error
+  ([#346](https://github.com/cdcoonce/graphmark/pull/346),
+  [`cab92d4`](https://github.com/cdcoonce/graphmark/commit/cab92d45991608f21d406a2e82d90b5a32f99437))
+
+gaps never calls _load and needs neither flag, so a bare `graphmark gaps` should hit the
+  gaps-specific signpost instead of the generic usage error. Move the gaps branch above the
+  --config/--root check.
+
+- **config**: Enforce non-negative-int invariant in CheckPolicy.__post_init__
+  ([#316](https://github.com/cdcoonce/graphmark/pull/316),
+  [`a71a862`](https://github.com/cdcoonce/graphmark/commit/a71a8629aa82dd08f7150c91896aa792131acf5f))
+
+Direct construction of CheckPolicy (e.g. CheckPolicy(max_orphans=-1) or
+  CheckPolicy(max_orphans=True)) previously succeeded silently, while the TOML-sourced path
+  (_parse_check) already rejected the same bad values. __post_init__ now mirrors that invariant for
+  every field: reject bool, negative int, and any other non-int type, with a clear ValueError.
+
+- **config**: Raise ValueError for a non-string root
+  ([#302](https://github.com/cdcoonce/graphmark/pull/302),
+  [`98eee02`](https://github.com/cdcoonce/graphmark/commit/98eee02fcf8ea742b3ffe3a01eddad70447f4909))
+
+load_config now raises ValueError when a TOML root key is present but not a string (int, list,
+  bool), and VaultConfig.__post_init__ raises ValueError when root is not a str, Path, or
+  os.PathLike. Previously both cases raised a raw TypeError from Path operations, which escaped the
+  CLI's exit-2/error: contract.
+
+Closes #236
+
+- **config**: Reject bare-string values for VaultConfig's list fields
+  ([#337](https://github.com/cdcoonce/graphmark/pull/337),
+  [`8338d15`](https://github.com/cdcoonce/graphmark/commit/8338d15ea4b884ab72e4654b85947faf7c7f70a6))
+
+scoped_folders, excluded_dirs, rules_files, and transient_prefixes each accepted a bare string,
+  which every consumer then iterated character by character instead of erroring loudly.
+  VaultConfig.__post_init__ now validates all four via a shared _check_str_list helper, and
+  load_config validates the same four raw TOML values before construction (needed because tuple(str)
+  would otherwise silently split transient_prefixes). Closes #332.
+
+- **corpus**: Coerce cache_root to Path in build_vault_report
+  ([#318](https://github.com/cdcoonce/graphmark/pull/318),
+  [`1753086`](https://github.com/cdcoonce/graphmark/commit/17530866faeafeb00227b4e95e1f911fe58f3e75))
+
+build_vault_report did cache_root / vault.name assuming cache_root was already a Path, raising
+  TypeError for str callers. fetch_vault already tolerates str-or-Path via Path(cache_root); apply
+  the same coercion here.
+
+- **corpus**: Coerce str path in load_expected
+  ([#313](https://github.com/cdcoonce/graphmark/pull/313),
+  [`882e9df`](https://github.com/cdcoonce/graphmark/commit/882e9df783c594daf23099125567967a9e6d1eb1))
+
+load_expected called path.read_text() directly, assuming a Path. Coerce with Path(path) as the first
+  line, matching load_manifest's existing precedent in manifest.py, so a str caller works
+  identically to a Path one.
+
+- **corpus**: Confirm target repo identity before fetch/checkout
+  ([#320](https://github.com/cdcoonce/graphmark/pull/320),
+  [`0a4aedd`](https://github.com/cdcoonce/graphmark/commit/0a4aeddeaa0f870fc34aecb5ba9f5f18828dbcf7))
+
+* fix(corpus): confirm target repo identity before fetch/checkout
+
+_head_sha and fetch_vault trusted git's directory walk-up, so a stray non-repo directory nested
+  inside an unrelated repo (e.g. an interrupted clone left in .corpus-cache/) could silently hand
+  fetch/checkout to the enclosing repo instead of failing. fetch_vault now confirms target is the
+  root of its own git repo (resolved paths, guarding the macOS /tmp-vs-/private/tmp symlink gap)
+  before treating it as fetchable, and raises ValueError naming the vault and path otherwise.
+
+Closes #194
+
+* test(corpus): prove the repo-identity check resolves symlinked cache paths
+
+- **corpus**: Force-correct dirty cache checkouts, surface real _head_sha failures
+  ([#324](https://github.com/cdcoonce/graphmark/pull/324),
+  [`1991138`](https://github.com/cdcoonce/graphmark/commit/199113842c54197c39457abc5bf9361064edc7cb))
+
+fetch_vault's correction checkout now uses `git checkout --force` so a locally-modified tracked file
+  in the (machine-owned, disposable) corpus cache no longer wedges the entry. _head_sha now
+  distinguishes "target was never a repo" (returns None, unchanged) from "target is a repo but git
+  failed" (raises ValueError with the target path and stderr) instead of collapsing both to None.
+
+Closes #226
+
+- **corpus**: Make load_manifest duplicate vault-name check case-insensitive
+  ([#315](https://github.com/cdcoonce/graphmark/pull/315),
+  [`3d8a5eb`](https://github.com/cdcoonce/graphmark/commit/3d8a5eb1b4d87fc03b7f158df0fa304809605598))
+
+Two [[vault]] entries whose names differ only by case (e.g. Example-Vault and example-vault) passed
+  the exact-string dedup check but would resolve to the same checkout directory on case-insensitive
+  filesystems. The dedup check now compares casefolded names and the error message names both
+  colliding entries.
+
+- **corpus**: Raise ValueError for schema drift in diff_reports
+  ([#306](https://github.com/cdcoonce/graphmark/pull/306),
+  [`711ac37`](https://github.com/cdcoonce/graphmark/commit/711ac3758bd06bd0e462fd4c34c5323a9bd93c36))
+
+* fix(corpus): raise ValueError for schema drift in diff_reports instead of KeyError
+
+diff_reports now validates that both expected and actual reports contain every top-level field,
+  buckets entry, and bucket/reason field before indexing into them, naming the missing field/reason
+  and which side it's missing from. The CLI's diff subcommand now catches that ValueError the same
+  way it already catches one from load_expected, printing 'error: ...' and exiting 2 instead of
+  crashing with an uncaught traceback.
+
+* fix(corpus): validate the vault key in diff_reports' schema check
+
+The vault-mismatch check indexes report["vault"], which is not in _TOP_LEVEL_FIELDS, so a report
+  missing it still raised a bare KeyError after the schema pass.
+
+- **corpus**: Raise ValueError when fetch_vault's cache target is not a directory
+  ([#304](https://github.com/cdcoonce/graphmark/pull/304),
+  [`b163438`](https://github.com/cdcoonce/graphmark/commit/b163438c1389823348e38fb01234a7444440df24))
+
+A stray file at cache_root/vault.name previously fell through both the happy-path and clone-branch
+  checks and surfaced an unhandled NotADirectoryError from deep inside subprocess.run. Guard against
+  it up front with a ValueError naming the vault and target path.
+
+- **corpus**: Reconcile origin remote to manifest clone_url before fetch
+  ([#327](https://github.com/cdcoonce/graphmark/pull/327),
+  [`4128df0`](https://github.com/cdcoonce/graphmark/commit/4128df07e8058998c99bbf42d54a04a28883bb69))
+
+fetch_vault kept the git remote named origin pointed at whatever URL it was cloned from, even after
+  a manifest entry's clone_url changed for the same cache entry. Reconcile origin to vault.clone_url
+  unconditionally, right before _fetch_pinned_commit, so a stale origin can never silently diverge
+  from the manifest.
+
+- **corpus**: Reject malformed sha and dash-prefixed clone_url in manifest
+  ([#308](https://github.com/cdcoonce/graphmark/pull/308),
+  [`d2e9bd3`](https://github.com/cdcoonce/graphmark/commit/d2e9bd3d0803037bace7cd37a4799524a8679d01))
+
+load_manifest now rejects a sha that isn't exactly 40 lowercase hex chars and a clone_url starting
+  with '-', closing an argument-injection path into fetch.py's unguarded git subprocess argv. Checks
+  run after the existing empty-field and name checks, so an empty sha/clone_url still raises the
+  pre-existing empty-required-field error.
+
+- **corpus**: Reject traversal and separator characters in vault names
+  ([#305](https://github.com/cdcoonce/graphmark/pull/305),
+  [`26679c2`](https://github.com/cdcoonce/graphmark/commit/26679c27c3eb2d48492c33b5a8facc6c2ff4850d))
+
+* fix(corpus): reject traversal and separator characters in vault names
+
+load_manifest now rejects a [[vault]] name containing '/', '\', or '..' before it can reach
+  fetch_vault's path join, closing a traversal escape out of cache_root.
+
+* fix(corpus): reject bare '..' and '.' vault names
+
+The '..' clause was vacuous under the existing tests: '../escape' is already rejected by the '/'
+  check, so deleting the traversal clause left the suite green. A separator-free '..' is the case
+  that clause exists for, and '.' resolves the cache target to the cache root itself.
+
+- **corpus**: Validate excluded_dirs shape in load_manifest
+  ([#321](https://github.com/cdcoonce/graphmark/pull/321),
+  [`f357a2f`](https://github.com/cdcoonce/graphmark/commit/f357a2f29931a6d4eb2dd13af3e600657c7f9b3f))
+
+* fix(corpus): validate excluded_dirs shape in load_manifest
+
+A bare-string excluded_dirs (e.g. ".git" instead of [".git"]) silently exploded into ('.', 'g', 'i',
+  't') via tuple(str), then flowed unguarded into VaultConfig downstream. load_manifest now rejects
+  any excluded_dirs that isn't a list of strings, matching the sha/clone_url shape-check style
+  already in the function.
+
+Closes #209
+
+* test(corpus): pin excluded_dirs error text and its precedence over dedup
+
+- **corpus**: Wrap git clone/checkout/fetch failures into ValueError (#279)
+  ([#311](https://github.com/cdcoonce/graphmark/pull/311),
+  [`0db1f57`](https://github.com/cdcoonce/graphmark/commit/0db1f576334a5dcce41492d2b7fc38bc7fc4055f))
+
+fetch_vault's three check=True git calls (clone, checkout, and _fetch_pinned_commit's full-by-SHA
+  fallback) now raise a ValueError chained from the original CalledProcessError, naming the vault
+  and target path, matching load_manifest/load_expected's existing convention. corpus-cli's fetch
+  subcommand catches it, printing error: ... and exiting 2 instead of leaving a traceback.
+
+Closes #279
+
+- **dismiss**: Harden active_dismissed_sigs against malformed individual records
+  ([#352](https://github.com/cdcoonce/graphmark/pull/352),
+  [`cd34e53`](https://github.com/cdcoonce/graphmark/commit/cd34e53d5ebd85c0c46c5dcf21fb08fe7ddc9f20))
+
+Skip (rather than crash on) a per-record entry that is not a dict, has a missing/non-string/empty
+  a/b/a_hash/b_hash field, or names a path that resolves to a directory (checked via is_file()
+  instead of exists(), which also covers the empty-string-resolves-to-root case). load_dismissed
+  already tolerates a corrupt whole-file store; this extends the same tolerance to one malformed
+  entry inside an otherwise well-formed store.
+
+- **dismiss**: Make record_dismissal survive a non-dict store
+  ([#334](https://github.com/cdcoonce/graphmark/pull/334),
+  [`a71b63d`](https://github.com/cdcoonce/graphmark/commit/a71b63da289ae514bc9fba49234df8ef69a94295))
+
+record_dismissal parsed the store with its own inline json.loads/try/except and never checked the
+  parsed JSON's shape, so a valid-but-non-dict payload (e.g. []) crashed with TypeError at
+  existing[sig] = {...}. Delegate to load_dismissed, which already guards this exact case, instead
+  of re-implementing the load.
+
+- **dismiss**: Raise ValueError naming a missing note in record_dismissal
+  ([#343](https://github.com/cdcoonce/graphmark/pull/343),
+  [`185f3d2`](https://github.com/cdcoonce/graphmark/commit/185f3d2b7eac8806c44e1acd0470c245d1fc4153))
+
+record_dismissal previously let a bare FileNotFoundError/IsADirectoryError escape from
+  content_hash() when either note path did not exist under root, with no indication of which of the
+  two was the problem. Wrap each content_hash() call and raise a ValueError naming the missing
+  relative path and the root, before mkdir/load/write run, so a failed call creates or mutates
+  nothing.
+
+Closes #208
+
+- **dismiss**: Reject dismissal paths that resolve outside the vault root
+  ([#363](https://github.com/cdcoonce/graphmark/pull/363),
+  [`1079110`](https://github.com/cdcoonce/graphmark/commit/10791105110f792ced939c14573d18271960c3ab))
+
+record_dismissal now rejects (ValueError) an a/b that is absolute or escapes root via `..` traversal
+  before any hashing, mkdir, or write; active_dismissed_sigs treats a stored record with such a path
+  as inactive instead of reading a file outside the vault. Both share a new private
+  _resolves_within() helper that checks full resolved containment rather than just os.path.isabs().
+
+Closes #291
+
+- **dismiss**: Write the dismissal store atomically
+  ([#303](https://github.com/cdcoonce/graphmark/pull/303),
+  [`3bdfcc1`](https://github.com/cdcoonce/graphmark/commit/3bdfcc15f9aa302ff03e8f237edbbe6f5b5dec51))
+
+record_dismissal now writes the merged JSON to a same-directory temp file (dismissed_file.name +
+  .tmp<pid>) and moves it into place with Path.replace(), deleting the temp file on any exception
+  before re-raising. A process interruption mid-write can no longer truncate or wipe the live
+  dismissal store.
+
+- **graph**: Drop aliases colliding with out-of-scope note names
+  ([#322](https://github.com/cdcoonce/graphmark/pull/322),
+  [`483e37c`](https://github.com/cdcoonce/graphmark/commit/483e37c1df6a2801f6e1d6fc1774cde29f7b3610))
+
+* fix(graph): drop aliases colliding with out-of-scope note names
+
+build_aliases's collision check only tested against catalog (in-scope notes), so an alias claiming
+  the stem of an out-of-scope note (e.g. a rules_files entry like CLAUDE.md) survived indexing and
+  resolved before _diagnose ever reached its out-of-scope check, hijacking the real file's identity.
+  The check now also tests out_of_scope, mirroring the existing in-catalog collision rule.
+
+* fix(graph): keep build_aliases backward compatible with a keyword-only out_of_scope
+
+- **graph**: Fall back to a note's own stem for root-level generic stems
+  ([#326](https://github.com/cdcoonce/graphmark/pull/326),
+  [`dd7a8e2`](https://github.com/cdcoonce/graphmark/commit/dd7a8e21f66179f605b7e2f549d61c72a42cdc6e))
+
+_suggestion_keys() re-keyed generic-stem notes (README.md, SKILL.md) by their parent folder name. At
+  the vault root there is no parent folder, so path.parent.name is "" and the note was silently
+  dropped from suggestions entirely. Fall back to the note's own stem when the folder-derived name
+  is empty.
+
+- **graph**: Resolve relative markdown links to exact-path matches
+  ([#312](https://github.com/cdcoonce/graphmark/pull/312),
+  [`cb1f9e8`](https://github.com/cdcoonce/graphmark/commit/cb1f9e8500ac3f1e29ab6a8f00d21b01288b83af))
+
+Root- and nested-source markdown links were resolved by the shared name-like resolver
+  (normalized-stem or path-suffix), so a target that landed on a real file could still report
+  ambiguous when another note shared its stem or path suffix elsewhere in the vault. _diagnose now
+  takes an opt-in exact_paths collection, checked before the resolver, that build() passes only for
+  markdown displays that went through the relative rule (per display, not per build), so wikilinks,
+  autolinks bare passthroughs, and the public diagnose() are unaffected.
+
+Closes #270
+
+- **graph**: Resolve root-relative markdown link targets
+  ([#317](https://github.com/cdcoonce/graphmark/pull/317),
+  [`25dbaf3`](https://github.com/cdcoonce/graphmark/commit/25dbaf328270b42102f155e8a197d53eec395650))
+
+resolve_markdown_target used to join every markdown target against the linking note's folder, but
+  pathlib's / operator discards the left-hand side entirely when the right-hand operand is absolute,
+  so a leading-slash target like [text](/notes/foo.md) silently dropped the folder and could never
+  match any catalog entry. Treat a target beginning with / as vault-root-relative: strip the leading
+  slash and normalize it directly, reusing the existing vault-escape guard.
+
+- **graph**: Skip unreadable notes in VaultGraph.build instead of crashing
+  ([#328](https://github.com/cdcoonce/graphmark/pull/328),
+  [`5b61e9f`](https://github.com/cdcoonce/graphmark/commit/5b61e9ff5b2c51243b97e204a6d0169c25c2311e))
+
+* fix(graph): skip unreadable notes in VaultGraph.build instead of crashing
+
+Convert the docs list comprehension to a loop that catches OSError (broken symlinks,
+  permission-denied files, directories named *.md) per file, printing one stderr warning and
+  skipping the file rather than aborting the whole build.
+
+Closes #263
+
+* test(graph): pin that only OSError is skipped during VaultGraph.build
+
+- **metrics**: Break clusters() size ties by sorted member list
+  ([#333](https://github.com/cdcoonce/graphmark/pull/333),
+  [`a8fedff`](https://github.com/cdcoonce/graphmark/commit/a8fedff214df3260283c7c843168112c75606bd6))
+
+clusters() sorted components by size-desc only, so equal-size components kept whatever order
+  nx.connected_components() happened to yield — inherited from node-insertion order rather than
+  anything deterministic. Mirror siloed_notes()'s existing convention: tie-break by the
+  already-sorted member list.
+
+- **metrics**: Canonicalize a/b orientation for tied gaps() pairs
+  ([#342](https://github.com/cdcoonce/graphmark/pull/342),
+  [`f15ca26`](https://github.com/cdcoonce/graphmark/commit/f15ca26a815a38ffe0ca54fa3d9033eb1eff99f2))
+
+A tied-score reciprocal candidate pair let scan order (targets/graph.nodes order) decide which note
+  landed in a vs b, since ties were broken by a strict > that never fires on the second,
+  equal-scoring direction. Sort the pair only when a later write matches the stored score exactly;
+  the non-tied winner-selection order (and the frozen gaps fixtures) is untouched.
+
+- **metrics**: Reject negative n in hubs and pagerank
+  ([#307](https://github.com/cdcoonce/graphmark/pull/307),
+  [`849df28`](https://github.com/cdcoonce/graphmark/commit/849df2872dfbec8970ad0afddc8f34c47c80c8b2))
+
+hubs() and pagerank() silently truncated results for a negative n instead of failing; both now raise
+  ValueError like the existing alpha guard, and the CLI's hubs dispatch gets a try/except to turn it
+  into a clean exit-2 usage error, mirroring pagerank's existing --alpha handling.
+
+- **metrics**: Treat root-level notes as same-folder in gaps() ranking
+  ([#350](https://github.com/cdcoonce/graphmark/pull/350),
+  [`f6fd265`](https://github.com/cdcoonce/graphmark/commit/f6fd265be1eb10d252b9584d13da5ea934ff29be))
+
+_rank_key's cross-folder check used a.split("/", 1)[0], which returns the whole filename for a
+  root-level note (no "/"), so any two distinct root notes compared unequal and were always ranked
+  as cross-folder ahead of score. Add a _top() helper that returns "" for a note with no folder
+  component so two root-level notes now compare as same-folder, while any note with a folder
+  component still compares by its existing top-level path segment, unchanged.
+
+- **model**: Make Document hashable despite dict frontmatter
+  ([#340](https://github.com/cdcoonce/graphmark/pull/340),
+  [`215728b`](https://github.com/cdcoonce/graphmark/commit/215728beee71d9d92167723357977b5f08c2cc33))
+
+frozen=True implies hash-safety, but the auto-generated __hash__ tried to hash frontmatter (a plain
+  dict) and always raised TypeError. Mark frontmatter field(hash=False) so hash() uses rel_path/text
+  while eq still compares all three fields.
+
+- **parse**: Don't close a fenced block on a fence line with trailing content
+  ([#301](https://github.com/cdcoonce/graphmark/pull/301),
+  [`d36d763`](https://github.com/cdcoonce/graphmark/commit/d36d763fdea9ebd357a692797bb9061fb80243ba))
+
+_strip_fenced_blocks only checked the closing line's fence character and length, so a same-or-longer
+  fence run carrying trailing content (e.g. a nested ```python info-string line) was wrongly
+  accepted as the closer, desyncing the tracker and silently dropping real links after it. Require
+  the fence run to be followed by nothing but optional trailing whitespace, matching the docstring's
+  CommonMark claim.
+
+- **parse**: Drop a colon-bearing stray block item instead of storing it as a key
+  ([#376](https://github.com/cdcoonce/graphmark/pull/376),
+  [`b375da1`](https://github.com/cdcoonce/graphmark/commit/b375da16b7a8ba2966ae9e75d9d804014fccf000))
+
+- **parse**: Drop a frontmatter flow list that does not close on its line
+  ([#375](https://github.com/cdcoonce/graphmark/pull/375),
+  [`b9760c3`](https://github.com/cdcoonce/graphmark/commit/b9760c3604efa5bce760c7f603c9d5a5a0301a54))
+
+- **parse**: Drop nested-mapping subkeys instead of promoting them to top-level keys
+  ([#378](https://github.com/cdcoonce/graphmark/pull/378),
+  [`50aae66`](https://github.com/cdcoonce/graphmark/commit/50aae662d0d617fff15c3ead1c2b9bbda7fdaa8f))
+
+- **parse**: Honor CommonMark's <=3-space fence-indentation limit
+  ([#309](https://github.com/cdcoonce/graphmark/pull/309),
+  [`775657d`](https://github.com/cdcoonce/graphmark/commit/775657d3aa7b87751c7a7b28f81a3e9a64a0f999))
+
+Both fence-open and fence-close checks in _strip_fenced_blocks now require leading whitespace of <=3
+  raw characters (tab counts as 1, no tab-stop expansion). A 4+-indented candidate is an indented
+  code block, not a fence: when no fence is open it passes through to `out` unchanged, and when a
+  fence is open it is dropped like any other fenced content and does not close it. Fixes symmetric
+  false-open (an unbalanced indented fence swallowing the rest of the note) and false-close (an
+  indented line ending a real fence early) bugs. #301's closer rule (same char, length >= opener,
+  only trailing whitespace) is unchanged.
+
+- **parse**: Keep a block list open across a blank line in frontmatter
+  ([#381](https://github.com/cdcoonce/graphmark/pull/381),
+  [`eba8150`](https://github.com/cdcoonce/graphmark/commit/eba8150fc0fde3f57c10bb8ae399cb59bc35c29a))
+
+- **parse**: Match .md extension case-insensitively in markdown links
+  ([#358](https://github.com/cdcoonce/graphmark/pull/358),
+  [`517fa97`](https://github.com/cdcoonce/graphmark/commit/517fa977fe81f13be0b8f78f75cbe4127b81e24b))
+
+`_MD_LINK_RE` only matched a lowercase `.md` extension, so a case-varied target like `Note.MD` or
+  `note.Md` was silently excluded from `MarkdownLinkExtractor.extract` and `count_markdown_links`,
+  unlike the wikilink path which already folds `.md` case downstream. Compile the pattern with
+  `re.IGNORECASE`; the extracted target keeps its original casing.
+
+Closes #261
+
+- **parse**: Parse flush-left block-list items under a key as list items
+  ([#380](https://github.com/cdcoonce/graphmark/pull/380),
+  [`fb51943`](https://github.com/cdcoonce/graphmark/commit/fb51943701b8ea01e6724181a7ba7ffe51525084))
+
+Closes #230
+
+- **parse**: Preserve embedded commas in quoted inline-list items
+  ([#367](https://github.com/cdcoonce/graphmark/pull/367),
+  [`3fd4313`](https://github.com/cdcoonce/graphmark/commit/3fd431370d59b9733df844242cc50152ff40efc2))
+
+_parse_frontmatter split inline lists (`key: [a, b]`) on every comma via value[1:-1].split(","), so
+  a quoted item with an embedded comma (e.g. aliases: ["Smith, John", "Doe, Jane"]) silently split
+  into four bogus aliases instead of two. Replace the split with csv.reader (default quotechar) so a
+  double-quoted comma is preserved, with an explicit empty-bracket guard since csv.reader raises
+  StopIteration on "".
+
+Closes #227
+
+- **parse**: Recognize titled and angle-bracket markdown link targets
+  ([#351](https://github.com/cdcoonce/graphmark/pull/351),
+  [`43d337c`](https://github.com/cdcoonce/graphmark/commit/43d337cab3d1d47d367965659e1556c21a439995))
+
+* fix(parse): recognize titled and angle-bracket markdown link targets
+
+_MD_LINK_RE excluded whitespace from its capture group, so a link title (`[text](note.md "A
+  Title")`) or an angle-bracket-escaped target (`[text](<my note.md>)`) never matched at all --
+  count_markdown_links missed it silently and MarkdownLinkExtractor never produced the edge. The
+  regex now accepts both forms (and the two combined) via a bracket alternative and a trailing title
+  group, unwrapping angle brackets in extract() before percent-decoding; the plain form's output is
+  unchanged.
+
+Closes #239
+
+* fix(parse): keep matching markdown links whose anchor contains spaces
+
+- **parse**: Skip full-line YAML comments in frontmatter
+  ([#383](https://github.com/cdcoonce/graphmark/pull/383),
+  [`8846727`](https://github.com/cdcoonce/graphmark/commit/884672785e2f61a8b4b9d9fd4bd89184c741fbe6))
+
+A full-line # comment inside a block list ended the list and, with a colon in its text, was stored
+  as a bogus top-level key. Skip such lines before the block-item/key checks without resetting the
+  open list.
+
+- **parse**: Split an empty frontmatter block off the body
+  ([#382](https://github.com/cdcoonce/graphmark/pull/382),
+  [`87f9d7f`](https://github.com/cdcoonce/graphmark/commit/87f9d7fc0a0d1e5c7f9144e2c8cb23d78ad908b6))
+
+* fix(parse): split an empty frontmatter block off the body
+
+* fix(parse): make the optional frontmatter block lazy so an empty block cannot swallow a body rule
+
+- **parse**: Strip frontmatter quotes only when they form a matching pair
+  ([#374](https://github.com/cdcoonce/graphmark/pull/374),
+  [`7df3cb5`](https://github.com/cdcoonce/graphmark/commit/7df3cb5f3e38c0547f6499825a9c02e43a00f875))
+
+Closes #231
+
+- **parse**: Tolerate trailing space/tab after frontmatter --- delimiters
+  ([#379](https://github.com/cdcoonce/graphmark/pull/379),
+  [`ae5770b`](https://github.com/cdcoonce/graphmark/commit/ae5770b3d749a40e23c43df619f8c675f130dbce))
+
+- **parse**: Warn once on unterminated fenced code blocks
+  ([#319](https://github.com/cdcoonce/graphmark/pull/319),
+  [`6a6e829`](https://github.com/cdcoonce/graphmark/commit/6a6e8293d6a5bac90004d06fa8572cba17aa5bbc))
+
+An unclosed ``` /~~~ fence silently drops every line after it, including wikilinks and markdown
+  links, with no diagnostic. _strip_fenced_blocks now returns (text, unterminated); parse_document
+  prints one graphmark: warning: ... line to stderr per affected file, independent of
+  config.link_syntax, since the three extractors that also call _strip_fenced_blocks discard the
+  flag.
+
+### Chores
+
+- Ignore afk shadow-parity telemetry
+  ([`d374b87`](https://github.com/cdcoonce/graphmark/commit/d374b8738962897215e1f11128bc184c32d67cfa))
+
+afk's shadow-parity harness (afk#1149/#1155) writes per-run node decision records to
+  .afk/parity/*.jsonl. They accumulate toward a LOCAL agreement bar that
+  shadow_parity.cutover_active reads off the local file, so they are machine-local build artifacts
+  by construction and must never be committed.
+
+afk-agent-system already ignores them in its own repo; the enrollment path never seeded the entry
+  into enrolled repos, so every enrolled repo would accumulate untracked ledgers one 'git add -A'
+  away from landing.
+
+- Ignore afk's per-slice runtime artifacts
+  ([`9dcbae9`](https://github.com/cdcoonce/graphmark/commit/9dcbae977ace3d5399798c7caea5e646b03df7a7))
+
+`.afk/question.md` and `.afk/notes.md` are runtime state the executor writes and is meant to
+  read-and-remove. afk's scope gate exempts both by exact path (PARKED_QUESTION_PATH /
+  ADVISORY_NOTES_PATH in afk_driver/scope_scan.py) precisely because parking is a runtime decision
+  an issue body cannot name -- so neither can ever be declared in scope, and neither belongs in the
+  trunk.
+
+#196 is why: the #176 slice committed its question.md, and the PR would have landed 59 lines of
+  stale, already-answered runtime state into dev as a tracked file. It was untracked by hand before
+  that merge; this stops the next one.
+
+notes.md is listed alongside it rather than after the fact -- scope_scan.py's own comment describes
+  its removal as a backstop "for the paths where that removal did not run," so the same exposure
+  exists and has simply not fired yet.
+
+The existing .afk/ block already ignores transcripts/, worktrees/ and parity/ while keeping
+  config.toml tracked; these two extend that same rule to the per-slice files. Verified with `git
+  check-ignore -v` on both paths, and that .afk/config.toml remains tracked.
+
+- **afk**: Mute the scout producer until the backlog drains
+  ([`256e923`](https://github.com/cdcoonce/graphmark/commit/256e92350e307395f1df86115e569c5e5d41f60a))
+
+scout filed at its ~5/day cap on 19 of 24 active days regardless of drain throughput. 104 of the 105
+  open issues are producer-filed and none is older than 35 days, while the executor landed a handful
+  in the same window — a one-way ratchet. It also re-proposed already-completed work (#276 and #283
+  verified done in the tree).
+
+harvest stays enabled: it is derived from merged-PR review comments and is self-limiting. Re-enable
+  scout once the open count is under the executor's actual weekly throughput.
+
+- **afk**: Point the executor at dev, matching this repo's promotion policy
+  ([#182](https://github.com/cdcoonce/graphmark/pull/182),
+  [`ae06642`](https://github.com/cdcoonce/graphmark/commit/ae066426d07ff8af678274a115f5f9fcd3634513))
+
+Policy here is branch -> PR into dev -> promote dev -> main; a feature branch never lands on main
+  directly. afk defaults trunk_branch to main, which made the executor the one actor exempt from
+  that policy — PR #181 was opened against main while every human PR takes two hops.
+
+afk#998 made it configurable; this is the opt-in. It governs both the branch a slice forks from and
+  the branch its PR targets.
+
+Two consequences are recorded in the config comment because both bite: the --cycle preflight refuses
+  to run unless local HEAD is trunk_branch, so this working copy must sit on dev (leaving it on main
+  is exactly the wedge that cost the-workshop five nightlies); and GitHub only auto-closes linked
+  issues on the default branch, so a slice's issue now closes at promote time rather than at slice
+  merge, which gates dependent slices behind the promote.
+
+- **afk**: Unblock the executor — allowed_tools, and the two run artifacts #170 missed
+  ([#179](https://github.com/cdcoonce/graphmark/pull/179),
+  [`9baf632`](https://github.com/cdcoonce/graphmark/commit/9baf632e806e41b5b93eb478df5cbb094dfa4722))
+
+* chore(afk): grant the executor its gate commands via allowed_tools
+
+A slice runs in a fresh worktree, and Claude Code discards every permissions.allow entry in a
+  workspace it has not trusted — argv is the only grant channel that survives. graphmark's
+  .afk/config.toml had no allowed_tools at all, so --allowedTools went out empty and every Bash call
+  parked on an approval prompt no one was present to answer.
+
+Measured 2026-08-01: issue #173 parked after 2 attempts, unable to run even 'uv --version', so the
+  gate never executed. The slice reported the blockage honestly rather than faking a pass, but it
+  could not build.
+
+Grants the gate and dev-probe commands only. Anything that reaches the network is deliberately
+  absent: egress is a security surface, and work that needs a remote gets its data transcribed into
+  the issue instead.
+
+* chore(afk): untrack last-run.md and quarantine-log.md too
+
+#170 untracked the telemetry file, but the wedge has three sources, not one. `--execute` rewrites
+  docs/dev-cycle/last-run.md on every run and the driver rewrites quarantine-log.md on every park,
+  so the tree went dirty again on the very next drain — this one.
+
+afk-agent-system ignores last-run.md and does not track quarantine-log.md at all; graphmark tracked
+  both. Contents stay on disk, which is where afk-cockpit and the quarantine triage flow read them
+  from.
+
+- **afk**: Untrack cycle telemetry so the nightly stops wedging
+  ([#170](https://github.com/cdcoonce/graphmark/pull/170),
+  [`52215e4`](https://github.com/cdcoonce/graphmark/commit/52215e4cabee207383fb7c5363d58223c6e58021))
+
+The nightly --cycle appends to docs/dev-cycle/telemetry.jsonl and nothing commits it, so the next
+  run's preflight aborts on a dirty tree. Five consecutive nightlies (07-28..08-01) died this way;
+  the fleet streak counter is at 5. afk-agent-system ignores the same path for the same reason, and
+  afk-cockpit ingests the working-tree file rather than git, so the dashboard is unaffected.
+
+- **corpus**: Drop the parked-question artifact from the diff-mode slice
+  ([`7567737`](https://github.com/cdcoonce/graphmark/commit/75677377be18252d0e2c93e66e10016105755219))
+
+`.afk/question.md` is runtime state, not product code. The scope gate exempts it precisely because
+  parking is a runtime decision an issue body cannot name (PARKED_QUESTION_PATH in
+  afk_driver/scope_scan.py), and the executor is meant to read-and-remove it rather than commit it
+  to the trunk.
+
+dev's .gitignore covers .afk/transcripts/, worktrees/ and parity/ but not question.md, and dev
+  tracks only .afk/config.toml — so merging this slice as-authored would have landed a stale,
+  already-answered question as tracked state. Untracked here rather than deleted, so the local copy
+  survives for reference.
+
+Leaves the slice at its intended footprint: scripts/corpus/diff.py plus tests/test_corpus_diff.py.
+
+- **telemetry**: Record afk cycle rows
+  ([`d106e5e`](https://github.com/cdcoonce/graphmark/commit/d106e5ec82be783813b7cd284b380a7c5a72b438))
+
+- **test**: Resolve scripts imports via pytest pythonpath
+  ([#373](https://github.com/cdcoonce/graphmark/pull/373),
+  [`9501049`](https://github.com/cdcoonce/graphmark/commit/9501049af459e34a4e46e6cc60ceb59ef717c479))
+
+Add pythonpath = ["."] to [tool.pytest.ini_options] and drop the per-file sys.path.insert + noqa:
+  E402 preamble from the five corpus test modules.
+
+### Documentation
+
+- Add Agent discipline section to CLAUDE.md ([#355](https://github.com/cdcoonce/graphmark/pull/355),
+  [`3c6f76a`](https://github.com/cdcoonce/graphmark/commit/3c6f76aaf38efb04f6a82043697b75838c52053b))
+
+Pins rules for transcribed reference-data tests, worktree freshness checks before implementing a
+  dependent slice, and PR base branch / issue auto-close verification via the human reviewer or
+  promotion tooling (not the tool-restricted sandboxed slice).
+
+- **afk**: Record the verified issue-auto-close mechanism
+  ([#184](https://github.com/cdcoonce/graphmark/pull/184),
+  [`39f4c3d`](https://github.com/cdcoonce/graphmark/commit/39f4c3d37553fe893be4644bbf73f153f3f8d0fb))
+
+* docs(afk): correct the issue-auto-close claim in the trunk_branch note
+
+The comment said a slice's issue closes when dev promotes to main. That is unverified, and the only
+  live datapoint contradicts it: the-workshop runs the same posture and five shipped issues sat
+  afk:promoted until a human closed them.
+
+Matters because Depends-on gating keys on closure, so a stale label stalls the dependent queue on
+  bookkeeping rather than on work — and a phantom-promoted backlog is indistinguishable from a
+  blocked one.
+
+* docs(afk): state the verified auto-close mechanism, not the inherited guess
+
+The prior revision of this note asserted that a dev-merge leaves its issue open and that the dev ->
+  main promote might not close it either, citing the-workshop. Both this repo's default branch and
+  the-workshop's were unchecked; they differ.
+
+graphmark's default branch IS `dev` (gh api ... .default_branch), so a slice PR merged into dev
+  closes its issue at slice-merge time. Verified: #181 merged to dev, #173 closed COMPLETED, no
+  promote in between. the-workshop's default is `main`, which is why its dev-merges went phantom.
+
+Records the inversion (moving the default to main reacquires that failure) and the stale origin/HEAD
+  symref that seeded the wrong belief.
+
+- **claude**: Add input-pinning, normalization, and docs-example rules to Agent discipline
+  ([#385](https://github.com/cdcoonce/graphmark/pull/385),
+  [`32f4276`](https://github.com/cdcoonce/graphmark/commit/32f4276c225843fb9abb4a159816124e5490276d))
+
+Closes #370 Closes #371 Closes #372
+
+- **config**: Pin root-level notes as always out-of-scope under scoped_folders
+  ([#362](https://github.com/cdcoonce/graphmark/pull/362),
+  [`e345ac9`](https://github.com/cdcoonce/graphmark/commit/e345ac97b7b8d8ecd8a3ed8412ac2ef6962908b8))
+
+VaultGraph.build's scope check compares rel_parts[0] against scoped_folders, but a root-level note
+  has no folder segment so rel_parts[0] is the filename itself, not a folder -- it can never match
+  once scoped_folders is non-empty. This was untested and undocumented. Adds a test pinning the
+  existing exclusion behavior and a comment on VaultConfig.scoped_folders explaining it; no behavior
+  change.
+
+- **config**: State that an absolute TOML root is used as-is
+  ([#310](https://github.com/cdcoonce/graphmark/pull/310),
+  [`4d43bd1`](https://github.com/cdcoonce/graphmark/commit/4d43bd1ac34ef8c8df608678909111d7072b6d84))
+
+* docs(config): state that an absolute TOML root is used as-is
+
+* docs(config): rewrap the absolute-root docstring to the line limit
+
+- **corpus**: Freeze expected per-vault distributions for the eight pinned vaults
+  ([#331](https://github.com/cdcoonce/graphmark/pull/331),
+  [`f32d646`](https://github.com/cdcoonce/graphmark/commit/f32d646ff59895b11217f4c0df226906e0f1e946))
+
+Generated by `scripts.corpus.cli report` from dev e5bdb19 against a cache verified clean at every
+  manifest SHA. The reports are byte-stable across two runs, and `diff` against them exits 0.
+
+Reconciled against docs/corpus-study.md: re-running the same cache with the study's four per-vault
+  template exclusions reproduces every third-party row of its Results table exactly. The
+  manifest-vs-study gap (kepano 51 -> 103 notes, 74.1% -> 81.3% non-note-file) is exclusion policy
+  alone, not engine drift.
+
+Refs #172.
+
+- **corpus**: Mark the study table superseded as the oracle; record its exclusions
+  ([#188](https://github.com/cdcoonce/graphmark/pull/188),
+  [`d50af48`](https://github.com/cdcoonce/graphmark/commit/d50af48ed4d29703342bd7ae17485fccb8a61c95))
+
+Track G freezes distributions from docs/corpus/manifest.toml, which excludes only
+  .git/.obsidian/.github. This page's run additionally excluded a hand-picked template or meta
+  directory per vault, so the two disagree.
+
+The decision is to keep manifest semantics: a per-vault exclusion list has no derivable criterion
+  (three of four are named for templates, CyanVoxel's '99 - Meta' is not), so it can only be
+  transcribed - the human step Track G exists to remove.
+
+Measured the cost first. Only kepano-obsidian moves, because its Templates/ is 52 of its 103 notes:
+  51/54 notes/links at 74.1% non-note-file becomes 103/75 at 81.3%. ArchVault,
+  BugBountyKnowledgeBase and Obsidian-Vault-Template change note count only, with identical link
+  distributions; the other four vaults are unaffected. No conclusion on the page changes - the #101
+  evidence strengthens, and the 1.8%-27% missing range is set by vaults that do not move.
+
+Records the per-vault exclusions in Method so this run stays reproducible, and notes that exclusions
+  already match at any path depth.
+
+- **graph**: State the blue-book measurement once in resolve_markdown_target
+  ([#377](https://github.com/cdcoonce/graphmark/pull/377),
+  [`fc360af`](https://github.com/cdcoonce/graphmark/commit/fc360af52c14816cecd7ee121832d5b47bb495f6))
+
+- **readme**: Fix graphmark check example JSON to match run_check() shape
+  ([#365](https://github.com/cdcoonce/graphmark/pull/365),
+  [`9bd180d`](https://github.com/cdcoonce/graphmark/commit/9bd180d207cf8ebb41f3aae39dcd59b5d90cf54f))
+
+* docs(readme): fix graphmark check example JSON to match run_check() shape
+
+The console example under 'graphmark check' only showed two checks entries and omitted the links
+  key, though the config above declares three thresholds and run_check() always appends a links
+  report. This replaces the illustrative JSON with output matching the real shape and key order,
+  keeping the same single-breach narrative.
+
+* docs(readme): keep the check example consistent with the config block shown above it
+
+- **roadmap**: Close Track F, open Track G (the corpus harness)
+  ([#171](https://github.com/cdcoonce/graphmark/pull/171),
+  [`f33a74f`](https://github.com/cdcoonce/graphmark/commit/f33a74ff28aa1d1dfa701df4f26a235b0341ff61))
+
+Track F shipped out at v0.9.1 (#124-#127, #133, #136-#139, #146, #151, #152, #156, #157) and the
+  ROADMAP still called it the current epic, so --expand would have grounded scout in closed work.
+
+Track G takes up what Track F's own evidence pointed at: the corpus study found nine defects in two
+  runs and is entirely manual, and the reference vault leaves 54% of the package unexercised because
+  it has zero broken links. The track makes the corpus run repeatable and its results frozen.
+
+Also truthed up the shipped baseline: version 0.6.0 -> 0.9.1, and the markdown/autolinks link
+  syntaxes were missing from it entirely.
+
+- **roadmap**: Record ragmark handoff — 2026-07-19 reaffirmation and gaps() deprecation path
+  ([#197](https://github.com/cdcoonce/graphmark/pull/197),
+  [`bf60a2c`](https://github.com/cdcoonce/graphmark/commit/bf60a2c0f6b67ec002fc75e853db26b990449cc3))
+
+The vault-local-RAG blueprint (the-vault#136) closed 2026-08-02 with two lines owed here at dispatch
+  time:
+
+- Non-goals: the embeddings and MCP/retrieval clauses were deliberately re-opened and REAFFIRMED
+  first-class (the-vault#139); retrieval lives in the sibling package ragmark, graphmark stays its
+  graph dependency. - gaps(): the gap policy (GAPS_DEFAULT_* banding, filtering, ranking,
+  dismissal-store semantics) migrates into ragmark; gaps() and the CLI guidance-exit deprecate when
+  ragmark's gap module lands (the-vault#143). Surface frozen until then.
+
+### Features
+
+- **api**: Export LINK_SYNTAXES from top-level graphmark package
+  ([#341](https://github.com/cdcoonce/graphmark/pull/341),
+  [`8688ac8`](https://github.com/cdcoonce/graphmark/commit/8688ac8b9b372847358dca9666795f2cdeb12d44))
+
+The __init__.py docstring promises everything the package composes is re-exported, but LINK_SYNTAXES
+  required reaching into graphmark.config. Add it to the top-level import and __all__, and pin the
+  new import path with tests.
+
+Closes #265
+
+- **corpus**: Surface alias_resolved in the vault report
+  ([#325](https://github.com/cdcoonce/graphmark/pull/325),
+  [`b829561`](https://github.com/cdcoonce/graphmark/commit/b829561507589c795995e064f70716c5b5fb1f5e))
+
+* feat(corpus): surface alias_resolved in the vault report
+
+build_vault_report discarded links_report's alias_resolved field, reintroducing the
+  frontmatter-alias blind spot one layer up in the corpus report. Thread it through as a top-level
+  bare-int field, sibling to notes/links, matching links_report's own shape.
+
+Closes #249
+
+* test(corpus): strengthen alias_resolved fixture with a non-alias resolved link
+
+Keeps alias_resolved distinct from both links total and the resolved bucket count, so a mutation
+  substituting either for alias_resolved is caught.
+
+- **corpus**: Thread link_syntax through the manifest and report
+  ([#368](https://github.com/cdcoonce/graphmark/pull/368),
+  [`d03f9ec`](https://github.com/cdcoonce/graphmark/commit/d03f9ec6bfbaa0e19fde19fd96276d019a334d93))
+
+Add an optional link_syntax field to CorpusVault (default "wikilink", preserving current behavior
+  for every existing manifest entry), read it in load_manifest with the required-field list
+  explicitly excluding it, and pass it through build_vault_report's VaultConfig construction so a
+  markdown-link vault (e.g. lyz-code/blue-book) reports real resolved counts instead of a silent,
+  misleading zero.
+
+- **corpus**: Wire fetch/report/diff into a CLI with offline cache-miss skip
+  ([#300](https://github.com/cdcoonce/graphmark/pull/300),
+  [`a54a948`](https://github.com/cdcoonce/graphmark/commit/a54a948bb610c58316637f1ad1c5775cbe992fb8))
+
+- **export**: Add optional indent parameter to to_json
+  ([#349](https://github.com/cdcoonce/graphmark/pull/349),
+  [`969d1cd`](https://github.com/cdcoonce/graphmark/commit/969d1cd98413d26a134f4dc8fb216ec632a47be6))
+
+Threads an optional keyword-only indent through to json.dumps so callers can request pretty-printed
+  output without bypassing to_json. Default None preserves today's exact compact output
+  byte-for-byte.
+
+### Performance Improvements
+
+- **corpus**: Populate fresh cache entries by init + pinned fetch, not a full clone
+  ([#330](https://github.com/cdcoonce/graphmark/pull/330),
+  [`e5bdb19`](https://github.com/cdcoonce/graphmark/commit/e5bdb19e045aedf1f9212f5b3eeb1860f3ecd38f))
+
+- **corpus**: Skip git fetch when correcting to an already-local SHA
+  ([#329](https://github.com/cdcoonce/graphmark/pull/329),
+  [`985568b`](https://github.com/cdcoonce/graphmark/commit/985568bd53dd83eddd354081ce3047a0986e1ed6))
+
+fetch_vault's existing-target, wrong-SHA correction branch used to call _fetch_pinned_commit
+  unconditionally, issuing a network fetch even when the target SHA was already a local git object
+  (e.g. reachable from the entry's initial full clone). A non-mutating git cat-file -e probe now
+  gates that call so a purely-local correction goes straight to checkout.
+
+Closes #273
+
+### Refactoring
+
+- **check**: Replace check.py's if-chain dispatch with a validated mapping
+  ([#335](https://github.com/cdcoonce/graphmark/pull/335),
+  [`912fe38`](https://github.com/cdcoonce/graphmark/commit/912fe384ca4b4c3804cce1b1a639f95e35f73f9c))
+
+_actual() dispatched on CheckPolicy field names via a hand-written if-chain ending in an uncovered
+  AssertionError fallback, so a new CheckPolicy field left unwired only failed at first real
+  invocation, not at test time. Replace it with a module-level _DISPATCH dict and add a test
+  asserting its keys match CheckPolicy's fields, making an unwired field fail the suite.
+
+- **cli**: Extract _die() helper for the stderr-error-and-exit(2) pattern
+  ([#339](https://github.com/cdcoonce/graphmark/pull/339),
+  [`44bf2a7`](https://github.com/cdcoonce/graphmark/commit/44bf2a7fac8870d1de7a78f7cfc93f30a177978c))
+
+The print+sys.exit(2) pair was duplicated across five sites (_load, hubs, neighborhood, pagerank,
+  check). Factor it into one _die(message) helper, called at all five sites with each site's own
+  exception tuple preserved.
+
+- **config**: Make load_config's rules_files fallback track the dataclass default
+  ([#354](https://github.com/cdcoonce/graphmark/pull/354),
+  [`1705cc5`](https://github.com/cdcoonce/graphmark/commit/1705cc559b5f72f59ee00f9d34311bdfdbd4ba4f))
+
+load_config re-literaled ["CLAUDE.md", "CLAUDE.local.md"] instead of referencing
+  VaultConfig.rules_files's own default_factory, so the two had to be kept in sync by hand. The
+  literal now appears exactly once in config.py.
+
+Closes #233
+
+- **graph**: Extract shared _group_sorted helper for catalog and out-of-scope maps
+  ([#336](https://github.com/cdcoonce/graphmark/pull/336),
+  [`2267830`](https://github.com/cdcoonce/graphmark/commit/22678303fdb8c8c8d280d159c9e0655345fc0073))
+
+build_catalog() and VaultGraph.build()'s out-of-scope mapping each did the same
+  setdefault-then-sort-each-value grouping inline, with a comment tying the two together to keep
+  them in sync. Replace both with a single private _group_sorted(pairs) helper; output is unchanged.
+
+- **graph**: Extract shared _strip_alias_and_anchor helper
+  ([#345](https://github.com/cdcoonce/graphmark/pull/345),
+  [`1b343c8`](https://github.com/cdcoonce/graphmark/commit/1b343c8020c7a10c50165c00b334fc14b97554a5))
+
+The alias/anchor split-and-strip expression was independently re-derived in _strip_display,
+  _targets_non_note_file, and _is_intra_note_reference. Extract it into a single private helper so a
+  future change to the rule only needs updating in one place.
+
+- **parse**: Extract shared _strip_non_link_regions helper
+  ([#338](https://github.com/cdcoonce/graphmark/pull/338),
+  [`aef3695`](https://github.com/cdcoonce/graphmark/commit/aef369540d7fd2605a89b99e138a1090fee6e579))
+
+The two-line fenced-block/inline-code stripping sequence was duplicated verbatim across
+  count_markdown_links and both LinkExtractor.extract methods. Extracting it into one helper keeps
+  the three call sites from silently drifting on what counts as code eligible to hold a link.
+
+Closes #228
+
+### Testing
+
+- Add direct unit tests for resolve_markdown_target edge cases
+  ([#360](https://github.com/cdcoonce/graphmark/pull/360),
+  [`d6c9adb`](https://github.com/cdcoonce/graphmark/commit/d6c9adb753cbb07caafd89e8d5c612bab3374d93))
+
+Pins the autolinks bare-target passthrough, relative-path normalization against source_rel_path's
+  parent, and vault-root-escape-to-None behaviors that were previously only exercised indirectly
+  through full builds.
+
+- **check**: Cover run_check's max_unresolved_links against ambiguous + missing
+  ([#369](https://github.com/cdcoonce/graphmark/pull/369),
+  [`35b25f4`](https://github.com/cdcoonce/graphmark/commit/35b25f4206d7027292df9517382cd586d3067534))
+
+Every existing run_check test drives either the SIMPLE fixture (0 ambiguous links) or a synthetic
+  vault with only missing links, so nothing would notice if the max_unresolved_links dispatch
+  silently dropped the ambiguous half of the sum. Add a synthetic tmp_path vault with one of each
+  and assert the actual equals ambiguous + missing and exceeds either alone.
+
+Closes #251
+
+- **check**: Pin breach_lines and links_summary_line exact formats
+  ([#364](https://github.com/cdcoonce/graphmark/pull/364),
+  [`84e2346`](https://github.com/cdcoonce/graphmark/commit/84e23466e0e3b624e318f29ab1d07a0279e57c0f))
+
+Direct unit tests for check.py's breach_lines and links_summary_line had been entirely indirect
+  (loose substring assertions against CLI stderr in tests/test_check.py and
+  tests/test_links_report.py). Add direct tests pinning the exact " · "-joined format including
+  alias-resolved N, and breach_lines' exact "name: actual exceeds limit limit" format with passing
+  checks omitted, in report order.
+
+Closes #272
+
+- **check**: Pin max_siloed's breach arm against the alt fixture
+  ([#356](https://github.com/cdcoonce/graphmark/pull/356),
+  [`bc4940f`](https://github.com/cdcoonce/graphmark/commit/bc4940f2ba336800b22cfa5f080b83bce001c3a5))
+
+max_siloed was only ever exercised at the limit==actual==0 pass boundary via the simple fixture, so
+  its breach arm in run_check had zero coverage, unlike max_orphans and max_unresolved_links. The
+  alt fixture's 5 siloed notes drive it past a configured limit of 2, asserting the report's
+  pass:False, actual:5, and that breach_lines names max_siloed.
+
+Closes #241
+
+- **config**: Pin resolve_aliases through load_config's TOML path
+  ([#347](https://github.com/cdcoonce/graphmark/pull/347),
+  [`fafd49a`](https://github.com/cdcoonce/graphmark/commit/fafd49afc17d97c456965267a6d2bd486a09a69b))
+
+Add two TestLoadConfig cases proving resolve_aliases is actually read from TOML (false) and defaults
+  to true when the key is absent, closing the gap where every existing resolve_aliases test bypassed
+  load_config by constructing VaultConfig directly.
+
+- **corpus**: Prove build_vault_report applies excluded_dirs
+  ([#314](https://github.com/cdcoonce/graphmark/pull/314),
+  [`e02aa70`](https://github.com/cdcoonce/graphmark/commit/e02aa70098c43f6f39625b6a4654586f98836bc5))
+
+Add a test that builds two CorpusVaults over the same synthetic vault (one note/link inside an
+  "archive" subdir, one outside it) differing only in excluded_dirs, and asserts the
+  excluded_dirs=("archive",) report counts fewer notes than the excluded_dirs=() report. Previously
+  the only fixture in this file always used excluded_dirs=(), so build_vault_report's wiring of
+  vault.excluded_dirs into VaultConfig had zero coverage.
+
+- **corpus-report**: Anchor subprocess-stability test to in-process output
+  ([#359](https://github.com/cdcoonce/graphmark/pull/359),
+  [`a9b9de6`](https://github.com/cdcoonce/graphmark/commit/a9b9de69031143f20355afe28712146b40a8b18c))
+
+The subprocess-vs-subprocess byte-stability test only compared the two subprocess runs to each
+  other, so a defect that diverges only for an in-process call (e.g. keyed on sys.argv[0]) would
+  slip through undetected. Assert the subprocess output also equals report_json's in-process output
+  directly, and that it is non-empty.
+
+Closes #211
+
+- **gaps**: Isolate hub_degree ranking demotion
+  ([#366](https://github.com/cdcoonce/graphmark/pull/366),
+  [`7677747`](https://github.com/cdcoonce/graphmark/commit/76777477fe0fb70168f0ad1c41cf1cf2d2200253))
+
+Add TestHubDegree to tests/test_gaps_params.py, covering the sort-key demotion in _rank_key that
+  previously was only exercised indirectly by the frozen gaps oracle. Asserts a hub-touching pair is
+  demoted below a lower-scoring non-hub pair regardless of score, that demotion never excludes the
+  pair, that the degree>=hub_degree boundary is inclusive, and that hub_degree=None never demotes
+  anything.
+
+- **metrics**: Pin _undirected as out_links-only against asymmetric back_links
+  ([#348](https://github.com/cdcoonce/graphmark/pull/348),
+  [`63c3052`](https://github.com/cdcoonce/graphmark/commit/63c305225f8e37e1859f0473aceceb9880144832))
+
+Hand-build a VaultGraph with genuinely asymmetric out_links/back_links and assert orphans() reflects
+  today's out_links-only degree computation, so a future change to honor the documented union
+  contract is a deliberate, visible decision rather than a silent behavior shift.
+
+- **metrics**: Pin stats()/orphans() transient_prefixes divergence
+  ([#357](https://github.com/cdcoonce/graphmark/pull/357),
+  [`343b4d9`](https://github.com/cdcoonce/graphmark/commit/343b4d9cb6e0390ff6d793d2739e18a4be932945))
+
+stats() never consults transient_prefixes (its orphans field is frozen against
+  tests/fixtures/simple/expected.json) while orphans() filters degree-0 nodes matching
+  config.transient_prefixes, so the two can legitimately disagree once transient_prefixes is set.
+  Add a TestStats case that exercises both functions against the same config and pins the current,
+  intentional divergence.
+
+
 ## v0.9.1 (2026-07-26)
 
 ### Bug Fixes
