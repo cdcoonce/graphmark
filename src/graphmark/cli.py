@@ -212,54 +212,78 @@ def main() -> None:
     if args.config is None and args.root is None:
         parser.error("--config or --root required")
 
-    graph, config = _load(args)
+    report = None  # set by `links`/`check` before their stdout print, for the pipe handler
+    exit_code = 0  # what a closed stdout pipe exits with; `check` raises it to 1 on a breach
+    try:
+        graph, config = _load(args)
 
-    if args.command == "stats":
-        print(to_json(stats(graph)))
-    elif args.command == "orphans":
-        print(to_json(orphans(graph, config)))
-    elif args.command == "hubs":
+        if args.command == "stats":
+            print(to_json(stats(graph)), flush=True)
+        elif args.command == "orphans":
+            print(to_json(orphans(graph, config)), flush=True)
+        elif args.command == "hubs":
+            try:
+                result = hubs(graph, n=args.n)
+            except ValueError as e:
+                _die(str(e))
+            print(to_json(result), flush=True)
+        elif args.command == "clusters":
+            print(to_json(clusters(graph)), flush=True)
+        elif args.command == "bridges":
+            print(to_json(bridges(graph)), flush=True)
+        elif args.command == "siloed":
+            print(to_json(siloed_notes(graph)), flush=True)
+        elif args.command == "neighborhood":
+            try:
+                result = neighborhood(graph, args.note, depth=args.depth)
+            except ValueError as e:
+                _die(str(e))
+            print(to_json(result), flush=True)
+        elif args.command == "pagerank":
+            try:
+                result = pagerank(graph, n=args.n, alpha=args.alpha)
+            except (ValueError, nx.PowerIterationFailedConvergence) as e:
+                _die(str(e))
+            print(to_json(result), flush=True)
+        elif args.command == "export" and args.format == "dot":
+            print(to_dot(graph), flush=True)
+        elif args.command == "links":
+            report = links_report(graph)
+            print(to_json(report), flush=True)
+            # stdout stays pipeable JSON; the at-a-glance line goes to stderr, as breach_lines does.
+            print(links_summary_line(report), file=sys.stderr)
+        elif args.command == "check":
+            try:
+                report = run_check(graph, config)
+            except ValueError as e:
+                # A misconfigured gate is a usage error (2), never a breach (1) — CI must be able
+                # to tell "your vault is unhealthy" from "your config is wrong".
+                _die(str(e))
+            exit_code = 0 if report["pass"] else 1
+            print(to_json(report), flush=True)
+            for line in breach_lines(report):
+                print(line, file=sys.stderr)
+            sys.exit(exit_code)
+    except BrokenPipeError:
+        # The reader closed early. stdout is flushed per print so the error surfaces here, not at
+        # interpreter shutdown (which would exit 120). Point stdout at devnull so that final flush
+        # cannot raise again. The reader chose to stop, so that is a clean exit, except that a
+        # `check` breach keeps its exit 1: CI must never see a breach as a pass.
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        # The stderr lines that follow the stdout print never ran; stderr is a separate fd, so
+        # re-emit them (best effort: a dead stderr must not add a traceback).
         try:
-            result = hubs(graph, n=args.n)
-        except ValueError as e:
-            _die(str(e))
-        print(to_json(result))
-    elif args.command == "clusters":
-        print(to_json(clusters(graph)))
-    elif args.command == "bridges":
-        print(to_json(bridges(graph)))
-    elif args.command == "siloed":
-        print(to_json(siloed_notes(graph)))
-    elif args.command == "neighborhood":
-        try:
-            result = neighborhood(graph, args.note, depth=args.depth)
-        except ValueError as e:
-            _die(str(e))
-        print(to_json(result))
-    elif args.command == "pagerank":
-        try:
-            result = pagerank(graph, n=args.n, alpha=args.alpha)
-        except (ValueError, nx.PowerIterationFailedConvergence) as e:
-            _die(str(e))
-        print(to_json(result))
-    elif args.command == "export" and args.format == "dot":
-        print(to_dot(graph))
-    elif args.command == "links":
-        report = links_report(graph)
-        print(to_json(report))
-        # stdout stays pipeable JSON; the at-a-glance line goes to stderr, as breach_lines does.
-        print(links_summary_line(report), file=sys.stderr)
-    elif args.command == "check":
-        try:
-            report = run_check(graph, config)
-        except ValueError as e:
-            # A misconfigured gate is a usage error (2), never a breach (1) — CI must be able
-            # to tell "your vault is unhealthy" from "your config is wrong".
-            _die(str(e))
-        print(to_json(report))
-        for line in breach_lines(report):
-            print(line, file=sys.stderr)
-        sys.exit(0 if report["pass"] else 1)
+            if report is not None and args.command == "links":
+                print(links_summary_line(report), file=sys.stderr)
+            elif report is not None and args.command == "check":
+                for line in breach_lines(report):
+                    print(line, file=sys.stderr)
+        except OSError:
+            # stderr is dead too: unwritten bytes would stay buffered and the shutdown flush would
+            # override the exit code with 120, so point stderr at devnull as well.
+            os.dup2(devnull, sys.stderr.fileno())
+        sys.exit(exit_code)
 
 
 if __name__ == "__main__":
