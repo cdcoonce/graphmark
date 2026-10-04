@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.10.1 (2026-10-04)
+
+### Bug Fixes
+
+- **dismiss**: Make weaklink_sig injective for paths containing a pipe
+  ([#389](https://github.com/cdcoonce/graphmark/pull/389),
+  [`7810060`](https://github.com/cdcoonce/graphmark/commit/7810060a065ef00eb91780cb40618c854f284737))
+
+Refs #271, cdcoonce/ragmark#204
+
+
 ## v0.10.0 (2026-10-04)
 
 ### Bug Fixes
