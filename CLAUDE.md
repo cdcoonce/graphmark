@@ -78,6 +78,19 @@ This file governs autonomous (afk) work in this repo. It is the contract.
   the sum of its parts. The PR body states that this cross-check was done and how. Example: in #365
   (implementing #235) the first commit set the example limit to 20 against the config's 0; it was
   caught and fixed only before merge.
+- **Fix an in-scope pre-existing defect in the slice; flag an out-of-scope one.** When a slice
+  finds a defect already in the code path it is changing, and the defect is an instance of the
+  case the issue names (e.g. its "empty block" case), fix it in that PR: write the failing test
+  first, watch it go red against the current code, then make the minimal fix. "It existed before
+  this PR" does not defer an in-scope case; a defect outside the issue's stated case is flagged in
+  the PR body, not fixed, so PRs stay small and single-purpose. A slice that touches a regex with
+  an optional or greedy group also adds a degenerate-input test (empty block, adjacent
+  delimiters, a later delimiter in the body) showing the group does not swallow later content; it
+  complements the "Pin accepted inputs before changing a parser" bullet. The PR body states the
+  red result of the fix's test under the old code and its green result under the fix (e.g. "1
+  failed, 78 passed" under the old form). Grounding case #382: the greedy optional frontmatter group
+  `(.*?\r?\n)?` captured `---\nBody\n` from `---\n---\nBody\n---\nmore\n`; the lazy
+  `(.*?\r?\n)??` and `test_empty_block_does_not_swallow_a_later_body_rule` fixed it in the PR.
 
 ## The gate
 
