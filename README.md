@@ -147,6 +147,16 @@ worse than no gate.
 
 ## `gaps` — link suggestions with injected similarity
 
+> **Deprecated.** The gap policy now lives in
+> [ragmark v0.2.0](https://github.com/cdcoonce/ragmark/releases/tag/v0.2.0), in its
+> `ragmark.gaps` module; install ragmark from that release page. That module is not a drop-in for
+> `graphmark.gaps()`: `ragmark.gaps.rank_pairs` takes an injected similarity function as this
+> section describes, while `ragmark.gaps.gaps` ranks against ragmark's own index.
+> `graphmark.gaps()` and `graphmark gaps` are deprecated but still work: `gaps()` emits a
+> `DeprecationWarning` on every call and returns exactly what it always did, and the CLI verb
+> prints a deprecation line to stderr and still exits `2`. The dismissal store below
+> (`weaklink_sig`, `record_dismissal`, `active_dismissed_sigs`, `load_dismissed`) is unchanged.
+
 `gaps` is **library-first**. graphmark owns the deterministic ranking and filtering — already-linked
 pairs, self-pairs, thresholds, prefix exclusions, dismissed pairs, reciprocal dedup, novelty-first
 ordering — while _you_ supply the similarity source. No embeddings ship in this package, and the
@@ -169,8 +179,8 @@ suggestions = graphmark.gaps(graph, my_similarity, **graphmark.GAPS_DEFAULT_BAND
 available individually as `GAPS_DEFAULT_THRESHOLD` and friends). The `Similarity` protocol in
 `graphmark.interfaces` types the callable you inject.
 
-Because the CLI has no similarity source to inject, `graphmark gaps` prints guidance to stderr and
-exits `2` rather than silently returning `[]`.
+Because the CLI has no similarity source to inject, `graphmark gaps` prints guidance (and the
+deprecation notice above) to stderr and exits `2` rather than silently returning `[]`.
 
 ### Dismissing a suggestion
 

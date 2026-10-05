@@ -171,7 +171,7 @@ def main() -> None:
     sub.add_parser(
         "gaps",
         parents=[trailing_globals],
-        help="Link-gap suggestions (library-only; see the README)",
+        help="Link-gap suggestions (library-only; deprecated in favor of ragmark)",
     )
 
     sub.add_parser(
@@ -205,6 +205,11 @@ def main() -> None:
         print(
             "gaps requires an injected similarity source; use the library API "
             "(graphmark.metrics.gaps) — see README",
+            file=sys.stderr,
+        )
+        print(
+            "graphmark gaps is deprecated: gap policy has moved to ragmark v0.2.0 "
+            "(the ragmark.gaps module); see https://github.com/cdcoonce/ragmark/releases/tag/v0.2.0",
             file=sys.stderr,
         )
         sys.exit(2)

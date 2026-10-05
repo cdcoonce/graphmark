@@ -6,6 +6,7 @@ ordering, and tie-breaking are pinned by tests/fixtures/simple/expected.json.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Collection, Sequence
 
 import networkx as nx
@@ -37,6 +38,17 @@ GAPS_DEFAULT_BAND: dict[str, float | int] = {
     "k": GAPS_DEFAULT_K,
     "hub_degree": GAPS_DEFAULT_HUB_DEGREE,
 }
+
+# Emitted once per gaps() call (#384). ragmark is distributed as GitHub release assets, not on
+# PyPI (the PyPI project of that name is an unrelated package), so the release page is the pointer.
+# Deliberately no removal promise: ragmark's dismiss.py is a byte-for-byte port of graphmark's, so
+# gaps()'s companion store and weaklink_sig() must stay readable; removal is a separate, later
+# decision.
+_GAPS_DEPRECATION = (
+    "graphmark.metrics.gaps() is deprecated: gap policy has moved to ragmark v0.2.0 "
+    "(the ragmark.gaps module); see https://github.com/cdcoonce/ragmark/releases/tag/v0.2.0. "
+    "gaps() still works unchanged."
+)
 
 
 def _undirected(graph: VaultGraph) -> nx.Graph:
@@ -209,7 +221,11 @@ def gaps(
     Scope: ``note`` restricts the scan to a single note, ``targets`` to a list. **``note`` wins
     when both are given** (most specific scope), and passing both is legitimate — a caller may
     compute ``targets`` unconditionally while ``note`` stays optional.
+
+    **Deprecated.** Gap policy moved to ragmark v0.2.0 (the ``ragmark.gaps`` module). This function
+    still works and its behaviour is unchanged, but each call emits a ``DeprecationWarning``.
     """
+    warnings.warn(_GAPS_DEPRECATION, DeprecationWarning, stacklevel=2)
     if note is not None:
         target_list = [note]
     elif targets is not None:

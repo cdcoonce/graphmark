@@ -392,6 +392,38 @@ class TestGapsCommand:
         assert "graphmark.metrics.gaps" in captured.err
         assert "--config or --root required" not in captured.err
 
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["graphmark", "--config", str(SIMPLE_CONFIG), "gaps"],
+            ["graphmark", "gaps"],
+        ],
+        ids=["with-config", "bare"],
+    )
+    def test_deprecation_line_on_stderr_names_ragmark_and_keeps_exit_2(self, argv, capsys):
+        # #384: gap policy moved to ragmark v0.2.0. The verb still exits 2 with its original
+        # guidance line (unchanged, on its own line) and gains ONE separate deprecation line.
+        from graphmark.cli import main
+
+        with patch.object(sys, "argv", argv), pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        lines = captured.err.splitlines()
+        assert (
+            "gaps requires an injected similarity source; use the library API "
+            "(graphmark.metrics.gaps) — see README"
+        ) in lines
+        deprecation = [line for line in lines if "deprecated" in line.lower()]
+        assert len(deprecation) == 1
+        (line,) = deprecation
+        assert "graphmark gaps" in line
+        assert "ragmark v0.2.0" in line  # the phrase; the bare version also sits in the URL
+        assert "https://github.com/cdcoonce/ragmark/releases/tag/v0.2.0" in line
+        # The PyPI project named "ragmark" is unrelated; never send users to `pip install` it.
+        assert "pip install" not in captured.err.lower()
+
 
 class TestSiloedCommand:
     def test_emits_valid_json(self, capsys):
