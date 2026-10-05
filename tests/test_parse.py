@@ -1,6 +1,10 @@
 """Tests for parse.py: WikilinkExtractor and parse_document."""
 
+import itertools
+import re
 from pathlib import Path
+
+import pytest
 
 from graphmark.model import Document
 from graphmark.parse import (
@@ -122,6 +126,74 @@ class TestWikilinkExtractor:
         result = self.extractor.extract(text)
         assert set(result) == {"alpha", "beta", "gamma", "Alpha|the first note"}
         assert "ignored" not in result
+
+
+#: Separators that put a BLANK line between two lines: empty, spaces/tabs only, and the CRLF forms
+#: of both. A blank line ends the paragraph, so no inline code span may reach across one.
+BLANK_LINE_SEPARATORS = [
+    pytest.param("\n\n", id="lf"),
+    pytest.param("\n  \t\n", id="lf-spaces-and-tab"),
+    pytest.param("\r\n\r\n", id="crlf"),
+    pytest.param("\r\n \t\r\n", id="crlf-spaces-and-tab"),
+]
+
+
+class TestInlineCodeSpanForms:
+    """Pins what an inline code span hides today (#289), before a span may wrap a line break.
+
+    Every case is green on the single-line-only regex and has to stay green once a span may wrap
+    one line break: the widening may ADD hidden regions that wrap a break, and nothing else. It must
+    not touch a single-line span, an unterminated backtick, the text between spans, or a span that
+    a blank line separates from its partner backtick.
+    """
+
+    def setup_method(self):
+        self.extractor = WikilinkExtractor()
+
+    def test_a_single_line_span_hides_its_own_link_and_nothing_around_it(self):
+        text = "Before [[A]] `[[Hidden]]` after [[B]]."
+        assert self.extractor.extract(text) == ["A", "B"]
+
+    def test_text_between_two_spans_on_one_line_stays_visible(self):
+        assert self.extractor.extract("`[[X]]` then [[Between]] then `[[Y]]`") == ["Between"]
+
+    def test_adjacent_backticks_are_not_a_span_and_hide_nothing_after_them(self):
+        assert self.extractor.extract("empty `` then [[Visible]] to the end") == ["Visible"]
+
+    def test_a_lone_backtick_hides_nothing_on_its_own_line(self):
+        assert self.extractor.extract("a stray ` then [[Visible]] to the end") == ["Visible"]
+
+    def test_an_unterminated_backtick_hides_nothing_on_the_lines_after_it(self):
+        # No closing backtick anywhere: the opener must not swallow the lines that follow it.
+        text = "a stray `tick here\nthen [[Visible]]\nto the end\n"
+        assert self.extractor.extract(text) == ["Visible"]
+
+    @pytest.mark.parametrize("sep", BLANK_LINE_SEPARATORS)
+    def test_a_blank_line_between_two_backticks_ends_the_span(self, sep):
+        # A blank line ends the paragraph, and with it any open backtick: both links stay visible.
+        text = f"`[[First]] code with{sep}[[Second]] more`"
+        assert self.extractor.extract(text) == ["First", "Second"]
+
+    def test_a_crlf_single_line_span_hides_its_link_and_nothing_around_it(self):
+        text = "Pre [[A]]\r\n`[[Hidden]]` mid\r\nPost [[B]]\r\n"
+        assert self.extractor.extract(text) == ["A", "B"]
+
+    def test_a_span_next_to_a_fenced_block_hides_only_its_own_link(self):
+        text = "`[[Hidden]]`\n```\n[[Inside]]\n```\n`[[AlsoHidden]]` [[Visible]]\n"
+        assert self.extractor.extract(text) == ["Visible"]
+
+    def test_a_text_with_no_line_break_is_stripped_exactly_as_the_single_line_regex_did(self):
+        # The invariant behind the widening: the line-break group can only begin at a line break,
+        # so a text without one must be stripped byte for byte as before. The legacy regex is
+        # pinned verbatim; every string over an alphabet of backticks, text, a bracket, a space
+        # and a CR (up to 7 long) must strip identically -- empty spans, backtick runs and all.
+        from graphmark.parse import _INLINE_CODE_RE
+
+        legacy = re.compile(r"`[^`\n]+`")
+        for length in range(1, 8):
+            for chars in itertools.product("`a [\r", repeat=length):
+                text = "".join(chars)
+                assert _INLINE_CODE_RE.sub("", text) == legacy.sub("", text), repr(text)
 
 
 class TestParseDocument:

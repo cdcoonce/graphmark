@@ -22,9 +22,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from graphmark.config import VaultConfig
 from graphmark.graph import NormalizeResolver, VaultGraph, diagnose
-from graphmark.parse import MarkdownLinkExtractor, WikilinkExtractor
+from graphmark.parse import MarkdownLinkExtractor, WikilinkExtractor, count_markdown_links
 
 
 def _write(root: Path, rel: str, text: str = "") -> None:
@@ -90,6 +92,69 @@ class TestExtractor:
         # #261, combined with #239 syntax: a titled, angle-bracket-escaped target with a mixed-case
         # extension must still match, and the target's original casing is preserved verbatim.
         assert MarkdownLinkExtractor().extract('[text](<my note.Md> "A Title")') == ["my note.Md"]
+
+
+#: Separators that put a BLANK line between two lines: empty, spaces/tabs only, and the CRLF forms
+#: of both. A blank line ends the paragraph, so no inline code span may reach across one.
+BLANK_LINE_SEPARATORS = [
+    pytest.param("\n\n", id="lf"),
+    pytest.param("\n  \t\n", id="lf-spaces-and-tab"),
+    pytest.param("\r\n\r\n", id="crlf"),
+    pytest.param("\r\n \t\r\n", id="crlf-spaces-and-tab"),
+]
+
+
+class TestInlineCodeSpanForms:
+    """Pins what an inline code span hides today (#289), before a span may wrap a line break.
+
+    The markdown-link twin of the wikilink pins in test_parse.py: `MarkdownLinkExtractor` and
+    `count_markdown_links` strip code through the same shared helper, and each is asserted so a
+    change confined to one of the two paths cannot slip through. Every case is green on the
+    single-line-only regex and has to stay green once a span may wrap one line break.
+    """
+
+    def test_a_single_line_span_hides_its_own_link_and_nothing_around_it(self):
+        text = "Before [a](a.md) `[h](hidden.md)` after [b](b.md)."
+        assert MarkdownLinkExtractor().extract(text) == ["a.md", "b.md"]
+        assert count_markdown_links(text) == 2
+
+    def test_text_between_two_spans_on_one_line_stays_visible(self):
+        text = "`[x](x.md)` then [between](between.md) then `[y](y.md)`"
+        assert MarkdownLinkExtractor().extract(text) == ["between.md"]
+        assert count_markdown_links(text) == 1
+
+    def test_adjacent_backticks_are_not_a_span_and_hide_nothing_after_them(self):
+        text = "empty `` then [v](visible.md) to the end"
+        assert MarkdownLinkExtractor().extract(text) == ["visible.md"]
+        assert count_markdown_links(text) == 1
+
+    def test_a_lone_backtick_hides_nothing_on_its_own_line(self):
+        text = "a stray ` then [v](visible.md) to the end"
+        assert MarkdownLinkExtractor().extract(text) == ["visible.md"]
+        assert count_markdown_links(text) == 1
+
+    def test_an_unterminated_backtick_hides_nothing_on_the_lines_after_it(self):
+        # No closing backtick anywhere: the opener must not swallow the lines that follow it.
+        text = "a stray `tick here\nthen [v](visible.md)\nto the end\n"
+        assert MarkdownLinkExtractor().extract(text) == ["visible.md"]
+        assert count_markdown_links(text) == 1
+
+    @pytest.mark.parametrize("sep", BLANK_LINE_SEPARATORS)
+    def test_a_blank_line_between_two_backticks_ends_the_span(self, sep):
+        # A blank line ends the paragraph, and with it any open backtick: both links stay visible.
+        text = f"`[f](first.md) code with{sep}[s](second.md) more`"
+        assert MarkdownLinkExtractor().extract(text) == ["first.md", "second.md"]
+        assert count_markdown_links(text) == 2
+
+    def test_a_crlf_single_line_span_hides_its_link_and_nothing_around_it(self):
+        text = "Pre [a](a.md)\r\n`[h](hidden.md)` mid\r\nPost [b](b.md)\r\n"
+        assert MarkdownLinkExtractor().extract(text) == ["a.md", "b.md"]
+        assert count_markdown_links(text) == 2
+
+    def test_a_span_next_to_a_fenced_block_hides_only_its_own_link(self):
+        text = "`[h](hidden.md)`\n```\n[i](inside.md)\n```\n`[g](gone.md)` [v](visible.md)\n"
+        assert MarkdownLinkExtractor().extract(text) == ["visible.md"]
+        assert count_markdown_links(text) == 1
 
 
 class TestDefaultIsUnchanged:
