@@ -182,18 +182,191 @@ class TestInlineCodeSpanForms:
         text = "`[[Hidden]]`\n```\n[[Inside]]\n```\n`[[AlsoHidden]]` [[Visible]]\n"
         assert self.extractor.extract(text) == ["Visible"]
 
+    def test_prose_between_two_triple_backtick_spans_on_adjacent_lines_stays_visible(self):
+        # A ```x``` run leaves two end backticks behind on each side. They must not pair across
+        # the line break and hide the prose between the two spans (a real link, `[[Real]]`).
+        text = "- ```a```: see [[Real]]\n- ```b```: more\n"
+        assert self.extractor.extract(text) == ["Real"]
+
+    def test_a_backtick_run_longer_than_one_does_not_open_a_span_across_a_line_break(self):
+        assert self.extractor.extract("``a [[Visible]]\nb`") == ["Visible"]
+
+    def test_a_backtick_run_longer_than_one_does_not_close_a_span_across_a_line_break(self):
+        assert self.extractor.extract("`a [[Visible]]\nb``") == ["Visible"]
+
+    def test_an_escaped_backtick_does_not_open_a_span_across_a_line_break(self):
+        # A backslash-escaped backtick is a literal, not a delimiter: the real span `x` on the
+        # next line is the only code here, so the link before it stays visible.
+        assert self.extractor.extract("type \\` then [[Visible]]\nand `x` more") == ["Visible"]
+
     def test_a_text_with_no_line_break_is_stripped_exactly_as_the_single_line_regex_did(self):
-        # The invariant behind the widening: the line-break group can only begin at a line break,
+        # The invariant behind the widening: the wrapped alternative needs a line break to match,
         # so a text without one must be stripped byte for byte as before. The legacy regex is
-        # pinned verbatim; every string over an alphabet of backticks, text, a bracket, a space
-        # and a CR (up to 7 long) must strip identically -- empty spans, backtick runs and all.
+        # pinned verbatim; every string over an alphabet of backticks, text, a bracket, a space,
+        # a CR and a backslash (up to 7 long) must strip identically -- empty spans, backtick runs,
+        # escaped backticks and all.
         from graphmark.parse import _INLINE_CODE_RE
 
         legacy = re.compile(r"`[^`\n]+`")
         for length in range(1, 8):
-            for chars in itertools.product("`a [\r", repeat=length):
+            for chars in itertools.product("`a [\r\\", repeat=length):
                 text = "".join(chars)
                 assert _INLINE_CODE_RE.sub("", text) == legacy.sub("", text), repr(text)
+
+
+class TestInlineCodeSpanWrapsOneLineBreak:
+    """An inline code span may wrap one line break (#289).
+
+    CommonMark and Obsidian render ``See `code with\\n[[Note]]` end.`` as one code span, so the link
+    is code, not a link. Only a blank line ends the paragraph (and with it the span) -- that half is
+    pinned in `TestInlineCodeSpanForms`. The tests here put a hidden link inside the wrapped span
+    AND a visible link next to it, so they fail both on a span that is not stripped and on one that
+    swallows the text around it. A span over two or more breaks is out of scope and deliberately
+    not pinned either way.
+    """
+
+    def setup_method(self):
+        self.extractor = WikilinkExtractor()
+
+    def test_a_link_on_the_second_line_of_a_wrapped_span_is_hidden(self):
+        assert self.extractor.extract("See `code with\n[[Hidden Note]]` end.") == []
+
+    def test_a_link_on_the_first_line_of_a_wrapped_span_is_hidden(self):
+        assert self.extractor.extract("See `[[Hidden Note]] code\nmore` end.") == []
+
+    def test_links_on_both_lines_of_a_wrapped_span_are_hidden(self):
+        assert self.extractor.extract("See `[[One]] and\n[[Two]]` end.") == []
+
+    def test_a_link_on_the_second_line_of_a_crlf_wrapped_span_is_hidden(self):
+        assert self.extractor.extract("See `code with\r\n[[Hidden Note]]` end.") == []
+
+    def test_a_link_on_the_first_line_of_a_crlf_wrapped_span_is_hidden(self):
+        assert self.extractor.extract("See `[[Hidden Note]] code\r\nmore` end.") == []
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            pytest.param(
+                "- Item `code with\n  [[Hidden]]` end. [[Visible]]", id="list-continuation"
+            ),
+            pytest.param(
+                "- Item `code with\n\t[[Hidden]]` end. [[Visible]]", id="tab-continuation"
+            ),
+            pytest.param("> Quote `code with\n> [[Hidden]]` end. [[Visible]]", id="blockquote"),
+        ],
+    )
+    def test_a_wrapped_span_whose_second_line_is_indented_or_quoted_hides_its_link(self, text):
+        # The hard-wrap shapes real notes use: a list item's indented continuation line, a tab,
+        # and a blockquote's `> ` prefix. The second line need not start at column 0.
+        assert self.extractor.extract(text) == ["Visible"]
+
+    def test_text_before_and_after_a_wrapped_span_stays_visible(self):
+        text = "[[Before]] See `code with\n[[Hidden Note]]` end. [[After]]"
+        assert self.extractor.extract(text) == ["Before", "After"]
+
+    def test_text_before_and_after_a_crlf_wrapped_span_stays_visible(self):
+        text = "[[Before]] See `code with\r\n[[Hidden Note]]` end. [[After]]"
+        assert self.extractor.extract(text) == ["Before", "After"]
+
+    def test_a_link_after_a_closed_wrapped_span_on_the_same_line_stays_visible(self):
+        assert self.extractor.extract("`code with\n[[Hidden]]` [[Visible]]") == ["Visible"]
+
+    def test_a_link_on_the_line_after_a_wrapped_span_stays_visible(self):
+        text = "`code with\n[[Hidden]]`\n[[Visible]]\n"
+        assert self.extractor.extract(text) == ["Visible"]
+
+    def test_a_link_between_two_wrapped_spans_stays_visible(self):
+        text = "`a\n[[Hidden One]]` [[Between]] `[[Hidden Two]]\nb`"
+        assert self.extractor.extract(text) == ["Between"]
+
+    def test_a_link_between_a_plain_and_a_wrapped_span_on_adjacent_lines_stays_visible(self):
+        text = "`[[Hidden One]]`\n[[Between]]\n`a\n[[Hidden Two]]`"
+        assert self.extractor.extract(text) == ["Between"]
+
+    def test_a_link_between_a_wrapped_span_and_a_single_line_span_stays_visible(self):
+        # The wrapped alternative must stop at its own closing backtick: a swallow tail that
+        # reaches over the following single-line span would hide `[[Between]]` too.
+        text = "`a\n[[Hidden One]]` [[Between]] `[[Hidden Two]]`"
+        assert self.extractor.extract(text) == ["Between"]
+
+    def test_a_link_between_a_single_line_span_and_a_wrapped_span_stays_visible(self):
+        # The reverse order: the first line's run must stop at the nearest backtick, not run on to
+        # the last one on its line and open a wrapped span there.
+        text = "`[[Hidden One]]` [[Between]] `a\n[[Hidden Two]]`"
+        assert self.extractor.extract(text) == ["Between"]
+
+    def test_a_link_between_two_single_line_spans_on_adjacent_lines_stays_visible(self):
+        assert self.extractor.extract("`[[One]]`\n[[Between]]\n`[[Two]]`") == ["Between"]
+
+    @pytest.mark.parametrize("eol", [pytest.param("\n", id="lf"), pytest.param("\r\n", id="crlf")])
+    def test_an_opening_backtick_that_ends_its_line_wraps_nothing_under_either_line_ending(
+        self, eol
+    ):
+        # Known limit: CommonMark would pair a backtick that ends its line with the closing one
+        # on the next line, graphmark does not. What is pinned is that LF and CRLF agree: the
+        # lone CR of a CRLF break must not stand in for the line's missing first character.
+        text = f"See `{eol}[[Hidden]]` end [[Visible]]"
+        assert self.extractor.extract(text) == ["Hidden", "Visible"]
+
+    def test_a_text_is_stripped_the_same_under_lf_and_crlf_line_endings(self):
+        # P4: converting every LF of a text to CRLF must not change which regions are code. Every
+        # string over a short alphabet of backticks, text, a space, a line break and a backslash
+        # (up to 7 long), compared after folding the CRLFs back to LF.
+        from graphmark.parse import _INLINE_CODE_RE
+
+        for length in range(1, 8):
+            for chars in itertools.product("`a \n\\", repeat=length):
+                lf = "".join(chars)
+                crlf = lf.replace("\n", "\r\n")
+                stripped_crlf = _INLINE_CODE_RE.sub("", crlf).replace("\r\n", "\n")
+                assert stripped_crlf == _INLINE_CODE_RE.sub("", lf), repr(lf)
+
+    @pytest.mark.parametrize("eol", [pytest.param("\n", id="lf"), pytest.param("\r\n", id="crlf")])
+    @pytest.mark.parametrize(
+        "template",
+        [
+            pytest.param("[[Real Note `x{eol}y`]]", id="span-at-the-end-of-the-target"),
+            pytest.param("[[A `x{eol}y` B]]", id="span-in-the-middle-of-the-target"),
+            pytest.param("Straddle: [[Real Note `x{eol}y`]] done.", id="inside-a-sentence"),
+        ],
+    )
+    def test_a_wrapped_span_inside_a_wikilink_target_does_not_splice_a_link_together(
+        self, template, eol
+    ):
+        # `_WIKILINK_RE` is line-oriented: `.` excludes the line break, so a link never spans one.
+        # Deleting the wrapped span with its break would join the two lines and let `[[` reach a
+        # `]]` it could not reach in the original text, conjuring a link out of code.
+        assert self.extractor.extract(template.format(eol=eol)) == []
+
+    @pytest.mark.parametrize("eol", [pytest.param("\n", id="lf"), pytest.param("\r\n", id="crlf")])
+    def test_a_wrapped_span_does_not_swallow_the_opening_brackets_of_a_real_link(self, eol):
+        # The span `x]] z{eol}y` starts inside the first link's brackets and ends before the real
+        # one. Splicing the lines would let `[[Other ` pair with the real link's `]]` and eat its
+        # `[[`, losing "Real Note" for an unresolved garbage target.
+        text = f"[[Other `x]] z{eol}y` and [[Real Note]]."
+        assert self.extractor.extract(text) == ["Real Note"]
+
+    def test_a_wrapped_span_and_a_blank_line_that_ends_a_span_in_one_text(self):
+        # The first pair of backticks wraps one break and is code; the second pair is split by a
+        # blank line and is not, so the link between them is a real one.
+        text = "See `a\nb` and `c\n\n[[Visible]] d`"
+        assert self.extractor.extract(text) == ["Visible"]
+
+    def test_a_wrapped_span_beside_a_fenced_block_hides_only_its_own_link(self):
+        text = "Intro `code with\n[[Hidden]]` end.\n```\n[[Inside]]\n```\n[[Visible]]\n"
+        assert self.extractor.extract(text) == ["Visible"]
+
+    def test_the_helper_deletes_a_single_line_span_outright_but_keeps_a_wrapped_spans_break(self):
+        # `_strip_non_link_regions` is the one place spans are removed for all three consumers.
+        # A single-line span leaves nothing behind (as before this change); a wrapped span leaves
+        # one line break, so deleting it cannot splice two lines into one. Pinned on the helper
+        # itself: through the public extractors a single-line span that wrongly left a break would
+        # only show on a link that has a code span inside it.
+        from graphmark.parse import _strip_non_link_regions
+
+        assert _strip_non_link_regions("See `x` end.") == "See  end."
+        assert _strip_non_link_regions("See `x\ny` end.") == "See \n end."
+        assert _strip_non_link_regions("See `x\r\ny` end.") == "See \n end."
 
 
 class TestParseDocument:

@@ -156,6 +156,133 @@ class TestInlineCodeSpanForms:
         assert MarkdownLinkExtractor().extract(text) == ["visible.md"]
         assert count_markdown_links(text) == 1
 
+    def test_prose_between_two_triple_backtick_spans_on_adjacent_lines_stays_visible(self):
+        # A ```x``` run leaves two end backticks behind on each side. They must not pair across
+        # the line break and hide the prose between the two spans (a real link).
+        text = "- ```a```: see [r](real.md)\n- ```b```: more\n"
+        assert MarkdownLinkExtractor().extract(text) == ["real.md"]
+        assert count_markdown_links(text) == 1
+
+    def test_a_backtick_run_longer_than_one_does_not_open_a_span_across_a_line_break(self):
+        text = "``a [v](visible.md)\nb`"
+        assert MarkdownLinkExtractor().extract(text) == ["visible.md"]
+        assert count_markdown_links(text) == 1
+
+    def test_a_backtick_run_longer_than_one_does_not_close_a_span_across_a_line_break(self):
+        text = "`a [v](visible.md)\nb``"
+        assert MarkdownLinkExtractor().extract(text) == ["visible.md"]
+        assert count_markdown_links(text) == 1
+
+    def test_an_escaped_backtick_does_not_open_a_span_across_a_line_break(self):
+        # A backslash-escaped backtick is a literal, not a delimiter: the real span `x` on the
+        # next line is the only code here, so the link before it stays visible.
+        text = "type \\` then [v](visible.md)\nand `x` more"
+        assert MarkdownLinkExtractor().extract(text) == ["visible.md"]
+        assert count_markdown_links(text) == 1
+
+
+class TestInlineCodeSpanWrapsOneLineBreak:
+    """An inline code span may wrap one line break (#289), for markdown links too.
+
+    The markdown-link twin of the wikilink tests in test_parse.py. `MarkdownLinkExtractor` and
+    `count_markdown_links` are asserted separately, and `count_markdown_links` by its exact value,
+    so a change that fixes one path and leaves the other on the old behaviour is caught. A visible
+    link next to the hidden one makes each test fail on a span that swallows its surroundings too.
+    """
+
+    def test_a_link_on_the_second_line_of_a_wrapped_span_is_hidden(self):
+        text = "See `code with\n[text](note.md)` end."
+        assert MarkdownLinkExtractor().extract(text) == []
+
+    def test_a_link_on_the_first_line_of_a_wrapped_span_is_hidden(self):
+        text = "See `[text](note.md) code\nmore` end."
+        assert MarkdownLinkExtractor().extract(text) == []
+
+    def test_a_link_on_the_second_line_of_a_crlf_wrapped_span_is_hidden(self):
+        text = "See `code with\r\n[text](note.md)` end."
+        assert MarkdownLinkExtractor().extract(text) == []
+
+    def test_a_link_on_the_first_line_of_a_crlf_wrapped_span_is_hidden(self):
+        text = "See `[text](note.md) code\r\nmore` end."
+        assert MarkdownLinkExtractor().extract(text) == []
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            pytest.param("- Item `code with\n  [h](hidden.md)` end. [v](visible.md)", id="list"),
+            pytest.param("- Item `code with\n\t[h](hidden.md)` end. [v](visible.md)", id="tab"),
+            pytest.param("> Quote `code with\n> [h](hidden.md)` end. [v](visible.md)", id="quote"),
+        ],
+    )
+    def test_a_wrapped_span_whose_second_line_is_indented_or_quoted_hides_its_link(self, text):
+        # The hard-wrap shapes real notes use: a list item's indented continuation line, a tab,
+        # and a blockquote's `> ` prefix. The second line need not start at column 0.
+        assert MarkdownLinkExtractor().extract(text) == ["visible.md"]
+        assert count_markdown_links(text) == 1
+
+    def test_text_before_and_after_a_wrapped_span_stays_visible(self):
+        text = "[b](before.md) See `code with\n[h](hidden.md)` end. [a](after.md)"
+        assert MarkdownLinkExtractor().extract(text) == ["before.md", "after.md"]
+
+    def test_a_link_between_two_wrapped_spans_stays_visible(self):
+        text = "`a\n[h](one.md)` [v](between.md) `[h](two.md)\nb`"
+        assert MarkdownLinkExtractor().extract(text) == ["between.md"]
+
+    def test_a_link_between_a_wrapped_span_and_a_single_line_span_stays_visible(self):
+        # The wrapped alternative must stop at its own closing backtick: a swallow tail that
+        # reaches over the following single-line span would hide `between.md` too.
+        text = "`a\n[h](one.md)` [v](between.md) `[h](two.md)`"
+        assert MarkdownLinkExtractor().extract(text) == ["between.md"]
+        assert count_markdown_links(text) == 1
+
+    def test_a_link_between_a_single_line_span_and_a_wrapped_span_stays_visible(self):
+        # The reverse order: the first line's run must stop at the nearest backtick, not run on to
+        # the last one on its line and open a wrapped span there.
+        text = "`[h](one.md)` [v](between.md) `a\n[h](two.md)`"
+        assert MarkdownLinkExtractor().extract(text) == ["between.md"]
+        assert count_markdown_links(text) == 1
+
+    @pytest.mark.parametrize("eol", [pytest.param("\n", id="lf"), pytest.param("\r\n", id="crlf")])
+    def test_an_opening_backtick_that_ends_its_line_wraps_nothing_under_either_line_ending(
+        self, eol
+    ):
+        # Known limit: CommonMark would pair a backtick that ends its line with the closing one
+        # on the next line, graphmark does not. What is pinned is that LF and CRLF agree: the
+        # lone CR of a CRLF break must not stand in for the line's missing first character.
+        text = f"- item `{eol}  [h](hidden.md)` end [v](visible.md)"
+        assert MarkdownLinkExtractor().extract(text) == ["hidden.md", "visible.md"]
+        assert count_markdown_links(text) == 2
+
+    def test_a_link_on_the_line_after_a_wrapped_span_stays_visible(self):
+        text = "`code with\n[h](hidden.md)`\n[v](visible.md)\n"
+        assert MarkdownLinkExtractor().extract(text) == ["visible.md"]
+
+    def test_a_wrapped_span_and_a_blank_line_that_ends_a_span_in_one_text(self):
+        text = "See `a\nb` and `c\n\n[v](visible.md) d`"
+        assert MarkdownLinkExtractor().extract(text) == ["visible.md"]
+
+    def test_count_excludes_a_link_on_the_second_line_of_a_wrapped_span(self):
+        assert count_markdown_links("See `code with\n[text](note.md)` end.") == 0
+
+    def test_count_excludes_a_link_on_the_first_line_of_a_wrapped_span(self):
+        assert count_markdown_links("See `[text](note.md) code\nmore` end.") == 0
+
+    def test_count_excludes_a_link_inside_a_crlf_wrapped_span(self):
+        assert count_markdown_links("See `code with\r\n[text](note.md)` end.") == 0
+        assert count_markdown_links("See `[text](note.md) code\r\nmore` end.") == 0
+
+    def test_count_keeps_the_links_around_a_wrapped_span(self):
+        text = "[b](before.md) See `code with\n[h](hidden.md)` end. [a](after.md)"
+        assert count_markdown_links(text) == 2
+
+    def test_count_keeps_a_link_between_two_wrapped_spans(self):
+        text = "`a\n[h](one.md)` [v](between.md) `[h](two.md)\nb`"
+        assert count_markdown_links(text) == 1
+
+    def test_count_keeps_a_link_when_a_blank_line_ends_the_span(self):
+        text = "See `a\nb` and `c\n\n[v](visible.md) d`"
+        assert count_markdown_links(text) == 1
+
 
 class TestDefaultIsUnchanged:
     def test_markdown_links_are_ignored_by_default(self, tmp_path):

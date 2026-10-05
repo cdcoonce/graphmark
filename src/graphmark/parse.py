@@ -19,7 +19,37 @@ from graphmark.model import Document
 # group(1) is then None, which the call site maps to "".
 _FM_RE = re.compile(r"^---[ \t]*\r?\n(.*?\r?\n)??---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
 _WIKILINK_RE = re.compile(r"\[\[(.+?)\]\]")
-_INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
+# An inline code span may wrap exactly ONE line break (#289): CommonMark and Obsidian render
+# ``See `code with\n[[Note]]` end.`` as a single span, so a link on either line is code, not a link.
+# After the opening backtick, the first alternative is the single-line span, unchanged. The second
+# is the wrapped span: a break with at least one character on each side. A blank line ends the
+# paragraph (and with it any open backtick), and a blank line is a SECOND line break, which a single
+# `\n` cannot cross -- so "a blank line still ends the span" holds by construction. (A lookahead
+# such as `(?![ \t\r]*\n)` would be dead code here; it is needed only if wrapping is ever extended
+# to 2+ breaks.) Other block starts that end a CommonMark paragraph, such as a heading or a new list
+# item, are not modelled. The CR of a CRLF break rides along in the first line's run, but that run
+# cannot START with one (`[^`\r\n]`), so CRLF text behaves like LF: an opening backtick that ends
+# its line wraps nothing under either line ending. No quantifier is nested, so a failed attempt
+# costs at most the distance to the next backtick.
+#
+# The opening backtick sits OUTSIDE the alternation so the pattern still starts with a literal,
+# which `re` scans for directly. An alternation that opens with a lookbehind loses that scan and
+# runs several times slower on text with few backticks.
+#
+# Only the wrapped alternative carries guards, which is why a text with no line break strips
+# exactly as before. It never opens on a backtick that is escaped (`\``) or part of a longer run
+# (the lookbehind spans the opening backtick and the character before it), and never closes on one
+# that is part of a longer run. Without them, the end backticks that the single-line alternative
+# leaves behind in a ```x``` run would pair across the break and hide the prose between two such
+# spans (the list lines of a plugin README in the corpus). Delimiter-length matching proper
+# (double-backtick spans) stays out of scope.
+#
+# DELIBERATE DIVERGENCE FROM THE REFERENCE ENGINE. brain_map.py (graph_gardener._code_spans) scans
+# for inline spans one LINE at a time, so it EXTRACTS the link on the second line of a wrapped span,
+# and graphmark used to match it. graphmark now follows CommonMark/Obsidian on the owner's
+# direction (#289). No frozen fixture holds a wrapped span, so the differential oracle is
+# unaffected.
+_INLINE_CODE_RE = re.compile(r"`(?:[^`\n]+`|(?<![`\\]`)[^`\r\n][^`\n]*\n[^`\n]+`(?!`))")
 _FENCE_OPEN_RE = re.compile(r"^(`{3,}|~{3,})")
 
 
@@ -84,7 +114,11 @@ def _strip_non_link_regions(text: str) -> str:
     here, exactly as every caller already discarded it before this helper existed.
     """
     text, _ = _strip_fenced_blocks(text)
-    return _INLINE_CODE_RE.sub("", text)
+    # A wrapped span leaves its line break behind. `_WIKILINK_RE` is line-oriented (`.` excludes
+    # `\n`), so deleting the break with the span would splice two lines together and let `[[` pair
+    # with a `]]` it could not reach in the original text. A single-line span still deletes
+    # outright.
+    return _INLINE_CODE_RE.sub(lambda m: "\n" if "\n" in m.group(0) else "", text)
 
 
 #: A block-list item line: leading whitespace, a dash, then the value. Checked before the
