@@ -14,6 +14,10 @@ uv run --extra dev python -m scripts.corpus.cli diff --manifest docs/corpus/mani
 exits `0` on no drift, `1` on drift (one `vault · field · before → after` line per changed number),
 and `2` on a usage or config error.
 
+Running `diff` is mandatory for a change to `parse.py`, an extractor or resolver, or a shared
+link / frontmatter / code-span regex, with its result stated in the PR body (CLAUDE.md,
+"Agent discipline").
+
 A drift is a question for a human, not a fixture to update. Regenerating the frozen tables means
 pointing `report` at `docs/corpus/expected/` (`report ... --out-dir docs/corpus/expected`). Do that
 only as its own deliberate, reviewed change, with the drift explained in the PR. Never regenerate

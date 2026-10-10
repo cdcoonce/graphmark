@@ -62,6 +62,22 @@ This file governs autonomous (afk) work in this repo. It is the contract.
   asks (see the next bullet). Examples: #351 narrowed the anchor group `#[^)]*` to `#[^)\s]*` and
   silently dropped `[t](note.md#My Section)`; #353 (below) rewrote a stored value. A pinning test
   written first would have gone red in the slice's own TDD loop.
+- **Run the offline corpus diff for a parser or shared-regex change.** A slice that touches
+  `parse.py`, a `LinkExtractor` / `Resolver` implementation, or a regex that handles links,
+  frontmatter or code spans runs the corpus diff before the PR is ready and states its result in
+  the PR body: "corpus diff exits 0", or the drift lines. The synthetic fixtures cannot see what
+  real vaults hold; the diff can, and #382 recorded its exit 0 in the PR body as the evidence that
+  an empty-block regex fix was safe on them. From the worktree root:
+  `uv run --extra dev python -m scripts.corpus.cli diff --manifest docs/corpus/manifest.toml
+  --cache-root .corpus-cache --expected-dir docs/corpus/expected`. It runs offline: exit `0` is no
+  drift, `1` is drift (a question for a human, never a fixture to update), `2` is a usage or
+  config error, which includes a missing cache. `.corpus-cache/` is gitignored, so a fresh
+  worktree has none: point `--cache-root` at a warm cache elsewhere on the machine (the main
+  checkout's), read-only, and never run `fetch` — it is the only step that needs the network. If
+  no cache is reachable, the PR body says "corpus cache unavailable" rather than omitting the
+  check, and the reviewer runs the diff before merge. Exit `0` shows no drift on the notes the
+  corpus holds; it does not show new behavior works when no corpus note exercises it, so that
+  still needs its own test.
 - **Normalize for comparison; store the value as given.** When a value is normalized or
   canonicalized purely to drive a comparison, dedup, or lookup (path-normalize, case-fold,
   whitespace-collapse, regex-normalize), use a separate local for the comparison key. The
