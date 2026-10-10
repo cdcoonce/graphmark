@@ -65,6 +65,13 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+# metrics.gaps() is deprecated in favor of ragmark v0.2.0 (#384) but still works, and the existing
+# gaps tests exercise it on purpose, so each would otherwise add a warnings-summary entry. Silence
+# only that one message. tests/test_gaps_deprecation.py still observes the warning: it records with
+# simplefilter("always"), which sits in front of this entry.
+filterwarnings = [
+    "ignore:graphmark\\.metrics\\.gaps\\(\\) is deprecated:DeprecationWarning",
+]
 
 [tool.semantic_release]
 # Deployment is driven by conventional-commit history: when dev is promoted to main, the

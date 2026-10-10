@@ -38,12 +38,16 @@ story** — the priority consumer is the owner's vault seam (`graph_cli.py`), no
 - **`gaps()` with injected similarity** — graphmark owns the deterministic ranking/filtering
   (already-linked / self / threshold / max-score / prefix / dismissed filters; reciprocal dedup;
   novelty-first ordering); the embedding source is injected by the caller. The gate stays
-  fastembed-free. **Deprecation path recorded 2026-08-02** (the-vault#143): the gap _policy_ —
-  the `GAPS_DEFAULT_*` banding constants, filtering, ranking, and the content-hash dismissal-store
-  semantics — migrates into the sibling package `ragmark`; `gaps()` and the CLI `gaps`
-  guidance-exit deprecate when ragmark's gap module lands, and not before. Until then this surface
-  is **frozen**: do not extend it and do not remove it. The injected-`Similarity` seam survives as
-  API shape; graphmark keeps the deterministic graph that ragmark consumes as a dependency.
+  fastembed-free. **Deprecation path recorded 2026-08-02** (the-vault#143), **executed
+  2026-10-04** (#384): the gap _policy_ — the `GAPS_DEFAULT_*` banding constants, filtering,
+  ranking, and the content-hash dismissal-store semantics — migrated into the sibling package
+  `ragmark`, whose v0.2.0 shipped the gap module (`ragmark.gaps`;
+  <https://github.com/cdcoonce/ragmark/releases/tag/v0.2.0>). `gaps()` and the CLI `gaps` verb are
+  now deprecated (a `DeprecationWarning`; a stderr line) and **not removed**. Removing `gaps()`,
+  `dismiss.py` and `weaklink_sig` is a later, separate decision: ragmark's `dismiss.py` is a
+  byte-for-byte port of graphmark's, so the store format and the signature function must stay
+  readable. Do not extend this surface. The injected-`Similarity` seam survives as API shape;
+  graphmark keeps the deterministic graph that ragmark consumes as a dependency.
 - **Packaging** — PyPI Trusted Publishing on `v*` tags; networkx-only runtime dependency.
 - **Reintegration** — the-vault's `graph_cli.py` consumes the package and injects the vault's
   similarity function; /connect and /garden run on it.
