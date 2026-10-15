@@ -15,6 +15,22 @@ from graphmark.graph import DIAGNOSIS_REASONS, VaultGraph
 from graphmark.metrics import orphans, siloed_notes
 
 
+def unresolved_links(graph: VaultGraph, *, config: VaultConfig | None = None) -> list[list[str]]:
+    """Every unresolved link OCCURRENCE as ``[source note, target]``, sorted by source.
+
+    Same filter as ``unresolved_link_count``, which is its length: with ``config`` given, sources
+    starting with any ``config.transient_prefixes`` entry are dropped. A link repeated in one note
+    appears once per occurrence, because that is what the count counts.
+    """
+    prefixes = () if config is None else tuple(config.transient_prefixes)
+    return [
+        [note, target]
+        for note in sorted(graph.unresolved)
+        if not any(note.startswith(prefix) for prefix in prefixes)
+        for target in graph.unresolved[note]
+    ]
+
+
 def unresolved_link_count(graph: VaultGraph, *, config: VaultConfig | None = None) -> int:
     """Total unresolved link OCCURRENCES across the vault (not distinct targets).
 
@@ -23,13 +39,7 @@ def unresolved_link_count(graph: VaultGraph, *, config: VaultConfig | None = Non
     note (the key in ``graph.unresolved``) starts with any ``config.transient_prefixes`` entry
     are excluded, the same ``str.startswith`` test ``orphans`` uses (metrics.py).
     """
-    if config is None:
-        return sum(len(displays) for displays in graph.unresolved.values())
-    return sum(
-        len(displays)
-        for note, displays in graph.unresolved.items()
-        if not any(note.startswith(prefix) for prefix in config.transient_prefixes)
-    )
+    return len(unresolved_links(graph, config=config))
 
 
 def links_report(graph: VaultGraph) -> dict:
@@ -58,19 +68,20 @@ def links_summary_line(report: dict) -> str:
     return " · ".join(parts)
 
 
-# Maps a CheckPolicy field name to the callable that computes its "actual" value. Honors
+# Maps a CheckPolicy field name to the callable that lists its offenders; a check's "actual" is
+# that list's length, so the count and the names a reader is shown cannot disagree. Honors
 # transient_prefixes for max_orphans (scratch/daily notes do not fail the gate) and passes
 # config= through to unresolved_link_count for the same reason (issue #256). An unwired field
 # name raises the dict's natural KeyError; TestDispatchMappingWired (tests/test_check.py) is what
 # makes an unwired CheckPolicy field visible at test time rather than at first real invocation.
 _DISPATCH = {
-    "max_orphans": lambda g, c: len(orphans(g, c)),
-    "max_unresolved_links": lambda g, c: unresolved_link_count(g, config=c),
-    "max_siloed": lambda g, c: len(siloed_notes(g)),
+    "max_orphans": lambda g, c: orphans(g, c),
+    "max_unresolved_links": lambda g, c: unresolved_links(g, config=c),
+    "max_siloed": lambda g, c: siloed_notes(g),
 }
 
 
-def _actual(name: str, graph: VaultGraph, config: VaultConfig) -> int:
+def _offenders(name: str, graph: VaultGraph, config: VaultConfig) -> list:
     return _DISPATCH[name](graph, config)
 
 
@@ -93,9 +104,19 @@ def run_check(graph: VaultGraph, config: VaultConfig) -> dict:
         limit = getattr(policy, f.name)
         if limit is None:
             continue
-        actual = _actual(f.name, graph, config)
-        # "max" is inclusive: exactly at the limit passes.
-        checks.append({"name": f.name, "limit": limit, "actual": actual, "pass": actual <= limit})
+        offenders = _offenders(f.name, graph, config)
+        actual = len(offenders)
+        # "max" is inclusive: exactly at the limit passes. `offenders` is appended last so
+        # consumers already parsing name/limit/actual/pass keep working.
+        checks.append(
+            {
+                "name": f.name,
+                "limit": limit,
+                "actual": actual,
+                "pass": actual <= limit,
+                "offenders": offenders,
+            }
+        )
 
     # `links` is appended, never interleaved, so consumers already parsing this report keep
     # working. It is context for reading the verdict and can never change it.
@@ -113,3 +134,24 @@ def breach_lines(report: dict) -> list[str]:
         for c in report["checks"]
         if not c["pass"]
     ]
+
+
+def _offender_line(offender: str | list[str]) -> str:
+    if isinstance(offender, list):
+        source, target = offender
+        return f"  {source} → [[{target}]]"
+    return f"  {offender}"
+
+
+def breach_detail_lines(report: dict) -> list[str]:
+    """``breach_lines``, each followed by its check's offenders, indented, for stderr.
+
+    Unresolved links read ``source → [[target]]``; orphaned and siloed notes are their paths.
+    """
+    lines = []
+    for c in report["checks"]:
+        if c["pass"]:
+            continue
+        lines.append(f"{c['name']}: {c['actual']} exceeds limit {c['limit']}")
+        lines.extend(_offender_line(o) for o in c["offenders"])
+    return lines

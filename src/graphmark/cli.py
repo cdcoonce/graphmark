@@ -11,7 +11,7 @@ from pathlib import Path
 import networkx as nx
 
 from graphmark import __version__, build
-from graphmark.check import breach_lines, links_report, links_summary_line, run_check
+from graphmark.check import breach_detail_lines, links_report, links_summary_line, run_check
 from graphmark.config import VaultConfig, load_config
 from graphmark.export import to_dot, to_json
 from graphmark.graph import VaultGraph
@@ -266,7 +266,7 @@ def main() -> None:
                 _die(str(e))
             exit_code = 0 if report["pass"] else 1
             print(to_json(report), flush=True)
-            for line in breach_lines(report):
+            for line in breach_detail_lines(report):
                 print(line, file=sys.stderr)
             sys.exit(exit_code)
     except BrokenPipeError:
@@ -282,7 +282,7 @@ def main() -> None:
             if report is not None and args.command == "links":
                 print(links_summary_line(report), file=sys.stderr)
             elif report is not None and args.command == "check":
-                for line in breach_lines(report):
+                for line in breach_detail_lines(report):
                     print(line, file=sys.stderr)
         except OSError:
             # stderr is dead too: unwritten bytes would stay buffered and the shutdown flush would

@@ -131,15 +131,19 @@ max_siloed = 3
 
 ```console
 $ graphmark check --config vault.toml
-max_orphans: 14 exceeds limit 10
-{"pass": false, "checks": [{"name": "max_orphans", "limit": 10, "actual": 14, "pass": false}, {"name": "max_unresolved_links", "limit": 0, "actual": 0, "pass": true}, {"name": "max_siloed", "limit": 3, "actual": 1, "pass": true}], "links": {"total": 512, "counts": {"resolved": 490, "ambiguous": 0, "non-note-file": 15, "out-of-scope-note": 3, "missing": 0, "intra-note": 4}, "alias_resolved": 6}}
+max_unresolved_links: 1 exceeds limit 0
+  notes/decisions.md → [[datasheet]]
+{"pass": false, "checks": [{"name": "max_orphans", "limit": 10, "actual": 2, "pass": true, "offenders": ["inbox/stray.md", "notes/scratch.md"]}, {"name": "max_unresolved_links", "limit": 0, "actual": 1, "pass": false, "offenders": [["notes/decisions.md", "datasheet"]]}, {"name": "max_siloed", "limit": 3, "actual": 0, "pass": true, "offenders": []}], "links": {"total": 512, "counts": {"resolved": 496, "ambiguous": 0, "non-note-file": 9, "out-of-scope-note": 2, "missing": 1, "intra-note": 4}, "alias_resolved": 6}}
 $ echo $?
 1
 ```
 
 The JSON report is byte-stable — key order is fixed and checks appear in policy-declaration order —
 so two runs over an unchanged vault diff to nothing. Thresholds are inclusive (`actual == limit`
-passes), and only thresholds you set are reported.
+passes), and only thresholds you set are reported. Every check lists its `offenders` (note paths
+for orphans and siloed notes, `[source, target]` pairs for unresolved links, one per occurrence),
+and `actual` is that list's length, so the count and the names cannot disagree. stderr prints each
+breach followed by its offenders, so a failing gate says what to fix.
 
 Unknown keys inside `[check]` are a hard error rather than being ignored, and a config with no
 thresholds at all exits `2` instead of reporting a meaningless green: a gate that can't fail is
