@@ -1,6 +1,117 @@
 # CHANGELOG
 
 
+## v0.11.0 (2026-10-15)
+
+### Bug Fixes
+
+- **parse**: Let an inline code span wrap one line break
+  ([#394](https://github.com/cdcoonce/graphmark/pull/394),
+  [`3d59f82`](https://github.com/cdcoonce/graphmark/commit/3d59f8251a9803dae617b741b89940642415832c))
+
+* test(parse): pin inline code span forms before widening the regex
+
+An inline code span is about to be allowed to wrap one line break (#289). Pin what the
+  single-line-only regex does today so the widening can only add hidden regions, never change an
+  existing one: a single-line span, two spans on a line, adjacent and lone backticks, backtick pairs
+  a blank line apart (LF, spaces/tabs, CRLF), a CRLF span and a span beside a fenced block, through
+  the wikilink extractor, the markdown-link extractor and count_markdown_links. An exhaustive check
+  that any text with no line break strips identically to the legacy regex guards single-line
+  behaviour.
+
+* fix(parse): let an inline code span wrap one line break
+
+CommonMark and Obsidian render "See `code with\n[[Note]]` end." as one code span, so the link is
+  code, not a link. _INLINE_CODE_RE only matched inside a line, so graphmark extracted that link as
+  a phantom edge.
+
+The pattern gains a second alternative: a span that wraps exactly one line break (LF or CRLF), with
+  at least one character on each side of the break. A blank line is a second break, which one "\n"
+  cannot cross, so a blank line still ends the span by construction. The opening backtick stays
+  outside the alternation so the pattern keeps its literal prefix, which re scans for directly, and
+  matching stays linear. Only the wrapped alternative is guarded against escaped backticks and
+  longer backtick runs, so a text with no line break strips byte for byte as before (pinned by an
+  exhaustive differential test); without the guards the end backticks of a ```x``` run paired across
+  a break and hid the prose between two such spans in the plugin README of the corpus.
+
+_strip_non_link_regions now leaves the break of a wrapped span behind. The wikilink pattern is
+  line-oriented, so deleting the break would splice two lines together and conjure a link out of
+  code.
+
+This deliberately diverges from the reference engine: brain_map.py (graph_gardener._code_spans)
+  scans inline spans one line at a time and extracts the link. No frozen fixture holds a wrapped
+  span, so the oracle is unaffected; the divergence is recorded above the regex.
+
+Known limits, not modelled: spans over two or more line breaks, double-backtick delimiters, block
+  starts (a heading or list item) that end a paragraph, and a fenced block between two lone
+  backticks.
+
+### Documentation
+
+- **claude**: Add in-scope pre-existing defect rule to Agent discipline
+  ([#393](https://github.com/cdcoonce/graphmark/pull/393),
+  [`5f226d3`](https://github.com/cdcoonce/graphmark/commit/5f226d3f3108ee3df2f0905c343e3f725ab9aa7d))
+
+A defect that already exists in the code path a slice changes, and is an instance of the case the
+  issue names, is fixed in that slice test-first; one outside the issue's case is flagged in the PR
+  body. A regex with an optional or greedy group also gets a degenerate-input test. Grounded in
+  #382, where an empty frontmatter block under a greedy optional group swallowed a later body rule.
+
+- **claude**: Require the offline corpus diff for parser and regex changes
+  ([#398](https://github.com/cdcoonce/graphmark/pull/398),
+  [`5c2077e`](https://github.com/cdcoonce/graphmark/commit/5c2077e43fe3abb1102eedd1583934976284194c))
+
+A slice that touches parse.py, a LinkExtractor or Resolver implementation, or a link / frontmatter /
+  code-span regex now runs the offline corpus diff and states its result in the PR body. The bullet
+  names the exact command, the exit codes (0 no drift, 1 drift, 2 usage or config error), and the
+  cold-cache case: .corpus-cache/ is gitignored, so a fresh worktree has none, and a slice that
+  cannot reach a warm cache says "corpus cache unavailable" instead of omitting the check, leaving
+  the reviewer to run it before merge.
+
+scripts/corpus/README.md gains a one-line cross-reference back to the rule.
+
+### Features
+
+- **check**: Name each check's offenders in the report and on stderr
+  ([#399](https://github.com/cdcoonce/graphmark/pull/399),
+  [`108fa78`](https://github.com/cdcoonce/graphmark/commit/108fa78ca85ab549f894456da088b63ceebf9467))
+
+A check reported only its count. A vault owner whose gate failed with max_unresolved_links: 1 had to
+  rebuild the graph by hand to learn which link, and two trees that each failed with 1 held two
+  different links.
+
+Each check in run_check's report now carries `offenders`: note paths for max_orphans and max_siloed,
+  [source, target] pairs (one per occurrence) for max_unresolved_links. `actual` is len(offenders),
+  so the count and the names come from one definition. The key is appended last, so consumers
+  parsing name/limit/actual/pass keep working. New unresolved_links() backs unresolved_link_count().
+  New breach_detail_lines() prints each breach followed by its indented offenders; `graphmark check`
+  uses it on stderr. breach_lines() is unchanged.
+
+Co-authored-by: charles.coonce <charles.coonce@clearwayenergy.com>
+
+- **gaps**: Deprecate gaps() and the CLI gaps verb for ragmark
+  ([#395](https://github.com/cdcoonce/graphmark/pull/395),
+  [`0e7597e`](https://github.com/cdcoonce/graphmark/commit/0e7597ed85396d0bc1957a73ec2dac18dab674c4))
+
+ragmark v0.2.0 shipped its gap module (ragmark.gaps), the trigger the roadmap recorded for
+  deprecating graphmark's gap surface (#384).
+
+metrics.gaps() now emits one DeprecationWarning per call (stacklevel=2, so it is attributed to the
+  caller) naming ragmark v0.2.0 and its release page. Its behaviour, signature and output are
+  unchanged; the frozen gaps oracle is untouched. The CLI gaps verb keeps its guidance line and exit
+  code 2 and adds one stderr deprecation line.
+
+Nothing is removed and no removal is promised: ragmark's dismiss.py is a byte-for-byte port of
+  graphmark's, so the dismissal store and weaklink_sig must stay readable. The docs point at the
+  release page, not at PyPI, where an unrelated package shares the name ragmark. They also say
+  ragmark.gaps is not a drop-in: rank_pairs takes an injected similarity function, while
+  ragmark.gaps.gaps ranks against ragmark's own index.
+
+The existing gaps tests still call gaps() on purpose, so pyproject gains one filterwarnings entry
+  anchored to this message; the new tests record with simplefilter("always") and still observe the
+  warning.
+
+
 ## v0.10.1 (2026-10-04)
 
 ### Bug Fixes
