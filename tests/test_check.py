@@ -5,7 +5,8 @@ Contract under test:
     breach ALONE, so CI can trust it); exit 2 = usage/config error, including a policy that
     enforces nothing (a gate with nothing to check must not report green).
   * stdout is exactly one line, the JSON report, byte-stable across runs.
-  * stderr carries one human-readable line per breach; it never pollutes stdout.
+  * stderr carries one human-readable line per breach, each followed by its offenders
+    (indented); it never pollutes stdout.
 """
 
 from __future__ import annotations
@@ -18,7 +19,14 @@ from unittest.mock import patch
 
 import pytest
 
-from graphmark.check import _DISPATCH, breach_lines, links_report, run_check, unresolved_link_count
+from graphmark.check import (
+    _DISPATCH,
+    breach_detail_lines,
+    breach_lines,
+    links_report,
+    run_check,
+    unresolved_link_count,
+)
 from graphmark.config import CheckPolicy, VaultConfig, load_config
 from graphmark.graph import NormalizeResolver, VaultGraph
 from graphmark.parse import WikilinkExtractor
@@ -74,7 +82,13 @@ class TestReportShape:
     def test_each_check_reports_limit_and_actual(self):
         graph, config = _graph_and_config(max_orphans=5)
         (check,) = run_check(graph, config)["checks"]
-        assert check == {"name": "max_orphans", "limit": 5, "actual": SIMPLE_ORPHANS, "pass": True}
+        assert check == {
+            "name": "max_orphans",
+            "limit": 5,
+            "actual": SIMPLE_ORPHANS,
+            "pass": True,
+            "offenders": ["reference/island.md", "reference/stub.md"],
+        }
 
     def test_counts_match_the_metrics(self):
         graph, config = _graph_and_config(max_orphans=99, max_unresolved_links=99, max_siloed=99)
@@ -148,9 +162,11 @@ class TestByteStability:
     # silently disagree.
     EXPECTED = (
         '{"pass": false, "checks": ['
-        '{"name": "max_orphans", "limit": 1, "actual": 2, "pass": false}, '
-        '{"name": "max_unresolved_links", "limit": 0, "actual": 1, "pass": false}, '
-        '{"name": "max_siloed", "limit": 0, "actual": 0, "pass": true}], '
+        '{"name": "max_orphans", "limit": 1, "actual": 2, "pass": false, '
+        '"offenders": ["reference/island.md", "reference/stub.md"]}, '
+        '{"name": "max_unresolved_links", "limit": 0, "actual": 1, "pass": false, '
+        '"offenders": [["reference/stub.md", "does-not-exist"]]}, '
+        '{"name": "max_siloed", "limit": 0, "actual": 0, "pass": true, "offenders": []}], '
         '"links": {"total": 7, "counts": {"resolved": 6, "ambiguous": 0, "non-note-file": 0, '
         '"out-of-scope-note": 0, "missing": 1, "intra-note": 0}, "alias_resolved": 0}}'
     )
@@ -193,7 +209,8 @@ class TestExitCodes:
         _, err = _run(["graphmark", "--config", str(toml), "check"], capsys, 1)
         assert "max_orphans" in err
         assert "max_unresolved_links" in err
-        assert len(err.strip().splitlines()) == 2
+        # One unindented line per breach; the offenders under each are indented.
+        assert len([line for line in err.strip().splitlines() if not line.startswith(" ")]) == 2
 
     def test_unconfigured_policy_exits_2_not_0(self, tmp_path, capsys):
         # The critical case: a gate with nothing to check must NOT report green.
@@ -261,6 +278,7 @@ class TestUnresolvedLinkCountTransientPrefixes:
             "limit": 1,
             "actual": 1,
             "pass": True,
+            "offenders": [["normal.md", "AlsoMissing"]],
         }
 
 
@@ -317,7 +335,19 @@ class TestMaxSiloedBreach:
         graph = VaultGraph.build(config, WikilinkExtractor(), NormalizeResolver())
         report = run_check(graph, config)
         (check,) = report["checks"]
-        assert check == {"name": "max_siloed", "limit": 2, "actual": 5, "pass": False}
+        assert check == {
+            "name": "max_siloed",
+            "limit": 2,
+            "actual": 5,
+            "pass": False,
+            "offenders": [
+                "daily/2026-07-01.md",
+                "misc/foxtrot.md",
+                "misc/orphan.md",
+                "misc/stub.md",
+                "refs/delta.md",
+            ],
+        }
         assert report["pass"] is False
         assert any(line.startswith("max_siloed") for line in breach_lines(report))
 
@@ -366,3 +396,58 @@ class TestBreachLines:
             "max_orphans: 3 exceeds limit 1",
             "max_siloed: 5 exceeds limit 2",
         ]
+
+
+class TestOffenders:
+    """Every check names what it counted, and its count IS that list's length.
+
+    A bare count made a vault owner rebuild the graph by hand to find one broken link, and two
+    trees that each failed with "1" turned out to hold two different links. Deriving ``actual``
+    from the offender list means the number and the names cannot drift apart.
+    """
+
+    def test_each_check_lists_its_offenders_and_counts_them(self):
+        graph, config = _graph_and_config(max_orphans=99, max_unresolved_links=99, max_siloed=99)
+        checks = {c["name"]: c for c in run_check(graph, config)["checks"]}
+
+        assert checks["max_orphans"]["offenders"] == ["reference/island.md", "reference/stub.md"]
+        assert checks["max_unresolved_links"]["offenders"] == [
+            ["reference/stub.md", "does-not-exist"]
+        ]
+        assert checks["max_siloed"]["offenders"] == []
+        for check in checks.values():
+            assert check["actual"] == len(check["offenders"])
+
+    def test_unresolved_offenders_skip_transient_notes(self, tmp_path):
+        (tmp_path / "daily").mkdir()
+        (tmp_path / "daily" / "scratch.md").write_text("Broken: [[NopeMissing]]\n")
+        (tmp_path / "normal.md").write_text("Broken: [[AlsoMissing]] and [[AlsoMissing]]\n")
+        config = VaultConfig(root=tmp_path, transient_prefixes=("daily/",))
+        config.check = CheckPolicy(max_unresolved_links=0)
+        graph = VaultGraph.build(config, WikilinkExtractor(), NormalizeResolver())
+
+        (check,) = run_check(graph, config)["checks"]
+
+        # Occurrences, not distinct targets: the repeated link is listed twice, as it is counted.
+        assert check["offenders"] == [["normal.md", "AlsoMissing"], ["normal.md", "AlsoMissing"]]
+        assert check["actual"] == unresolved_link_count(graph, config=config) == 2
+
+    def test_breach_detail_lines_name_offenders_under_each_breach_only(self):
+        graph, config = _graph_and_config(max_orphans=1, max_unresolved_links=0, max_siloed=0)
+
+        lines = breach_detail_lines(run_check(graph, config))
+
+        assert lines == [
+            "max_orphans: 2 exceeds limit 1",
+            "  reference/island.md",
+            "  reference/stub.md",
+            "max_unresolved_links: 1 exceeds limit 0",
+            "  reference/stub.md → [[does-not-exist]]",
+        ]
+
+    def test_cli_check_stderr_names_the_offenders(self, tmp_path, capsys):
+        toml = _toml(tmp_path, "[check]\nmax_unresolved_links = 0\n")
+
+        _, err = _run(["graphmark", "--config", str(toml), "check"], capsys, 1)
+
+        assert "  reference/stub.md → [[does-not-exist]]" in err.splitlines()
